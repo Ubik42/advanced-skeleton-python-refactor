@@ -16,6 +16,7 @@ from adv_py.core.fit_orientation import (
     orientation_matches,
     plan_simple_fit_orientations,
     plan_world_fit_orientations,
+    fit_snapshot_after_position_adjustments,
     select_fit_orientation_child,
     world_orientation_matches,
 )
@@ -201,7 +202,10 @@ class OrientFitJoints:
         )
         if verified.metadata != expected_metadata:
             raise RuntimeError("Fit 朝向更新后元数据与原版修正规则不符")
-        old_nodes = {node.path: node for node in before.hierarchy.joints}
+        expected=fit_snapshot_after_position_adjustments(before,tuple(
+            adjustment for change in plan.changes if isinstance(change,FitOrientationChange)
+            for adjustment in change.position_adjustments))
+        old_nodes = {node.path: node for node in expected.hierarchy.joints}
         new_nodes = {node.path: node for node in verified.hierarchy.joints}
         if set(old_nodes) != set(new_nodes):
             raise RuntimeError("Fit 朝向更新后关节集合发生变化")
@@ -228,6 +232,10 @@ class OrientFitJoints:
                                for value in (*state.joint_orient,
                                              *state.rotation)))
             else:
-                matches = state.joint_orient == old_states[path].joint_orient
+                previous = old_states[path]
+                matches = all(abs(a-b) <= 1e-5
+                              for current, old in zip(state.world_axes, previous.world_axes)
+                              for a,b in zip(current,old)) and all(
+                                  abs(a-b) <= 1e-5 for a,b in zip(state.rotation,previous.rotation))
             if not matches:
                 raise RuntimeError(f"Fit 朝向更新后轴向不一致：{path}")

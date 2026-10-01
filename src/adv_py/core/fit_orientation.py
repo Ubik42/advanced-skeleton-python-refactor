@@ -226,6 +226,9 @@ class FitOrientationChange:
     world_match_axes: tuple[FitLocalDirection, FitLocalDirection] | None = None
     # Original zero-RP-rotation correction, applied before the live aim.
     position_adjustments: tuple[tuple[str, Vector3], ...] = ()
+    # MEL detaches all children before aiming the parent and reparents them
+    # absolutely afterwards. Their world frames survive; local JO can change.
+    preserved_child_world_axes: tuple[tuple[str, tuple[Vector3, Vector3, Vector3]], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +242,7 @@ class FitWorldOrientationChange:
     policy: FitWorldOrientationPolicy
     world_match_axes: tuple[FitLocalDirection, FitLocalDirection] | None = None
     corrected_world_orient_forward: str | None = None
+    preserved_child_world_axes: tuple[tuple[str, tuple[Vector3, Vector3, Vector3]], ...] = ()
 
 
 def world_axes_from_orientation_policy(
@@ -409,6 +413,9 @@ def plan_world_fit_orientations(
                     for descendant in descendant_paths
                 ),
                 desired_world_axes=desired,
+                preserved_child_world_axes=tuple(
+                    (child, orientations[child].world_axes)
+                    for child in direct_children),
                 policy=policy,
                 world_match_axes=(FitLocalDirection.NEGATIVE_Y,
                                   FitLocalDirection.POSITIVE_Z)
@@ -540,6 +547,31 @@ def plan_simple_fit_orientations(
         primary_axis = axis_config.primary
         secondary_local_axis = axis_config.secondary
         free_orient = bool(item_metadata and item_metadata.free_orient)
+        if free_orient:
+            # MEL skips every aim override for freeOrient, then freezes the
+            # existing frame. It does not point this joint at its child.
+            desired_axes=state.world_axes
+            planned_world_axes[path]=desired_axes
+            if not axis_config.world_match and all(abs(value)<=tolerance
+                                                    for value in state.rotation):
+                continue
+            changes.append(FitOrientationChange(
+                joint=path,child=child_path,before_joint_orient=state.joint_orient,
+                preserved_child_joint_orients=tuple((child,orientations[child].joint_orient)
+                    for child in direct_children),
+                descendant_world_positions=tuple((child,hierarchy[child].world_position)
+                    for child in descendant_paths),
+                desired_primary_world=_signed_world_direction(primary_axis,
+                    state.world_axes[_axis_index(primary_axis)]),
+                desired_secondary_world=_signed_world_direction(secondary_local_axis,
+                    state.world_axes[_axis_index(secondary_local_axis)]),
+                secondary_world_axis=FitWorldAxis.Y,use_explicit_world_axes=True,
+                desired_world_axes=desired_axes,
+                world_match_axes=(axis_config.primary,axis_config.secondary)
+                    if axis_config.world_match else None,
+                preserved_child_world_axes=tuple((child,orientations[child].world_axes)
+                    for child in direct_children)))
+            continue
         secondary_axis, _ = _secondary_reference(snapshot.up_axis, primary)
         # MEL's ordinary off-centre branch uses a helper on the joint's
         # existing local secondary axis. Its flipOrient signs cancel here.
@@ -586,6 +618,38 @@ def plan_simple_fit_orientations(
                 reference = _cross(start_tertiary, primary)
             if _inherited_flip_orient(path, hierarchy, metadata):
                 reference = _scale(reference, -1.0)
+        # MEL 7155–7217 applies these named overrides after the ordinary aim.
+        # Child frames are detached/preserved, so their source world axes are
+        # the object-rotation reference, independent of the parent edit.
+        label=dict(snapshot.labels).get(path)
+        if label is not None and label.text.startswith('LegAim'):
+            tertiary=_signed_tertiary_world_axis(orientations[child_path].world_axes,
+                                                axis_config)
+            reference=_cross(tertiary,primary)
+        if hierarchy[path].short_name == 'Cup':
+            ring=by_name.get('RingFinger1')
+            middle=by_name.get('MiddleFinger1')
+            wrist=hierarchy.get(hierarchy[path].dag_parent)
+            if ring is not None and middle is not None and wrist is not None:
+                target=tuple((a+b)/2 for a,b in zip(ring.world_position,middle.world_position))
+                primary=_normalize(_subtract(target,hierarchy[path].world_position),
+                                   'Cup 与 Ring/Middle 平均目标重合')
+                reference=_subtract(wrist.world_position,hierarchy[path].world_position)
+                if _inherited_flip_orient(path,hierarchy,metadata):
+                    reference=_scale(reference,-1.)
+        if hierarchy[path].short_name.startswith('Eye'):
+            reference=(0.,1. if _inherited_flip_orient(path,hierarchy,metadata) else -1.,0.)
+        if item_metadata is not None and item_metadata.aim_at is not None:
+            target=hierarchy.get(item_metadata.aim_at) or by_name.get(item_metadata.aim_at)
+            # Original Fit ignores an unavailable target; the later Body
+            # graph performs its own target resolution.
+            if target is not None:
+                primary=_normalize(_subtract(target.world_position,hierarchy[path].world_position),
+                                   hierarchy[path].short_name+' 与 AimAt 目标重合')
+                primary_axis=FitLocalDirection(('-' if axis_config.primary.value.startswith('-')
+                                               else '+')+item_metadata.aim_axis)
+                secondary_local_axis=FitLocalDirection('+'+item_metadata.aim_up_axis)
+                reference=orientations[target.path].world_axes[1]
         secondary = _normalize(
             _subtract(reference, _scale(primary, _dot(reference, primary))),
             f"{hierarchy[path].short_name} 无法建立稳定的 secondary axis："
@@ -594,6 +658,11 @@ def plan_simple_fit_orientations(
         desired_axes = _world_axes_from_aim_up(
             primary_axis, secondary_local_axis, primary, secondary
         )
+        if hierarchy[path].short_name == 'Root' and abs(hierarchy[path].world_position[0]) > .01*snapshot.fit_scale:
+            # Original JO=(90,0,90), after the ordinary aim and before AimAt.
+            # An explicit AimAt remains the final override.
+            if item_metadata is None or item_metadata.aim_at is None:
+                desired_axes=((0.,1.,0.),(0.,0.,1.),(1.,0.,0.))
         planned_world_axes[path] = desired_axes
         axes_match = all(
             _dot(_normalize(current, "当前世界轴无效"), desired) >= 1.0 - tolerance
@@ -620,6 +689,9 @@ def plan_simple_fit_orientations(
                 secondary_world_axis=secondary_axis,
                 use_explicit_world_axes=True,
                 desired_world_axes=desired_axes,
+                preserved_child_world_axes=tuple(
+                    (child, orientations[child].world_axes)
+                    for child in direct_children),
                 world_match_axes=(axis_config.primary, axis_config.secondary)
                 if axis_config.world_match else None,
             )

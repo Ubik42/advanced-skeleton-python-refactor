@@ -22,6 +22,9 @@ def capture_fk_policy(host, registration):
     by_leaf = {}
     for node in registration.nodes:
         by_leaf.setdefault(node.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1], []).append(node)
+    owned={node.path for node in registration.nodes}
+    if c.objExists('AllSet'):
+        owned.update(host.capture_body_all_set_members())
     scale, compensated, independent, global_controls = set(), set(), set(), set()
     fkx, points = set(), set()
     for stem, control in controls.items():
@@ -66,15 +69,13 @@ def capture_fk_policy(host, registration):
         driver = drivers[0]
         if not outputs and not direct_matrix:
             host.validate_body_bendy_handoff(driver)
-        compound = c.connectionInfo(driver + ".scale", sourceFromDestination=True)
-        sources = tuple(c.connectionInfo(driver + ".scale" + axis,
-                                         sourceFromDestination=True) for axis in "XYZ")
-        if (compound == control + ".scale" or sources == tuple(
-                control + ".scale" + axis for axis in "XYZ")):
+        if (c.isConnected(control + '.scale',driver + '.scale')
+                or all(c.isConnected(control + '.scale' + axis,
+                                     driver + '.scale' + axis) for axis in 'XYZ')):
             scale.add(control)
         bendy_scale = namespace + "AdvPy_BendyDeformScale" + body_stem
-        if c.objExists(bendy_scale) and c.connectionInfo(
-                bendy_scale + ".input1", sourceFromDestination=True) == control + ".scale":
+        if c.objExists(bendy_scale) and c.isConnected(
+                control + '.scale',bendy_scale + '.input1'):
             scale.add(control)
         point = c.ls(namespace + prefix + "FKPoint", long=True,
                      type="pointConstraint") or []
@@ -135,8 +136,8 @@ def capture_fk_policy(host, registration):
         source_rp_build_pole=any(c.objExists(binding.pole_control+'.advPySourceRpPolePlacement')
                                for binding in registration.source_limbs),
         source_untwister_receiver=any(
-            c.objExists(node.path+'.advPySourceUnTwisterReceiver')
-            for node in registration.nodes),
+            c.objExists(node+'.advPySourceUnTwisterReceiver')
+            for node in owned),
         source_body_matrix=any(c.objExists(joint.path+'.advPySourceFkMatrix')
             or c.objExists(joint.path+'.advPySourceEndMatrix')
             for joint in registration.body) or any(binding.dynamics_root and
@@ -145,8 +146,8 @@ def capture_fk_policy(host, registration):
         scale_controls=_pre_aim_controls(scale), compensated_controls=_pre_aim_controls(compensated),
         source_bendy_deform_matrix=any(c.objExists(joint.path+'.advPySourceBendyMatrix')
             for joint in registration.body),
-        source_leg_lock_opm=any(c.objExists(node.path+'.advPySourceLegLockMatrix')
-            for node in registration.nodes),
+        source_leg_lock_opm=any(c.objExists(node+'.advPySourceLegLockMatrix')
+            for node in owned),
         source_root_body_matrix=c.objExists(registration.body_root+'.advPySourceFkMatrix'),
         global_controls=_pre_aim_controls(global_controls), aim_sources=aim_sources,
         follower_sources=followers, independent_controls=_pre_aim_controls(independent),

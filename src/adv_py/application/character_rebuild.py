@@ -39,6 +39,7 @@ class StagedCharacterRebuild:
     deformer_output_conversions: tuple = ()
     deformer_sample_frames: tuple[float, ...] = ()
     deformer_animation_state: tuple = ()
+    segment_influences: tuple[str, ...] = ()
 
 
 def _rebuild_axial_description(
@@ -149,6 +150,7 @@ class StageBodyCharacterRebuild:
             host.capture_body_skeleton(original.registration.body_root),
             require_leaf=False)
         selection_mode = host.capture_body_rebuild_selection_mode()
+        selection_members=host.capture_body_rebuild_selection_members()
         generic_fk_policy = host.capture_body_generic_fk_feature_policy(
             original.registration)
         segment_mode = _rebuild_segment_mode(host,
@@ -231,6 +233,10 @@ class StageBodyCharacterRebuild:
                         extras=built.selection_extras,
                         scene_before=scene_before, fit_container=fit_path,
                         populate_all=selection_mode == "populated")
+                    with stage.transaction('Preserve original selection membership'):
+                        stage.restore_body_rebuild_selection_members(selection_members)
+                if host.capture_body_rebuild_selection_members()!=selection_members:
+                    raise RuntimeError('暂存构建改写了原角色选择集成员')
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('暂存构建改写了原角色，已回滚')
                 if host.capture_body_geometry_contents() != authored_geometry:
@@ -316,7 +322,8 @@ class StageBodyCharacterRebuild:
                                               deformer_input_conversions=deformer_input_conversions,
                                               deformer_output_conversions=deformer_output_conversions,
                                               deformer_sample_frames=deformer_sample_frames,
-                                              deformer_animation_state=deformer_animation_state)
+                                              deformer_animation_state=deformer_animation_state,
+                                              segment_influences=built.segment_influences)
                 staged=replace(staged,ownership=host.audit_character_rebuild_ownership(staged))
         return staged
 

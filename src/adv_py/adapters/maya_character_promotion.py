@@ -39,6 +39,13 @@ def promote(host,staged):
     retained_mesh_paths.update(
         root+suffix for root, identities, _, _ in (staged.authored_geometry or ())
         for suffix, _, _ in identities)
+    retained_mesh_paths.update(skin.node for skin in staged.original.skins)
+    retained_mesh_paths.update(deformer.node for deformer in staged.original.deformers)
+    retained_mesh_paths.update(name for name in SHARED_NODES
+                              if c.objExists(host.scene_address(name)))
+    for skin in staged.original.skins:
+        retained_mesh_paths.update(host._cmds.listConnections(
+            skin.node+'.bindPose',s=True,d=False) or [])
     retained_mesh_physical={
         (c.ls(host.scene_address(path),long=True) or
          [host.scene_address(path)])[0]

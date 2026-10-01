@@ -3709,7 +3709,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     @staticmethod
     def _write_skin_vertex_members(c, skin_fn, shape,
                                    members, vertex_count):
-        """Replace native deformer-set members through undoable Maya commands."""
+        """Replace legacy-set or component-tag membership with native Undo."""
         from maya.api import OpenMaya as om
         from maya.api import OpenMayaAnim as oma
 
@@ -3718,16 +3718,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 or tuple(sorted(set(members)))!=tuple(members)):
             raise FitSkeletonValidationError(
                 'Skin 变形集写入成员为空、重复或越界')
-        deformer_set = om.MFnDependencyNode(
-            oma.MFnGeometryFilter(skin_fn.object()).deformerSet).name()
-        c.sets(clear=deformer_set)
-        if len(members)==vertex_count:
-            c.sets(shape, addElement=deformer_set)
-            return
+        geometry_filter=oma.MFnGeometryFilter(skin_fn.object())
+        try:
+            deformer_set=om.MFnDependencyNode(geometry_filter.deformerSet).name()
+        except RuntimeError:
+            deformer_set=None
         ranges=[]
         def component(first,last):
             index = str(first) if first==last else f'{first}:{last}'
-            return f'{shape}.vtx[{index}]'
+            return f'vtx[{index}]'
         start=stop=members[0]
         for index in members[1:]:
             if index==stop+1:
@@ -3736,8 +3735,64 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             ranges.append(component(start,stop))
             start=stop=index
         ranges.append(component(start,stop))
-        for offset in range(0,len(ranges),256):
-            c.sets(*ranges[offset:offset+256],addElement=deformer_set)
+        if deformer_set is None:
+            raw=getattr(c,'raw',c)
+            outputs=geometry_filter.getOutputGeometry()
+            if len(outputs)!=1:
+                raise FitSkeletonValidationError('组件标签 Skin 要求唯一网格：'+skin_fn.name())
+            geometry_index=geometry_filter.indexForOutputShape(outputs[0])
+            expression=skin_fn.name()+f'.input[{geometry_index}].componentTagExpression'
+            if not raw.objExists(expression):
+                raise FitSkeletonValidationError('Skin 没有变形集或组件标签成员入口：'+skin_fn.name())
+            input_shape=om.MDagPath.getAPathTo(
+                geometry_filter.inputShapeAtIndex(geometry_index)).fullPathName()
+            if not raw.objExists(input_shape+'.componentTags'):
+                raise FitSkeletonValidationError('Skin 输入网格不支持组件标签：'+input_shape)
+            tag='adv_py_skin_'+raw.ls(skin_fn.name(),uuid=True)[0].replace('-','')
+            indices=raw.getAttr(input_shape+'.componentTags',multiIndices=True) or []
+            matching=[index for index in indices if raw.getAttr(
+                input_shape+f'.componentTags[{index}].componentTagName')==tag]
+            if len(matching)>1 or matching and raw.getAttr(expression)!=tag:
+                raise FitSkeletonValidationError('Skin 专用组件标签被其他内容占用：'+tag)
+            index=matching[0] if matching else max(indices,default=-1)+1
+            base=input_shape+f'.componentTags[{index}]'
+            raw.setAttr(base+'.componentTagName',tag,type='string')
+            raw.setAttr(base+'.componentTagContents',len(ranges),*ranges,type='componentList')
+            raw.setAttr(expression,tag,type='string')
+            raw.dgdirty(skin_fn.name())
+            raw.dgeval(skin_fn.name()+f'.outputGeometry[{geometry_index}]')
+            return
+        # Clearing the entire set disconnects its geometry group in native
+        # Maya. Add missing vertices first, then remove only the complement;
+        # the geometry stays attached throughout this nonempty replacement.
+        outputs=geometry_filter.getOutputGeometry()
+        if len(outputs)!=1:
+            raise FitSkeletonValidationError('Skin 变形集写入要求唯一网格：'+skin_fn.name())
+        physical_shape=om.MDagPath.getAPathTo(outputs[0]).fullPathName()
+        current=set(MayaBodyBuildHost._skin_vertex_members(skin_fn,physical_shape,
+            physical_shape.rsplit('|',1)[0],vertex_count))
+        desired=set(members)
+        def vertex_ranges(indices):
+            indices=sorted(indices)
+            if not indices:return []
+            result=[]
+            first=last=indices[0]
+            for index in indices[1:]:
+                if index==last+1:
+                    last=index
+                else:
+                    result.append(shape+'.'+component(first,last))
+                    first=last=index
+            result.append(shape+'.'+component(first,last))
+            return result
+        for indices,flag in ((desired-current,'addElement'),(current-desired,'remove')):
+            items=vertex_ranges(indices)
+            for offset in range(0,len(items),256):
+                c.sets(*items[offset:offset+256],**{flag:deformer_set})
+        raw=getattr(c,'raw',c)
+        geometry_index=geometry_filter.indexForOutputShape(outputs[0])
+        raw.dgdirty(skin_fn.name())
+        raw.dgeval(skin_fn.name()+f'.outputGeometry[{geometry_index}]')
 
     def _capture_fbx_skin_sources(self, influence_map, published_names):
         from .maya_dense_skin import MayaDenseSkinHost
@@ -4174,12 +4229,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 # dense weight array still contains every mesh vertex.
                 self._write_skin_vertex_members(c,skin_fn,shape,
                     vertex_members,data.vertex_count)
-            if self._skin_vertex_members(skin_fn,
+            copied_members=self._skin_vertex_members(skin_fn,
                     shape if namespace_free else self.scene_address(shape),
                     clone if namespace_free else self.scene_address(clone),
-                    data.vertex_count) != vertex_members:
+                    data.vertex_count)
+            if copied_members != vertex_members:
                 raise FitSkeletonValidationError(
-                    'FBX 临时 Skin 变形集与来源不一致：' + data.skin_name)
+                    'FBX 临时 Skin 变形集与来源不一致：' + data.skin_name
+                    + ' expected='+repr(vertex_members)+' actual='+repr(copied_members))
             copied.append((c.ls(clone, long=True,
                                  type="transform") or [])[0])
         for frame in range(bind_frame, end_frame + 1, sample_by):

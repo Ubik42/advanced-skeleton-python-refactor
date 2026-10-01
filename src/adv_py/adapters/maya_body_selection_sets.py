@@ -11,6 +11,40 @@ from adv_py.core.character_registry import CharacterRegistration
 
 
 class MayaBodySelectionSetsMixin:
+    def capture_body_rebuild_selection_members(self):
+        """Preserve authored ControlSet/DeformSet membership by logical role."""
+        c=self._cmds
+        rows=[]
+        for name in ('ControlSet','DeformSet'):
+            if not c.objExists(name):continue
+            members=set()
+            for member in c.sets(name,q=True) or []:
+                paths=c.ls(member,long=True,flatten=True) or []
+                if not paths:
+                    raise RuntimeError('重建选择集成员不存在：'+member)
+                members.update(paths)
+            rows.append((name,tuple(sorted(members))))
+        return tuple(rows)
+
+    def restore_body_rebuild_selection_members(self,rows):
+        self._require_transaction()
+        c=self._cmds
+        for name,members in rows:
+            if name not in ('ControlSet','DeformSet') or not c.objExists(name):
+                raise RuntimeError('重建选择集目标不存在：'+name)
+            # User-added controls/joints are retained native objects. They
+            # join the stage during the later explicit extension handoff.
+            identity=CharacterIdentity(self.namespace or '')
+            generated=tuple(member for member in members
+                            if identity.owns(self.scene_address(member)) and c.objExists(member))
+            self._transaction_changed=True
+            c.sets(clear=name)
+            if generated:c.sets(generated,addElement=name)
+            expected=tuple(sorted(generated))
+            actual=dict(self.capture_body_rebuild_selection_members())[name]
+            if actual!=expected:
+                raise RuntimeError('重建选择集成员没有完整恢复：'+name)
+
     def capture_body_rebuild_selection_mode(self) -> str:
         """Retain the source character's pre-selection-set layout."""
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds

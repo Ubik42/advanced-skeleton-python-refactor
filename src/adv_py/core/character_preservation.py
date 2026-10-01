@@ -225,7 +225,12 @@ def character_transfer_error(before,after):
     error=0.
     for left,right in zip(before,after):
         finite(left[0])
-        error=max(error,*(control_space_pose_error(tuple(left[i]),tuple(right[i])) for i in (1,2)))
+        error=max(error,control_space_pose_error(tuple(left[1]),tuple(right[1])))
+        # A source-labelled character can have no separate legacy space
+        # receivers. Both empty snapshots represent the same valid layout;
+        # a one-sided disappearance still fails the normal comparison.
+        if left[2] or right[2]:
+            error=max(error,control_space_pose_error(tuple(left[2]),tuple(right[2])))
         for i in (3,4):
             if tuple(k for k,_ in left[i])!=tuple(k for k,_ in right[i]):
                 raise CharacterRegistryError('交接复检蒙皮或附件身份不一致')

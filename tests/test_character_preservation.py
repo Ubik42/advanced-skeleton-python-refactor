@@ -1,6 +1,6 @@
 from dataclasses import replace
 import unittest
-from adv_py.core.character_preservation import CharacterPreservation,PreservedCurve,PreservedSkin,PreservedDeformer,validate_preservation,validate_rebuild_layout
+from adv_py.core.character_preservation import CharacterPreservation,PreservedCurve,PreservedSkin,PreservedDeformer,validate_preservation,validate_rebuild_layout,character_transfer_error
 from adv_py.core.character_registry import CharacterRegistryError
 from test_character_registry import registration_fixture
 from test_character_pose import pose_fixture
@@ -54,3 +54,14 @@ class CharacterPreservationTests(unittest.TestCase):
         matrix=list(reg.body[0].matrix);matrix[12]+=.01
         changed=replace(reg,body=(replace(reg.body[0],matrix=tuple(matrix)),)+reg.body[1:])
         with self.assertRaises(CharacterRegistryError):validate_rebuild_layout(reg,changed)
+
+    def test_transfer_allows_no_legacy_spaces_and_still_checks_body_motion(self):
+        matrix=self.snapshot.registration.body[0].matrix
+        before=((1.,(('Root',matrix),),(),(),()),)
+        self.assertEqual(character_transfer_error(before,before),0.)
+        changed=list(matrix);changed[12]+=2.
+        after=((1.,(('Root',tuple(changed)),),(),(),()),)
+        self.assertEqual(character_transfer_error(before,after),2.)
+        from adv_py.core.fit_settings import FitSkeletonValidationError
+        with self.assertRaises(FitSkeletonValidationError):
+            character_transfer_error(before,((1.,(('Root',matrix),),(('space',matrix),),(),()),))

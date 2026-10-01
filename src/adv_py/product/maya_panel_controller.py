@@ -898,7 +898,8 @@ class MayaPanelController:
         if progress:
             progress("替换完成，原角色与保留数据已复核")
         return PanelCharacter(namespace, True, len(result.registration.body),
-                              len(result.registration.channels))
+                              len(result.registration.channels),
+                              segment_joint_count=len(result.segment_influences))
 
     def spine_replace(self, namespace: str, replacement: str,
                       skins: tuple[tuple[str, str], ...], *, start: int,

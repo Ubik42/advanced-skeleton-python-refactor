@@ -260,6 +260,7 @@ def capture_extension(host,node):
 
 
 def capture(host,registration,extensions):
+    from adv_py.core.character_generated_attributes import GENERATED_CHARACTER_ATTRIBUTES
     c=host._cmds
     curves=set()
     for channel in registration.channels:
@@ -284,6 +285,12 @@ def capture(host,registration,extensions):
         if member.path==registration.container or member.path.startswith(registration.container+'|'):continue
         if not c.listAttr(member.path,userDefined=True):continue
         row=capture_extension(host,member.path)
+        # Internal graph manifests contain evaluated bind constants and physical
+        # namespace paths. They are not user properties to copy over a newly
+        # built, independently audited rig.
+        row=replace(row,attributes=tuple(attribute for attribute in row.attributes
+            if attribute[0] not in GENERATED_CHARACTER_ATTRIBUTES))
+        if not row.attributes:continue
         plugs={row.path+'.'+a[0] for a in row.attributes}
         properties.append(replace(row,parent=None,matrix=None,connections=tuple((a,b) for a,b in row.connections if a in plugs or b in plugs)))
     # MEL retains Geometry itself on rebuild. The Python replacement creates a

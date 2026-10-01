@@ -196,7 +196,10 @@ class OrientSimpleFitChain:
                     raise RuntimeError(
                         f"Fit joint 朝向修改后复检失败：{path} 轴向不一致"
                     )
-            elif state.joint_orient != before_orient[path].joint_orient:
+            elif any(abs(a-b) > 1e-5
+                     for current, old in zip(state.world_axes, before_orient[path].world_axes)
+                     for a,b in zip(current,old)) or any(abs(a-b) > 1e-5
+                     for a,b in zip(state.rotation,before_orient[path].rotation)):
                 raise RuntimeError(
                     f"Fit joint 朝向修改后复检失败：{path} 被意外修改"
                 )
@@ -317,7 +320,10 @@ class OrientWorldFitJoints:
                     raise RuntimeError(
                         f"worldOrient 修改后复检失败：{path} 世界轴不一致"
                     )
-            elif state.joint_orient != before_orient[path].joint_orient:
+            elif any(abs(a-b) > 1e-5
+                     for current, old in zip(state.world_axes, before_orient[path].world_axes)
+                     for a,b in zip(current,old)) or any(abs(a-b) > 1e-5
+                     for a,b in zip(state.rotation,before_orient[path].rotation)):
                 raise RuntimeError(
                     f"worldOrient 修改后复检失败：{path} 被意外修改"
                 )

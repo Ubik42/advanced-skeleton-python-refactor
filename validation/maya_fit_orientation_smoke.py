@@ -113,11 +113,10 @@ def main(output: Path) -> int:
             all(abs(value) <= 1e-5 for value in state.rotation)
             for state in result.verified.joints
         )
-        end_unchanged = result.verified.joints[-1].joint_orient == (
-            0.0,
-            0.0,
-            0.0,
-        )
+        end_unchanged = all(abs(a-b)<=1e-5
+            for current,previous in zip(result.verified.joints[-1].world_axes,
+                                         before.joints[-1].world_axes)
+            for a,b in zip(current,previous))
         selection_preserved = (cmds.ls(selection=True) or []) == [marker]
         repeat_plan = use_case.plan(request, container)
         idempotent = not repeat_plan.changes
@@ -154,11 +153,13 @@ def main(output: Path) -> int:
         )
         cmds.select(marker, replace=True)
         cmds.file(modified=False)
-        branch_without_selection_blocked = False
+        branch_default_child_selected = False
         try:
-            use_case.apply(FitOrientationRequest(("Root",)), container)
+            automatic=use_case.plan(FitOrientationRequest(("Root",)),container)
+            branch_default_child_selected=bool(automatic.changes and
+                automatic.changes[0].child.endswith('|Spine1'))
         except FitOrientationValidationError:
-            branch_without_selection_blocked = True
+            branch_default_child_selected = False
         branch_preflight_clean = not bool(cmds.file(query=True, modified=True))
 
         branch_before = host.capture_fit_orientation(container)
@@ -168,6 +169,7 @@ def main(output: Path) -> int:
         branch_orients = {
             state.joint: state.joint_orient for state in branch_before.joints
         }
+        branch_axes={state.joint:state.world_axes for state in branch_before.joints}
         branch_request = FitOrientationRequest(
             ("Root",),
             (FitOrientationChildSelection("Root", "Clavicle"),),
@@ -186,7 +188,8 @@ def main(output: Path) -> int:
             for node in branch_result.verified.hierarchy.joints
         )
         branch_child_orients_preserved = all(
-            state.joint_orient == branch_orients[state.joint]
+            all(abs(a-b)<=1e-5 for current,previous in zip(state.world_axes,
+                branch_axes[state.joint]) for a,b in zip(current,previous))
             for state in branch_result.verified.joints
             if state.joint != root
         )
@@ -219,7 +222,7 @@ def main(output: Path) -> int:
                 restored,
                 container_survived,
                 marker_survived,
-                branch_without_selection_blocked,
+                branch_default_child_selected,
                 branch_preflight_clean,
                 branch_selected_child,
                 branch_positions_preserved,
@@ -244,17 +247,17 @@ def main(output: Path) -> int:
             "world_positions_preserved": positions_preserved,
             "parallel_up_fallback_verified": secondary_fallback,
             "rotate_channels_remained_zero": rotates_zero,
-            "end_joint_orient_unchanged": end_unchanged,
+            "end_joint_world_axes_preserved": end_unchanged,
             "selection_preserved": selection_preserved,
             "repeat_plan_is_noop": idempotent,
             "single_undo_restored_joint_orient": restored,
             "container_survived_undo": container_survived,
             "unrelated_node_survived": marker_survived,
-            "branch_without_selection_blocked": branch_without_selection_blocked,
+            "branch_original_default_child_selected": branch_default_child_selected,
             "branch_preflight_did_not_modify_scene": branch_preflight_clean,
             "branch_selected_child_used": branch_selected_child,
             "branch_world_positions_preserved": branch_positions_preserved,
-            "all_branch_child_orients_preserved": branch_child_orients_preserved,
+            "all_branch_child_world_axes_preserved": branch_child_orients_preserved,
             "branch_selection_preserved": branch_selection_preserved,
             "branch_repeat_plan_is_noop": branch_idempotent,
             "branch_single_undo_restored_orientation": branch_undo_restored,

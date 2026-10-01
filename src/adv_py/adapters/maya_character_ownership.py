@@ -128,6 +128,16 @@ def _graph(host,names,*,external_conversions=()):
     aliases={node:role for role,node in nodes.items()}
     def normalize(plug):
         node,attr=plug.split('.',1)
+        if attr=='instObjGroups':
+            attr='instObjGroups[0]'
+        if (node in ('AllSet','ControlSet','DeformSet','Sets')
+                and c.nodeType(node)=='objectSet'
+                and attr.startswith(('dagSetMembers[','dnSetMembers['))
+                and attr.endswith(']')):
+            # Maya assigns sparse physical member indices in insertion order.
+            # Compare the same member→set edge without that storage index;
+            # changing the member or owning set still changes the graph.
+            attr=attr.split('[',1)[0]+'[*]'
         return aliases.get(node,node)+'.'+attr
     return nodes,tuple(sorted((normalize(a),normalize(b)) for a,b in edges))
 
@@ -181,7 +191,7 @@ def audit(host,staged):
             raise CharacterRegistryError('旧 Rig 节点被引用或锁定：'+old)
         extra=set(a.listAttr(old,userDefined=True) or [])-set(b.listAttr(new,userDefined=True) or [])
         if extra-properties.get(old,set()):
-            raise CharacterRegistryError('旧 Rig 节点有未采集的附加属性：'+old)
+            raise CharacterRegistryError('旧 Rig 节点有未采集的附加属性：'+old+' '+repr(sorted(extra-properties.get(old,set()))))
         if kind=='unitConversion' and a.getAttr(old+'.conversionFactor')!=b.getAttr(new+'.conversionFactor'):
             raise CharacterRegistryError('单位转换系数被修改：'+old)
         if kind in ('animCurveUA','animCurveUL','animCurveUT','animCurveUU'):
@@ -257,6 +267,13 @@ def audit(host,staged):
         root+suffix for root, identities, _, _ in (staged.authored_geometry or ())
         for suffix, _, _ in identities)
     retained_mesh_nodes.update(external_conversions)
+    retained_mesh_nodes.update(skin.node for skin in original.skins)
+    retained_mesh_nodes.update(deformer.node for deformer in original.deformers)
+    from adv_py.core.character_identity import SHARED_NODES
+    retained_mesh_nodes.update(SHARED_NODES)
+    for skin in original.skins:
+        retained_mesh_nodes.update(host._cmds.listConnections(
+            skin.node+'.bindPose',s=True,d=False) or [])
     permitted.update(
         edge for edge in old_edges
         if any(plug.split('.', 1)[0] == 'AllSet' for plug in edge)

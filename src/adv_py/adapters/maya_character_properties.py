@@ -27,9 +27,10 @@ def plan(host,original,namespace):
                 definition=lambda item:(item[0],item[1],tuple(
                     (key,value) for key,value in item[5] if key!='channelBox'))
                 return definition(left)==definition(right)
-            if any(not equivalent(name) for name in existing):
+            differences=tuple(name for name in sorted(existing) if not equivalent(name))
+            if differences:
                 raise CharacterRegistryError(
-                    '目标 Rig 同名用户属性与原角色不同：'+row.path)
+                    '目标 Rig 同名用户属性与原角色不同：'+row.path+' '+repr(differences))
         attributes=tuple(a for a in row.attributes
                          if a[0]!='lockInfluenceWeights'
                          and (not c.objExists(row.path+'.'+a[0])

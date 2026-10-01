@@ -1,0 +1,27 @@
+"""Build-owned metadata is regenerated, while authored attributes are retained.
+
+This is a closed list rather than an ``advPy`` prefix filter: an unknown user
+attribute survives even when its name resembles the implementation's markers.
+The character registry and feature audits validate the replacement graph.
+"""
+
+GENERATED_CHARACTER_ATTRIBUTES = frozenset('''
+advPyArtifactKind advPyAuxiliaryInfluenceKind advPyAxialBodyOwner
+advPyBendyAdditiveMicroScale advPyBendyBindU advPyBendyGuideOwner
+advPyBendyLocalChildFactor advPyBendyMainInfluenceFollow advPyBendyOpmOffsetScale
+advPyBendyOrientedBind advPyBendyPartSpanIcon advPyBendyResidualFalloff
+advPyBendySecondaryMatrixFollow advPyBodyJointCount advPyEyeDepthCorrection
+advPyFitHasDeformProfile advPyGameRootMotionOwner advPyHandSourceIconSize
+advPyHeadAimAxes advPyHeadSquashOwner advPyHipSwingOwner advPyIconMirrored
+advPyIconTemplate advPyIkAlignOwner advPyInbetweenFkOwner advPyNoControl
+advPyOrientationOwner advPyOwner advPyPriorMatrixSource advPyRegistryDocument
+advPyRegistryOwner advPySchemaVersion advPyShapeOwner advPySkinEnabled
+advPySourceBendyMatrix advPySourceBodyMatrix advPySourceContainer
+advPySourceEndMatrix advPySourceFkMatrix advPySourceFkPoint advPySourceJoint
+advPySourceLegLockMatrix advPySourceLimbAim advPySourceRpDynamics
+advPySourceRpPartScale advPySourceRpPolePlacement advPySourceRpPoleSources
+advPySourceRpScaleLayout advPySourceRpXTranslation advPySourceUnTwisterReceiver
+advPySpaceOwner advPySpineOwner advPySpineSolverOwner advPySplineEndUpBind
+advPySplineIKLocalBind advPySplineOwner advPySplineRestArc advPySplineRestLocal
+advPyStaticTwistOwner advPyTwistReferenceOwner
+'''.split())

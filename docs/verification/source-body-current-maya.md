@@ -23,10 +23,20 @@
 
 该代理网格用于验证原生蒙皮和动画连通性，不代表复杂人体模型的权重质量、控制器全部动作、原版界面视觉或全功能验收。
 
-## 原位重建尚未通过
+## 原位重建的本批修复
 
 重建已改用既有嵌套 Fit 导出合同。旧 Fit 缺少的可选设置仅在暂存文档补齐原版关闭默认值，源容器不被改写。暂存恢复实际 Fit 通道锁定、显示状态、旋转顺序、segmentScaleCompensate 和兄弟顺序；选择集在兼容处理之后再创建。
 
-新旧控制语义与 Body 拓扑现在一致。绑定矩阵检查仍发现 Toes／ToesEnd、RingFinger 和 PinkyFinger 的差异，最大矩阵元素差约 0.963；原位替换未获通过。此结果不能写成“重建保留蒙皮／动画成功”。下一步核对 Fit 往返与来源分支 FK／脚趾驱动的保存策略，维持现有严格检查。
+原先 Toes／ToesEnd、RingFinger 和 PinkyFinger 的绑定矩阵差异已经定位并修复。原版 MEL 6815–7350 在瞄准父关节时保留子关节的世界朝向；此前 Python 保存并恢复的是旧局部 jointOrient，导致子关节跟着父关节转动。现按原版保留直接子关节的世界轴与后代位置，并补 Cup、Eye、LegAim、AimAt、FreeOrient 和偏离中心的 Root 分支。真实 biped 的新旧绑定矩阵检查已通过，未放宽比较阈值。
+
+重建同时恢复原 Fit 实际存在的 fat／fatFront／fatWidth／fatY／fatZ，保留生成的 ControlSet／DeformSet 成员；来源构建默认 DeformSet 包含实际 Part。修复暂存命名空间下 addElement 等集合目标解析，避免新角色写入旧角色集合。保留用户属性时仅排除明确列出的构建元数据，未知用户属性继续交接。FK 缩放、LegLock 和 UnTwister 根据实际连接及 AllSet 中的所属节点恢复。
+
+蒙皮、生产变形器和用户附件的集合交接使用 Maya 原生成员操作，比较成员关系而非可重排的稀疏槽位；原生 Skin、动画曲线及权重检查继续保留。Skin 成员写入兼容传统 deformerSet 与 component tags，修改后主动求值，确保 FBX 复制立即读取到实际的局部成员。局部蒙皮两种模式的变形、撤销、保存重开及恢复完整成员检查已通过。
+
+真实 biped 的同布局原位替换及蒙皮／动画保留已通过，记录为 `validation/results/maya2024-empty-space-rebuild-20261001.log`。普通来源角色没有旧式空间接收器时，姿态和动画文件允许空空间列表，仍严格比较 Body 姿态以及实际存在的空间。Fit 朝向独立检查全部通过，记录为 `validation/results/maya2024-fit-world-frame-20261001.json`。
+
+本批最终扩展检查已通过：局部蒙皮、姿态／动画 JSON 往返、带 Skin FBX、原位重建、原生 Skin／角色动画曲线 UUID 保留、ControlSet／DeformSet 成员保留、暂存命名空间清理、单次撤销重做、网格动画采样，以及重建场景保存重开。结果为 `validation/results/biped-rebuild-undo-accepted-20261001/original-biped-current.json`；日志为 `validation/results/maya2024-biped-rebuild-undo-accepted-20261001.log`。该结果针对原版 biped 的同布局重建及代理网格，不扩大到主动变更控制数量、任意用户附件或完整 Face。
+
+最后一项实际修复是撤销重做恢复：Maya 世界变换命令在重做时依赖逐步恢复中的父级，原有局部通道终值记录漏过了被锁定的通道。现对新建、没有输入连接的局部通道记录终值，临时解锁写回后恢复锁定；已有节点和驱动通道仍不被改写。严格 Spline 局部绑定矩阵复检、变形采样和重建保存重开均通过。最后静态解析 738 个 Python 源文件，姿态／重建数据的 11 项定向测试通过。
 
 主动改变 Spline 控制数量、旧 0–1 模式显式升级、完整 Face 及覆盖矩阵其余缺口不在本次通过范围。全量 Goal 仍未完成。

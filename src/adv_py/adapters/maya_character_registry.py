@@ -1057,7 +1057,7 @@ class MayaCharacterRegistryMixin:
             raise CharacterRegistryError('重建暂存的父命名空间不存在')
 
     def capture_character_rebuild_fit_channels(self,container):
-        """Keep native Fit channel locks and sibling order during staging."""
+        """Keep native Fit channel state, volume values and sibling order."""
         c=self._cmds
         rows=[]
         for node in self.capture_fit_hierarchy(container).joints:
@@ -1066,9 +1066,13 @@ class MayaCharacterRegistryMixin:
                 bool(c.getAttr(node.path+'.'+kind+axis,keyable=True)),
                 bool(c.getAttr(node.path+'.'+kind+axis,channelBox=True)))
                 for kind in ('translate','rotate','scale') for axis in 'XYZ')
+            volumes=tuple((attr,c.getAttr(node.path+'.'+attr,type=True),
+                           float(c.getAttr(node.path+'.'+attr)))
+                for attr in ('fat','fatFront','fatWidth','fatY','fatZ')
+                if c.attributeQuery(attr,node=node.path,exists=True))
             rows.append((node.short_name.rsplit(':',1)[-1],parent,node.sibling_index,
                 int(c.getAttr(node.path+'.rotateOrder')),
-                bool(c.getAttr(node.path+'.segmentScaleCompensate')),channels))
+                bool(c.getAttr(node.path+'.segmentScaleCompensate')),channels,volumes))
         return tuple(rows)
 
     def restore_character_rebuild_fit_channels(self,rows,container='FitSkeleton'):
@@ -1078,7 +1082,7 @@ class MayaCharacterRegistryMixin:
                for node in self.capture_fit_hierarchy(container).joints}
         if len(nodes)!=len(rows) or set(nodes)!={row[0] for row in rows}:
             raise CharacterRegistryError('重建 Fit 通道来源拓扑不一致')
-        for name,parent,index,rotate_order,compensate,channels in sorted(rows,key=lambda row:row[2],reverse=True):
+        for name,parent,index,rotate_order,compensate,channels,volumes in sorted(rows,key=lambda row:row[2],reverse=True):
             node=nodes[name]
             if node.dag_parent.rsplit('|',1)[-1].rsplit(':',1)[-1]!=parent:
                 raise CharacterRegistryError('重建 Fit 通道来源父级不一致：'+name)
@@ -1086,6 +1090,13 @@ class MayaCharacterRegistryMixin:
             c.reorder(node.path,front=True)
             c.setAttr(node.path+'.rotateOrder',rotate_order)
             c.setAttr(node.path+'.segmentScaleCompensate',compensate)
+            for attr,datatype,value in volumes:
+                if datatype not in ('double','float'):
+                    raise CharacterRegistryError('重建 Fit 体积属性类型无效：'+name+'.'+attr)
+                if not c.attributeQuery(attr,node=node.path,exists=True):
+                    c.addAttr(node.path,longName=attr,attributeType=datatype,
+                              minValue=0,defaultValue=value,keyable=True)
+                c.setAttr(node.path+'.'+attr,value)
             for attr,locked,keyable,channel_box in channels:
                 c.setAttr(node.path+'.'+attr,lock=locked,keyable=keyable,
                           channelBox=channel_box)

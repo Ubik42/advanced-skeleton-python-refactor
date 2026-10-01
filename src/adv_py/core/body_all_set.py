@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from .character_identity import SHARED_NODES
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +40,7 @@ def plan_body_all_set(
     current = {node.path for node in after}
     if any(path not in current for path in proximity_pin_sources):
         raise ValueError("AllSet proximityPin 源节点不在当前角色中")
-    excluded = {"Sets", "AllSet", geometry, *proximity_pin_sources}
+    excluded = {"Sets", "AllSet", geometry, *proximity_pin_sources,*SHARED_NODES}
     members = []
     for node in after:
         path = node.path

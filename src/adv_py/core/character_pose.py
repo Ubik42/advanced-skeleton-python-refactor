@@ -18,8 +18,8 @@ class CharacterPose:
     body_frames: tuple[tuple[str, tuple[float, ...]], ...]
 
 
-def _rows(value, convert):
-    if not isinstance(value,(list,tuple)) or not value:
+def _rows(value, convert, *, allow_empty=False):
+    if not isinstance(value,(list,tuple)) or not value and not allow_empty:
         raise CharacterRegistryError("姿态数据必须是非空列表")
     rows=[]
     for row in value:
@@ -51,8 +51,10 @@ def decode_character_pose(text):
     raw=exact(doc["payload"],("compatibility","channels","spaces","space_frames","body_frames"))
     if doc["digest"]!=digest(raw) or not isinstance(raw["compatibility"],str) or not re.fullmatch(r"[0-9a-f]{64}",raw["compatibility"]):
         raise CharacterRegistryError("姿态内容或兼容摘要无效")
-    return CharacterPose(raw["compatibility"],_rows(raw["channels"],finite),_rows(raw["spaces"],_space),
-                         _rows(raw["space_frames"],_matrix),_rows(raw["body_frames"],_matrix))
+    return CharacterPose(raw["compatibility"],_rows(raw["channels"],finite),
+                         _rows(raw["spaces"],_space,allow_empty=True),
+                         _rows(raw["space_frames"],_matrix,allow_empty=True),
+                         _rows(raw["body_frames"],_matrix))
 
 
 def encode_character_pose(pose):

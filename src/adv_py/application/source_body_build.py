@@ -733,6 +733,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         rig, source_character_channels(rig)) if defer_registration
         else RegisterBodyCharacter(host).apply(rig))
     finalize_body_character_sets(host, registration, rig_plan,
+        segments=(tuple(part.name for part in build.fit_parts)
+                  if part_result is not None else ()),
         scene_before=scene_before, fit_container=fit,
         create_sets=not defer_selection_sets,
         populate_all=not (defer_selection_sets or defer_all_set))

@@ -30,6 +30,16 @@ class CharacterPoseTests(unittest.TestCase):
         validate_character_pose(self.pose,self.registry)
         self.assertEqual(character_pose_error(self.pose,self.pose),0)
 
+    def test_source_character_without_legacy_space_receivers_roundtrips(self):
+        registration=replace(self.registry,spaces=replace(self.registry.spaces,spaces=()))
+        pose=pose_fixture(registration)
+        self.assertEqual(pose.spaces,())
+        self.assertEqual(decode_character_pose(encode_character_pose(pose)),pose)
+        validate_character_pose(pose,registration)
+        self.assertEqual(character_pose_error(pose,pose),0)
+        with self.assertRaises(CharacterRegistryError):
+            validate_character_pose(replace(pose,space_frames=self.pose.space_frames),registration)
+
     def test_legacy_same_scene_pose_can_upgrade_to_portable_digest(self):
         first=self.registry.body[1]
         matrix=list(first.matrix)

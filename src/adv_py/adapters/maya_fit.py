@@ -1028,8 +1028,12 @@ class MayaFitJointHost:
                 children=False,
                 zeroScaleOrient=True,
             )
-        for child_path, orientation in preserved_children:
-            self._cmds.setAttr(f"{child_path}.jointOrient", *orientation)
+        if change.preserved_child_world_axes:
+            for child_path, axes in change.preserved_child_world_axes:
+                self._set_joint_world_axes(child_path, axes)
+        else:
+            for child_path, orientation in preserved_children:
+                self._cmds.setAttr(f"{child_path}.jointOrient", *orientation)
         for descendant, position in descendant_paths:
             self._cmds.xform(
                 descendant,
@@ -1140,8 +1144,12 @@ class MayaFitJointHost:
 
         self._transaction_changed = True
         self._set_joint_world_axes(joint, change.desired_world_axes)
-        for child_path, orientation in preserved_children:
-            self._cmds.setAttr(f"{child_path}.jointOrient", *orientation)
+        if change.preserved_child_world_axes:
+            for child_path, axes in change.preserved_child_world_axes:
+                self._set_joint_world_axes(child_path, axes)
+        else:
+            for child_path, orientation in preserved_children:
+                self._cmds.setAttr(f"{child_path}.jointOrient", *orientation)
         for descendant, descendant_position in descendants:
             self._cmds.xform(
                 descendant,
@@ -1574,7 +1582,8 @@ class MayaFitJointHost:
                 for axis in ("XY", "XZ", "YZ") if channel == "shear" else "XYZ":
                     plug = node + "." + channel + axis
                     if (c.objExists(plug)
-                            and c.getAttr(plug, settable=True)
+                            and (c.getAttr(plug, settable=True)
+                                 or c.getAttr(plug, lock=True))
                             and not c.listConnections(
                                 plug, source=True, destination=False)):
                         rows.append((plug, c.getAttr(plug), c.getAttr(plug, lock=True)))

@@ -17,6 +17,40 @@ def _curve_name(curve):
     return curve.node.rsplit(':',1)[-1]
 
 
+def _move_set_member(c,source,destination,new_source,new_destination):
+    """Let Maya allocate set storage rather than copying an occupied index."""
+    member,attribute=source.split('.',1)
+    owner,slot=destination.split('.',1)
+    if (c.nodeType(owner)!='objectSet'
+            or not slot.startswith(('dnSetMembers[','dagSetMembers['))
+            or attribute not in ('message','instObjGroups','instObjGroups[0]')):
+        return False
+    replacement=new_source.split('.',1)[0]
+    new_owner=new_destination.split('.',1)[0]
+    if c.nodeType(new_owner)!='objectSet' or not c.sets(member,isMember=owner):
+        raise CharacterRegistryError('保留选择集成员在交接前发生变化：'+source)
+    c.sets(member,remove=owner)
+    c.sets(replacement,addElement=new_owner)
+    if not c.sets(replacement,isMember=new_owner):
+        raise RuntimeError('选择集成员交接失败：'+new_source)
+    return True
+
+
+def _set_connection_identity(host,edges):
+    """Retain each exact member/set relationship, independent of sparse slots."""
+    c=host._cmds
+    result=[]
+    for source,destination in edges:
+        node,attribute=destination.split('.',1)
+        if (c.nodeType(node)=='objectSet'
+                and attribute.startswith(('dnSetMembers[','dagSetMembers['))):
+            destination=node+'.'+attribute.split('[',1)[0]+'[*]'
+            member,output=source.split('.',1)
+            if output=='instObjGroups':source=member+'.instObjGroups[0]'
+        result.append((source,destination))
+    return tuple(sorted(result))
+
+
 def _sample_numeric_attribute(c,plug,datatype,frame):
     value=c.getAttr(plug,time=frame)
     if datatype=='matrix':
@@ -211,6 +245,7 @@ def transfer(host,staged):
                 x,y=redirect(a),redirect(b)
                 if (a,b)!=(x,y):
                     if not c.isConnected(a,b):raise CharacterRegistryError('蒙皮接线在交接前变化')
+                    if _move_set_member(c,a,b,x,y):continue
                     c.disconnectAttr(a,b);c.connectAttr(x,y)
             bindposes=c.listConnections(host.scene_address(skin.node)+'.bindPose',s=True,d=False) or []
             for bindpose in bindposes:
@@ -257,6 +292,7 @@ def transfer(host,staged):
                 if not c.isConnected(a,b):
                     raise CharacterRegistryError(
                         '生产变形器接线在交接前变化：'+deformer.node)
+                if _move_set_member(c,a,b,x,y):continue
                 with _writable_connection(c,b,y):
                     c.disconnectAttr(a,b)
                     c.connectAttr(x,y)
@@ -334,6 +370,7 @@ def transfer(host,staged):
             x,y=live_redirect(a),live_redirect(b)
             if (a,b)!=(x,y) and not c.isConnected(x,y):
                 if not c.isConnected(a,b):raise CharacterRegistryError('附件接线在交接前变化')
+                if _move_set_member(c,a,b,x,y):continue
                 with _writable_connection(c,b,y):
                     c.disconnectAttr(a,b);c.connectAttr(x,y)
         # Retained DAG objects are reparented by UUID, with their local channels
@@ -422,13 +459,17 @@ def verify_retained(host,staged):
             connections=tuple(sorted((local(a),local(b)) for a,b in skin.connections)),
             influence_locks=tuple(sorted((i,local(path+'.lockInfluenceWeights').rsplit('.',1)[0],value,locked)
                 for i,path,value,locked in skin.influence_locks)))
+        actual=replace(actual,connections=_set_connection_identity(host,actual.connections))
+        expected=replace(expected,connections=_set_connection_identity(host,expected.connections))
         if actual!=expected:
             raise RuntimeError('交接改变了原蒙皮数据')
     from .maya_character_preservation import capture_deformers
     captured_deformers=capture_deformers(host,staged.original.skins)
     expected_deformers=tuple(replace(row,
-        connections=tuple(sorted((local(a),local(b)) for a,b in row.connections)))
+        connections=_set_connection_identity(host,tuple((local(a),local(b)) for a,b in row.connections)))
         for row in staged.original.deformers)
+    captured_deformers=tuple(replace(row,connections=_set_connection_identity(host,row.connections))
+                            for row in captured_deformers)
     if captured_deformers!=expected_deformers:
         raise RuntimeError('交接改变了生产变形器参数、连接或网格顺序')
     actual_conversions=host.capture_character_deformer_conversions(
@@ -452,6 +493,8 @@ def verify_retained(host,staged):
                          else local(row.parent) if row.parent else None)
         expected=replace(row,path=local(row.path),parent=expected_parent,
             connections=tuple(sorted((local(a),local(b)) for a,b in row.connections)))
+        actual=replace(actual,connections=_set_connection_identity(host,actual.connections))
+        expected=replace(expected,connections=_set_connection_identity(host,expected.connections))
         if actual!=expected:
             changed=[field.name for field in fields(row) if getattr(actual,field.name)!=getattr(expected,field.name)]
             changed_attrs=[a[0] for a,b in zip(actual.attributes,expected.attributes) if a!=b]
@@ -463,4 +506,6 @@ def verify_retained(host,staged):
         plugs={row.path+'.'+a[0] for a in row.attributes}
         actual_edges=tuple((a,b) for a,b in actual.connections if a in plugs or b in plugs)
         expected_edges=tuple(sorted((target._cmds.identity.to_local(physical(a)),target._cmds.identity.to_local(physical(b))) for a,b in row.connections))
+        actual_edges=_set_connection_identity(target,actual_edges)
+        expected_edges=_set_connection_identity(target,expected_edges)
         if actual_edges!=expected_edges:raise RuntimeError('控制器用户属性连接复检失败：'+row.path)
