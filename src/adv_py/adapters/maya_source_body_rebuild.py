@@ -13,6 +13,7 @@ def capture_fk_policy(host, registration):
         leaf = node.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
         if (node.node_type == "transform" and leaf.startswith("AdvPy_")
                 and leaf.endswith("FK")
+                and not leaf.endswith("_InbetweenFK")
                 and "|AdvPy_GenericFKControls|" in node.path):
             controls[leaf.removeprefix("AdvPy_")] = node.path
     if "Root_MFK" not in controls:

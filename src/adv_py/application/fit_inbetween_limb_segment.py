@@ -86,8 +86,9 @@ class BuildInbetweenLimbSegments:
     def apply(
         self,
         bindings: tuple[InbetweenLimbBinding, ...],
-        rig: BodyCharacterRigBuildPlan,
+        rig: BodyCharacterRigBuildPlan | None,
         *,
+        solver_mapping: InbetweenIkSolverMapping | None = None,
         sub_controllers: bool = False,
         extra_controllers: bool = False,
     ) -> InbetweenLimbSegmentsResult:
@@ -96,9 +97,14 @@ class BuildInbetweenLimbSegments:
         part_keys = tuple(binding.parts[0].name for binding in bindings)
         if len(set(part_keys)) != len(part_keys):
             raise ValueError("Inbetween 骨段首个 Part 身份重复")
-        mapping = plan_character_inbetween_ik_solvers(
-            tuple(binding for binding in bindings
-                  if binding.spline_root_path is None), rig)
+        if solver_mapping is None:
+            if rig is None:
+                raise ValueError("Inbetween 需要真实 Rig 或已解析的求解链")
+            mapping = plan_character_inbetween_ik_solvers(
+                tuple(binding for binding in bindings
+                      if binding.spline_root_path is None), rig)
+        else:
+            mapping = solver_mapping
         ik_by_part = {
             segment.parts[0].body_part_name: segment
             for request in mapping.requests

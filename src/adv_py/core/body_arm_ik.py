@@ -10,7 +10,7 @@ from .body_controller_layers import (
 )
 from .body_controller_appearance import body_fk_curve_radius
 from .body_limb_ik import BodyLimbIkValidationError, solve_limb_pole_position
-from .body_limb_mechanisms import expanded_ik_solver_chain
+from .body_limb_mechanisms import expanded_ik_solver_chain, body_limb_token_valid, body_limb_sides_valid
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
 
@@ -117,6 +117,7 @@ def plan_body_arm_ik(
     align_helpers: bool = True,
     joint_names: tuple[str, ...] = ("Shoulder", "Elbow", "Wrist"),
     limb_label: str = "Arm",
+    sides: tuple[FitBuildSide, ...] = (FitBuildSide.RIGHT,FitBuildSide.LEFT),
 ) -> BodyArmIkPlan:
     if (type(sub_controllers) is not bool or type(extra_controllers) is not bool
             or type(align_helpers) is not bool):
@@ -129,9 +130,9 @@ def plan_body_arm_ik(
         for value in (radius, pole_distance_scale)
     ):
         raise BodyArmIkValidationError("IK 控制尺寸参数必须是正有限数值")
-    if (len(joint_names) < 3 or len(set(joint_names)) != len(joint_names)
-            or any(not name or not name[0].isalpha() or not name.isalnum()
-                   for name in joint_names) or (not limb_label or not limb_label[0].isalpha() or not limb_label.isalnum())):
+    if (not body_limb_sides_valid(sides) or len(joint_names) < 3 or len(set(joint_names)) != len(joint_names)
+            or any(not body_limb_token_valid(name)
+                   for name in joint_names) or not body_limb_token_valid(limb_label)):
         raise BodyArmIkValidationError("IK 关节链或系统名称无效")
     body_by_name = {joint.name: joint for joint in body.joints}
     fk_by_source = {joint.source_joint: joint.path
@@ -143,7 +144,8 @@ def plan_body_arm_ik(
                    else "")
     root_path = root_parent + "|" + root_name
     limbs = []
-    for side_name, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
+    for side in sides:
+        side_name = side.value
         source_chain = tuple(body_by_name[f"{name}_{side_name}"] for name in joint_names)
         middle_index = len(source_chain) - 1 - len(source_chain) // 2
         sources = (source_chain[0], source_chain[middle_index], source_chain[-1])

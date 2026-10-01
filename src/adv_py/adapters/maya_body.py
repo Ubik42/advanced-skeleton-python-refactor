@@ -10027,9 +10027,17 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_spline import prepare
         prepare(self, plan)
 
+    def capture_source_body_spline_positions(self, plan):
+        from .maya_source_spline_cv import capture_control_positions
+        return capture_control_positions(self, plan)
+
     def create_source_body_spline(self, plan) -> None:
         from .maya_spline import create
         create(self, plan)
+
+    def connect_source_body_spline_visibility(self, plan, fk) -> None:
+        from .maya_source_spline_visibility import create
+        create(self,plan,fk)
 
     def connect_source_body_limb_follow(self, body, mechanisms) -> None:
         """Follow the real parent of an imported IK start, outside its blend."""

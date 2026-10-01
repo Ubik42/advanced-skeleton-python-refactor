@@ -23,6 +23,12 @@ def decode_spline(raw, body):
         raw = {**raw, 'sub_targets': [], 'extra_curve': False}
     if isinstance(raw, dict) and 'fk_root_point_from_receiver' not in raw:
         raw = {**raw, 'fk_root_point_from_receiver': False}
+    if isinstance(raw, dict) and 'source_curve_points' not in raw:
+        raw = {**raw, 'source_curve_points': [], 'fake_mid_control': False}
+    if isinstance(raw, dict):
+        for key, value in (('source_hybrid_graph',False),('source_control_axes',[]),('source_ik_local',False),('source_cv_axes',[])):
+            if key not in raw:
+                raw = {**raw,key:value}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     if type(raw['use_offset_parent_matrix']) is not bool:
         raise CharacterRegistryError('Spline OPM 开关无效')
@@ -66,6 +72,23 @@ def decode_spline(raw, body):
                              for i,left in enumerate(axes) for j,right in enumerate(axes)):
         raise CharacterRegistryError('曲线脊柱朝向必须正交归一')
     positions = tuple(vector(position, 3) for position in raw['positions'])
+    source_points = tuple(vector(position,3) for position in raw['source_curve_points'])
+    control_axes = tuple(tuple(vector(axis,3) for axis in frame) for frame in raw['source_control_axes'])
+    cv_axes = tuple(tuple(vector(axis,3) for axis in frame) for frame in raw['source_cv_axes'])
+    if cv_axes and (not source_points or len(cv_axes)!=len(source_points) or any(
+            len(frame)!=3 or any(abs(sum(a*b for a,b in zip(left,right))-(i==j))>1e-5
+                for i,left in enumerate(frame) for j,right in enumerate(frame)) for frame in cv_axes)):
+        raise CharacterRegistryError('来源 Spline CV 朝向声明无效')
+    if (type(raw['fake_mid_control']) is not bool
+            or source_points and len(source_points)!=count
+            or raw['fake_mid_control'] and not source_points):
+        raise CharacterRegistryError('来源 Spline 曲线点或补充中间控制标记无效')
+    if (type(raw['source_hybrid_graph']) is not bool or type(raw['source_ik_local']) is not bool
+            or (raw['source_hybrid_graph'] or raw['source_ik_local'] or control_axes) and not source_points
+            or control_axes and (len(control_axes)!=len(positions) or any(
+                len(frame)!=3 or any(abs(sum(a*b for a,b in zip(left,right))-(i==j))>1e-5
+                    for i,left in enumerate(frame) for j,right in enumerate(frame)) for frame in control_axes))):
+        raise CharacterRegistryError('来源 Spline Hybrid 或控制朝向声明无效')
     targets = tuple(path(target) for target in raw['targets'])
     subs = tuple(path(target) for target in raw['sub_targets'])
     if subs and (len(subs) != len(targets) or any(
@@ -84,6 +107,8 @@ def decode_spline(raw, body):
             raise CharacterRegistryError('Spline IK Offset 层级无效')
     if raw['isolated_mid_follow_graph']:
         for index, target in enumerate(targets):
+            if raw['source_hybrid_graph'] and index in (0,len(targets)-1):
+                continue
             parent = (raw['pelvis_control']+'|AdvPy_SplineIKFollowMain'
                       if 0<index<len(targets)-1 else raw['pelvis_control'])
             offset = parent+f'|AdvPy_SplineIK{index}Offset'
@@ -92,9 +117,13 @@ def decode_spline(raw, body):
             if target != expected:
                 raise CharacterRegistryError('曲线脊柱 IK 控制器层级与跟随模式不一致')
     controls = tuple(path(control) for control in raw['fk_controls'])
-    if (len(targets) not in (4,max(4,count+1)) or len(positions)!=len(targets)
+    valid_count = (3 <= len(targets) <= 64 if source_points
+                   else len(targets) in (4,max(4,count+1)))
+    if (not valid_count or len(positions)!=len(targets)
             or len(set(targets)) != len(targets) or len(controls) != count or len(set(controls)) != count):
         raise CharacterRegistryError('曲线脊柱控制器声明不完整')
+    if raw['fake_mid_control'] and len(targets)!=3:
+        raise CharacterRegistryError('来源 Spline 补充中间控制必须为三主控')
     joints = []
     for index, row in enumerate(raw['joints']):
         exact(row, (field.name for field in fields(BodyLimbMechanismJointSpec)))
@@ -113,10 +142,17 @@ def decode_spline(raw, body):
         joints.append(joint)
     if len(joints) != count * 2:
         raise CharacterRegistryError('曲线脊柱机制链不完整')
-    return BodySplinePlan(root, tuple(joints), body_paths, controls, path(raw['pelvis_control']),
+    result = BodySplinePlan(root, tuple(joints), body_paths, controls, path(raw['pelvis_control']),
                           path(raw['chest_space']), targets, positions, axes,
                           lengths, raw['use_offset_parent_matrix'],
                           raw['even_stretch_graph'], raw['twist_ramp_graph'],
                           raw['mid_follow_graph'], raw['isolated_mid_follow_graph'],
                           subs, raw['extra_curve'],
-                          raw['fk_root_point_from_receiver'])
+                          raw['fk_root_point_from_receiver'], source_points,
+                          raw['fake_mid_control'],raw['source_hybrid_graph'],
+                          control_axes,raw['source_ik_local'],cv_axes)
+    if result.source_hybrid_graph and any(
+            offset.rsplit('|',1)[0]!=result.target_parent(index)
+            for index,offset in enumerate(result.offset_targets)):
+        raise CharacterRegistryError('来源 Spline IKhybrid 主控父层无效')
+    return result

@@ -8,15 +8,20 @@ from .fit_metadata import FitJointMetadata
 def plan_body_fit_ik_follow(
     metadata: tuple[FitJointMetadata, ...], arm_ik: tuple,
     leg_ik: tuple, body_joints: tuple, *, spine=None, spline=None,
+    driver_body_sources: tuple[tuple[str, str], ...] = (),
 ) -> tuple[BodyFitFollowSpec, ...]:
     by_name = {joint.name.rsplit(":", 1)[-1]: joint.path
                for joint in body_joints}
     if len(by_name) != len(body_joints):
         raise ValueError("IK Follow Body 关节短名重复")
     by_source: dict[str, list[tuple[str, str, str, str]]] = {}
+    driver_sources = dict(driver_body_sources)
+    if len(driver_sources) != len(driver_body_sources):
+        raise ValueError("IK Follow 机制关节来源重复")
 
     def add(source_body: str, control: str, offset: str,
             side: str) -> None:
+        source_body = driver_sources.get(source_body, source_body)
         leaf = source_body.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
         if not leaf.endswith("_" + side):
             raise ValueError("IK Follow 末端 Body 侧别不一致：" + source_body)

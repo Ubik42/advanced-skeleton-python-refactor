@@ -1335,7 +1335,10 @@ class MayaCharacterRegistryMixin:
         if p.spline is not None:
             spline = p.spline
             paths.update((spline.root_path, spline.chest_space, spline.curve,
-                          *spline.targets, *spline.ik_outputs))
+                          *spline.targets, *spline.ik_outputs,
+                          *spline.cv_controls,*spline.hybrid_controls))
+            if spline.source_curve_points:
+                paths.update(spline.source_matrix_targets)
             paths.update(joint.path for joint in spline.joints)
         for path in (p.global_control.root_follow_main_path,
                      p.global_control.global_follow_main_path):
@@ -1372,6 +1375,16 @@ class MayaCharacterRegistryMixin:
         if p.bendy_chains:
             from adv_py.application.fit_bendy_registration import RegisterBendyControls
             registration = RegisterBendyControls(self).describe(registration, p.bendy_chains)
+        if p.wheels:
+            from adv_py.application.fit_wheel_registration import RegisterFitWheels
+            registration = RegisterFitWheels(self).describe(registration, p.wheels)
+        if p.curve_guides:
+            from adv_py.application.fit_curve_guide_registration import RegisterFitCurveGuides
+            registration = RegisterFitCurveGuides(self).describe(registration,
+                p.curve_guides, main_control=p.global_control.control_path)
+        if p.tweakers is not None:
+            from adv_py.application.fit_tweaker_registration import RegisterFitTweakers
+            registration = RegisterFitTweakers(self).describe(registration, p.tweakers)
         return registration
 
     def _describe_body_registration_nodes(self, body, container, channels,

@@ -342,6 +342,8 @@ def decode_registration(text):
         if spline_document:
             required.update(spine.targets)
             required.update(spine.ik_outputs[1:])
+            required.update(spine.cv_controls)
+            required.update(spine.hybrid_controls)
         required.update(p for s in spaces for p in (*s.targets,*s.sources))
         if not required.issubset({n.path for n in nodes}):
             raise CharacterRegistryError("登记缺少操作节点身份")

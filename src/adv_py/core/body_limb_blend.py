@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .body_limb_mechanisms import BodyLimbMechanismPlan, BodyLimbMechanismRole
+from .body_limb_mechanisms import BodyLimbMechanismPlan, BodyLimbMechanismRole, body_limb_token_valid, body_limb_sides_valid
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import FitBuildSide
 
@@ -79,12 +79,13 @@ def plan_body_limb_blend(
     limb_label: str,
     joint_names: tuple[str, ...],
     translated_joint_names: tuple[str, ...],
+    sides: tuple[FitBuildSide, ...] = (FitBuildSide.RIGHT,FitBuildSide.LEFT),
 ) -> BodyLimbBlendPlan:
     if (
-        (not limb_label or not limb_label[0].isalpha() or not limb_label.isalnum())
+        not body_limb_sides_valid(sides) or not body_limb_token_valid(limb_label)
         or len(joint_names) < 2
         or len(set(joint_names)) != len(joint_names)
-        or any(not name or not name[0].isalpha() or not name.isalnum()
+        or any(not body_limb_token_valid(name)
                for name in joint_names)
         or len(set(translated_joint_names)) != len(translated_joint_names)
         or not set(translated_joint_names).issubset(joint_names)
@@ -93,7 +94,7 @@ def plan_body_limb_blend(
     body_by_name = {joint.name: joint.path for joint in body.joints}
     required = tuple(
         f"{part}_{suffix}"
-        for suffix in ("R", "L")
+        for suffix in (side.value for side in sides)
         for part in joint_names
     )
     if len(body_by_name) != len(body.joints) or any(
@@ -109,7 +110,8 @@ def plan_body_limb_blend(
 
     sides = []
     token = limb_label[0].lower() + limb_label[1:]
-    for suffix, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
+    for side in sides:
+        suffix = side.value
         joints = []
         for part in joint_names:
             body_path = body_by_name[f"{part}_{suffix}"]

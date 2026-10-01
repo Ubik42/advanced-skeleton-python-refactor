@@ -10,7 +10,7 @@ from .fit_settings import FitSkeletonValidationError
 from .joint_labels import JointLabel
 
 
-def plan_source_body_spline(body, hierarchy, labels, fk, options):
+def plan_source_body_spline(body, hierarchy, labels, fk, options, metadata=()):
     label_by_name = dict(labels)
     fit_labels = {node.path: (JointLabel.parse(label_by_name[name])
                              if name in label_by_name else None)
@@ -48,7 +48,10 @@ def plan_source_body_spline(body, hierarchy, labels, fk, options):
         fk.root_path.rsplit("|", 1)[-1], selected)
     updated, spline = plan_body_spline_fk_chain(source, controls,
         use_offset_parent_matrix=options.use_offset_parent_matrix,
-        build_options=options)
+        build_options=options, source_control_count=info.control_count)
+    start_metadata = next((item for item in metadata if item.joint==info.start), None)
+    spline = replace(spline, source_ik_local=(start_metadata is not None
+                     and start_metadata.ik_local_mode is not None))
     by_control = {control.control_name: control for control in updated.controls}
     merged = tuple(by_control.get(control.control_name, control)
                    for control in fk.controls)

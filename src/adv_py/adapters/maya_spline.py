@@ -13,6 +13,9 @@ from . import maya_chest_space
 from . import maya_spline_even
 from . import maya_spline_twist
 from . import maya_spline_follow
+from . import maya_source_spline_cv
+from . import maya_source_spline_hybrid
+from . import maya_source_spline_visibility
 
 
 def _fk_root_source(host, plan):
@@ -29,7 +32,8 @@ def _fk_root_source(host, plan):
                if len(targets) == 1 else [])
     if len(sources) != 1:
         raise FitSkeletonValidationError('Spline FK 起点接收层不唯一')
-    proxy_name = 'AdvPy_Root_M_InbetweenFKX'
+    source_leaf = plan.body_joints[0].rsplit('|',1)[-1].rsplit(':',1)[-1]
+    proxy_name = 'AdvPy_'+source_leaf+'_InbetweenFKX'
     proxy = c.ls(proxy_name, long=True, type='joint') or []
     owned_proxy = (sources == proxy
                    and len(proxy) == 1
@@ -64,6 +68,8 @@ def create(host,plan):
     c=host._cmds;n=len(plan.body_joints);fk=plan.joints[:n];ik=plan.joints[n:]
     for control,joint in zip(plan.fk_controls,fk):
         c.connectAttr(control+'.scale',joint.path+'.scale')
+    if plan.source_hybrid_graph:
+        maya_source_spline_hybrid.create(host,plan)
     if plan.isolated_mid_follow_graph:
         follow_parent=c.createNode('transform',name='AdvPy_SplineIKFollowMain',
                                    parent=plan.pelvis_control,skipSelect=True)
@@ -73,9 +79,10 @@ def create(host,plan):
                 c.setAttr(follow_parent+'.'+kind+axis,lock=True,keyable=False)
     for i,(target,position) in enumerate(zip(plan.targets,plan.positions)):
         offset=plan.offset_targets[i]
-        parent=(plan.mid_follow_parent if plan.isolated_mid_follow_graph
-                and 0<i<len(plan.targets)-1 else plan.pelvis_control)
-        host._spine_frame(f'AdvPy_SplineIK{i}Offset',parent,position,plan.axes)
+        parent=plan.target_parent(i)
+        control_axes = plan.source_control_axes[i] if plan.source_control_axes else plan.axes
+        host._spine_frame(f'AdvPy_SplineIK{i}Offset',parent,position,
+                          control_axes if plan.source_ik_local else plan.axes)
         extra = plan.extra_targets[i] if plan.extra_targets else None
         if extra:
             host._create_body_extra_layer(
@@ -89,6 +96,19 @@ def create(host,plan):
             sub = plan.sub_targets[i]
             host._create_body_sub_control(
                 target, sub.rsplit('|', 1)[-1], sub)
+        if plan.source_control_axes and not plan.source_ik_local:
+            frame = host._spine_frame(f'AdvPy_SplineIK{i}ShapeOrient',plan.root_path,
+                                       (0.,0.,0.),control_axes)
+            try:
+                rotation = c.xform(frame,query=True,worldSpace=True,rotation=True)
+                c.rotate(*rotation,target+'.cv[*]',absolute=True,worldSpace=True)
+            finally:
+                c.delete(frame)
+        if plan.source_curve_points:
+            proxy=c.createNode('transform',name=f'AdvPy_SplineIK{i}X',
+                               parent=plan.driver_targets[i],skipSelect=True)
+            c.parentConstraint(plan.driver_targets[i],proxy,maintainOffset=False,
+                               name=f'AdvPy_SplineIK{i}XParent')
         locked=(['translate'+a for a in 'XYZ'] if i==0 else [])+(
             ['rotate'+a for a in 'XYZ']
             if 0<i<len(plan.targets)-1 and not plan.twist_ramp_graph else [])
@@ -122,12 +142,16 @@ def create(host,plan):
         c.addAttr(plan.settings,longName=attribute,niceName=label,
                   attributeType='double',minValue=0.,maxValue=maximum,
                   defaultValue=default,keyable=True)
-    curve=c.curve(name='AdvPy_SplineCurve',degree=3,point=plan.positions)
+    if plan.source_hybrid_graph:
+        maya_source_spline_hybrid.install_visibility(host,plan)
+    curve=c.curve(name='AdvPy_SplineCurve',degree=plan.curve_degree,point=plan.curve_points)
     c.parent(curve,plan.root_path,relative=True)
     shapes=c.listRelatives(plan.curve,shapes=True,fullPath=True) or []
     if len(shapes)!=1:raise FitSkeletonValidationError('Spline 曲线必须只有一个形状节点')
     c.rename(shapes[0],'AdvPy_SplineCurveShape');shape=plan.curve+'|AdvPy_SplineCurveShape'
-    for i,target in enumerate(plan.targets):
+    if plan.source_curve_points:
+        maya_source_spline_cv.create(host,plan,shape)
+    for i,target in enumerate(() if plan.source_curve_points else plan.targets):
         matrix=f'AdvPy_SplineIK{i}Matrix';position=f'AdvPy_SplineIK{i}Position'
         c.createNode('multMatrix',name=matrix,skipSelect=True);c.createNode('decomposeMatrix',name=position,skipSelect=True)
         c.connectAttr(plan.driver_targets[i]+'.worldMatrix[0]',matrix+'.matrixIn[0]')
@@ -290,10 +314,10 @@ def create(host,plan):
                            'AdvPy_SplineChestSpaceParent',
                            plan.use_offset_parent_matrix)
     c.setAttr(plan.root_path+'.visibility',False)
-    audit(host,plan)
+    audit(host,plan,source_visibility_ready=False)
 
 
-def audit(host,plan):
+def audit(host,plan,*,source_visibility_ready=True):
     c=host._cmds;n=len(plan.body_joints)
     fk=plan.joints[:n];ik=plan.joints[n:]
     maya_chest_space.audit(host, plan.body_joints[-1], plan.chest_space,
@@ -426,7 +450,24 @@ def audit(host,plan):
     else:
         edges += [('AdvPy_SplineVolumeExponent.outputX','AdvPy_SplineVolume.input2X'),
                   ('AdvPy_SplineClamp.outputR','AdvPy_SplineVolume.input1X')]
-    for i,target in enumerate(plan.targets):
+    if plan.source_curve_points:
+        maya_source_spline_cv.audit(host,plan,shape)
+        for index,target in enumerate(plan.source_matrix_targets):
+            name=f'AdvPy_SplineIK{index}XParent'
+            sources=tuple(host._resolve_connected_node(item) for item in
+                          c.parentConstraint(name,query=True,targetList=True) or [])
+            if sources!=(plan.driver_targets[index],):
+                raise FitSkeletonValidationError('来源 Spline IK X 父约束来源改变')
+            for kind in ('Translate','Rotate'):
+                for axis in 'XYZ':
+                    if not c.isConnected(name+'.constraint'+kind+axis,
+                                         target+'.'+kind[0].lower()+kind[1:]+axis):
+                        raise FitSkeletonValidationError('来源 Spline IK X 输出连接改变')
+    if plan.source_hybrid_graph:
+        maya_source_spline_hybrid.audit(host,plan,visibility_ready=source_visibility_ready)
+    if plan.source_curve_points and source_visibility_ready:
+        maya_source_spline_visibility.audit(host,plan)
+    for i,target in enumerate(() if plan.source_curve_points else plan.targets):
         edges += [(plan.driver_targets[i]+'.worldMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[0]'),
             (plan.curve+'.worldInverseMatrix[0]',f'AdvPy_SplineIK{i}Matrix.matrixIn[1]'),
             (f'AdvPy_SplineIK{i}Matrix.matrixSum',f'AdvPy_SplineIK{i}Position.inputMatrix'),

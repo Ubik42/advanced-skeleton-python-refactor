@@ -2,9 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import Enum
+import re
 
 from .body_skeleton import BodySkeletonSnapshot
 from .fit_symmetry import AxisFrame, FitBuildSide
+
+
+def body_limb_token_valid(value):
+    return isinstance(value,str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',value) is not None
+
+
+def body_limb_sides_valid(sides):
+    return (isinstance(sides,tuple) and bool(sides)
+            and all(isinstance(side,FitBuildSide) for side in sides)
+            and len(sides)==len(set(sides)))
 
 
 def body_limb_parent_matches(
@@ -90,18 +101,19 @@ def plan_body_limb_mechanisms(
     limb_label: str,
     joint_names: tuple[str, ...],
     allow_part_parents: bool = False,
+    sides: tuple[FitBuildSide, ...] = (FitBuildSide.RIGHT,FitBuildSide.LEFT),
 ) -> BodyLimbMechanismPlan:
     if type(allow_part_parents) is not bool:
         raise BodyLimbMechanismValidationError("Part 父级开关无效")
-    if (not limb_label or not limb_label[0].isalpha() or not limb_label.isalnum()) or len(joint_names) < 2 or len(set(joint_names)) != len(joint_names) or any(
-        not name or not name[0].isalpha() or not name.isalnum()
+    if not body_limb_sides_valid(sides) or not body_limb_token_valid(limb_label) or len(joint_names) < 2 or len(set(joint_names)) != len(joint_names) or any(
+        not body_limb_token_valid(name)
         for name in joint_names
     ):
         raise BodyLimbMechanismValidationError("Limb 机制定义无效")
     by_name = {state.name: state for state in body.joints}
     required = tuple(
         f"{joint}_{suffix}"
-        for suffix in ("R", "L")
+        for suffix in (side.value for side in sides)
         for joint in joint_names
     )
     if len(by_name) != len(body.joints) or any(name not in by_name for name in required):
@@ -115,7 +127,8 @@ def plan_body_limb_mechanisms(
                         else "")
     root_path = f"{root_parent_path}|{root_name}"
     specs = []
-    for suffix, side in (("R", FitBuildSide.RIGHT), ("L", FitBuildSide.LEFT)):
+    for side in sides:
+        suffix = side.value
         for role in (BodyLimbMechanismRole.FK, BodyLimbMechanismRole.IK):
             parent_path = root_path
             source_parent = None

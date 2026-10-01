@@ -20,6 +20,20 @@ class RegisterFitWheels:
             return before
         if self._host.read_character_registration() != before:
             raise ValueError("Wheel 登记前角色文档已变化")
+        after = self.describe(before, wheels)
+        if after == before:
+            return before
+        with self._host.transaction("登记 Wheel / RollingBall"):
+            self._host.write_character_registration_extension(before, after)
+            if self._host.read_character_registration() != after:
+                raise RuntimeError("Wheel 动画通道登记不一致")
+        return after
+
+    def describe(self, before: CharacterRegistration,
+              wheels: tuple[BodyFitWheelSpec, ...]
+              ) -> CharacterRegistration:
+        if not wheels:
+            return before
         keys = {item.key for item in before.channels}
         plugs = {(item.node, item.attribute) for item in before.channels}
         channels = []
@@ -65,8 +79,4 @@ class RegisterFitWheels:
         after = replace(before, channels=before.channels + tuple(channels),
                         nodes=tuple(nodes))
         encode_registration(after)
-        with self._host.transaction("登记 Wheel / RollingBall"):
-            self._host.write_character_registration_extension(before, after)
-            if self._host.read_character_registration() != after:
-                raise RuntimeError("Wheel 动画通道登记不一致")
         return after

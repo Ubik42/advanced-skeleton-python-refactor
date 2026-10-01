@@ -1664,6 +1664,10 @@ class MayaFitJointHost:
     def _optional_enum(self, joint: str, attribute: str) -> str | None:
         if not self._attribute_exists(joint, attribute):
             return None
+        if attribute == "ikLocal" and self._cmds.getAttr(joint+"."+attribute,type=True)=="bool":
+            # The MEL analyser marks an existing legacy bool as enabled and
+            # uses its numeric value as the ikLocalType (0 / 1).
+            return ("addCtrl","nonZero")[int(bool(self._cmds.getAttr(joint+"."+attribute)))]
         names = self._cmds.attributeQuery(attribute, node=joint, listEnum=True)
         if not names:
             raise FitJointValidationError(f"{joint}.{attribute} 不是 enum 属性")

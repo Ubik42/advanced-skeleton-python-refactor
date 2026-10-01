@@ -64,6 +64,50 @@ class BodySplinePlan:
     sub_targets: tuple[str, ...] = ()
     extra_curve: bool = False
     fk_root_point_from_receiver: bool = True
+    source_curve_points: tuple = ()
+    fake_mid_control: bool = False
+    source_hybrid_graph: bool = False
+    source_control_axes: tuple = ()
+    source_ik_local: bool = False
+    source_cv_axes: tuple = ()
+
+    @property
+    def source_matrix_targets(self):
+        return tuple(target+f'|AdvPy_SplineIK{i}X' for i,target in enumerate(self.driver_targets))
+
+    @property
+    def hybrid_controls(self):
+        if not self.source_hybrid_graph:
+            return ()
+        controls = []
+        parent = self.pelvis_control
+        for index in range(len(self.targets)):
+            control = parent + f'|AdvPy_SplineHybrid{index}Offset|AdvPy_SplineHybrid{index}'
+            controls.append(control)
+            parent = control
+        return tuple(controls)
+
+    def target_parent(self, index):
+        if self.source_hybrid_graph:
+            if index == 0:
+                return self.hybrid_controls[0].rsplit('|',1)[0]
+            if index == len(self.targets)-1:
+                return self.hybrid_controls[-1]
+        return (self.mid_follow_parent if self.isolated_mid_follow_graph
+                and 0<index<len(self.targets)-1 else self.pelvis_control)
+
+    @property
+    def curve_points(self):
+        return self.source_curve_points or self.positions
+
+    @property
+    def curve_degree(self):
+        return 1 if len(self.curve_points) < 4 else 3
+
+    @property
+    def cv_controls(self):
+        return tuple(self.root_path + f'|AdvPy_SplineCV{i}Offset|AdvPy_SplineCV{i}'
+                     for i in range(1, len(self.source_curve_points) - 1))
 
     @property
     def extra_targets(self) -> tuple[str, ...]:
@@ -95,12 +139,12 @@ class BodySplinePlan:
     def curve(self):return self.root_path+'|AdvPy_SplineCurve'
     @property
     def curved(self):
-        if len(self.targets)>4:return True
-        start,end=self.positions[0],self.positions[-1]
+        if not self.source_curve_points and len(self.targets)>4:return True
+        start,end=self.curve_points[0],self.curve_points[-1]
         direction=tuple(b-a for a,b in zip(start,end))
         squared=sum(value*value for value in direction)
         if squared<1e-10:return True
-        for point in self.positions[1:-1]:
+        for point in self.curve_points[1:-1]:
             offset=tuple(b-a for a,b in zip(start,point))
             projection=sum(a*b for a,b in zip(offset,direction))/squared
             if sum((a-projection*b)**2 for a,b in zip(offset,direction))>1e-10:
@@ -127,7 +171,24 @@ class BodySplinePlan:
             'AdvPy_SplineFlipUpAxis','AdvPy_SplineFlipVector') + (
             ('AdvPy_SplineIKEndLocalStartOrient',)
             if len(self.body_joints)>2 else ())
-        targets=tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(len(self.targets)) for suffix in ('Offset','','Shape','Matrix','Position'))
+        targets=tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(len(self.targets)) for suffix in
+                      (('Offset','','Shape') if self.source_curve_points else ('Offset','','Shape','Matrix','Position')))
+        cvs = (tuple(f'AdvPy_SplineCV{i}{suffix}'
+                     for i in range(len(self.source_curve_points))
+                     for suffix in ('Matrix', 'Position')) + tuple(
+                     f'AdvPy_SplineCV{i}{suffix}'
+                     for i in range(1, len(self.source_curve_points) - 1)
+                     for suffix in ('Offset', '', 'Shape', 'Follow1', 'Follow2', 'Blend', 'ParentMatrix'))
+               + tuple(f'AdvPy_SplineStiff{i}' for i in (0, len(self.targets)-1))
+               if len(self.source_curve_points)>3 else tuple(
+                     f'AdvPy_SplineCV{i}{suffix}' for i in range(len(self.source_curve_points))
+                     for suffix in ('Matrix', 'Position')) + tuple(
+                     f'AdvPy_SplineCV{i}{suffix}'
+                     for i in range(1, len(self.source_curve_points)-1)
+                     for suffix in ('Offset', '', 'Shape', 'Follow1', 'Follow2', 'Blend', 'ParentMatrix')))
+        if self.source_curve_points and not self.use_offset_parent_matrix:
+            cvs += tuple(f'AdvPy_SplineCV{i}Decompose'
+                         for i in range(1, len(self.source_curve_points)-1))
         outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints)) for kind in ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale'))
         rests=tuple(f'AdvPy_SplineIKRest{i}' for i in range(1,len(self.body_joints))) if self.curved else ()
         chest = (('AdvPy_SplineChestSpaceMM', 'AdvPy_SplineChestSpacePM')
@@ -173,7 +234,11 @@ class BodySplinePlan:
         layers += tuple(name for sub in self.sub_targets
                         for name in (sub.rsplit('|', 1)[-1],
                                      sub.rsplit('|', 1)[-1] + 'Shape'))
-        return (fixed+chest+tuple(j.name for j in self.joints)+targets+layers+outputs+
+        hybrids = tuple(f'AdvPy_SplineHybrid{i}{suffix}' for i in range(len(self.hybrid_controls))
+                        for suffix in ('Offset','','Shape'))
+        proxies = tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(len(self.targets))
+                        for suffix in ('X','XParent')) if self.source_curve_points else ()
+        return (fixed+chest+tuple(j.name for j in self.joints)+targets+cvs+hybrids+proxies+layers+outputs+
                 rests+scaling+orientations+(even if self.even_stretch_graph else ())+
                 (twist if self.twist_ramp_graph else ())+
                 (follow if self.mid_follow_graph else ())+
@@ -271,7 +336,8 @@ def with_spline_ik(body, torso, description,
 def plan_body_spline_fk_chain(source, controls, *,
                              use_offset_parent_matrix: bool,
                              build_options: BodyBuildOptions = BodyBuildOptions(),
-                             fk_root_point_from_receiver: bool = True):
+                             fk_root_point_from_receiver: bool = True,
+                             source_control_count: int | None = None):
     """Shared original spline graph for a resolved Fit start/end chain."""
     if type(fk_root_point_from_receiver) is not bool:
         raise FitSkeletonValidationError('Spline FK 起点位置来源开关无效')
@@ -368,7 +434,17 @@ def plan_body_spline_fk_chain(source, controls, *,
         if old.source_override_path is not None:
             mapping[old.source_override_path]=child_parent(control)
         updated.append(control)
-    positions=(fit_spline_controls(tuple(j.world_position for j in source)) if curved else
+    source_points = ()
+    fake_mid = False
+    if source_control_count is not None:
+        from .source_spline_cv import source_spline_control_positions
+        if type(source_control_count) is not int or not 2 <= source_control_count <= 64:
+            raise FitSkeletonValidationError('来源 Spline 控制器数量无效')
+        source_points = tuple(j.world_position for j in source)
+        fake_mid = source_control_count == 2
+        positions = source_spline_control_positions(source_points, max(3, source_control_count))
+    else:
+        positions=(fit_spline_controls(tuple(j.world_position for j in source)) if curved else
                tuple(tuple(a+(b-a)*i/3 for a,b in zip(source[0].world_position,source[-1].world_position)) for i in range(4)))
     isolated_follow=len(source)>2
     targets=tuple((pelvis.control_path+
@@ -378,5 +454,13 @@ def plan_body_spline_fk_chain(source, controls, *,
     subs=tuple(target+f'|AdvPy_SplineIK{i}Sub'
                for i,target in enumerate(targets)) if build_options.sub_controllers else ()
     plan=BodySplinePlan(root,tuple(specs),tuple(j.path for j in source),tuple(fk),pelvis.control_path,space,targets,positions,axes,tuple(lengths),use_offset_parent_matrix,True,isolated_follow,isolated_follow,isolated_follow,subs,build_options.extra_controllers,
-                        fk_root_point_from_receiver=fk_root_point_from_receiver)
+                        fk_root_point_from_receiver=fk_root_point_from_receiver,
+                        source_curve_points=source_points, fake_mid_control=fake_mid,
+                        source_hybrid_graph=bool(source_points))
+    if plan.source_hybrid_graph:
+        targets = tuple(plan.target_parent(i) +
+                        f'|AdvPy_SplineIK{i}Offset|AdvPy_SplineIK{i}Extra|AdvPy_SplineIK{i}'
+                        for i in range(len(plan.targets)))
+        subs = tuple(target+f'|AdvPy_SplineIK{i}Sub' for i,target in enumerate(targets)) if subs else ()
+        plan = replace(plan, targets=targets, sub_targets=subs)
     return replace(controls, controls=tuple(updated)), plan
