@@ -42,11 +42,42 @@ class MayaFacePrepPrefixMixin:
             c.skinCluster(influences, name, toSelectedBones=True, maximumInfluences=3,
                           dropoffRate=4, removeUnusedInfluence=False, name=name + "SC")
             c.parent(name, prefix)
-            self._cage_copy_selected((geometry,), (name,))
+            self._cage_copy_selected((geometry,), (name,),
+                source_skin=skin,target_skin=name+"SC")
             c.addAttr(name, longName="sourceObject", dataType="string")
             c.setAttr(name + ".sourceObject", geometry, type="string")
             holders.append(name)
             number += 1
+        # Each native multi-Skin layer owns independent authored weights.
+        # The single primary holder cannot preserve Lip/Cage/Jaw data.
+        history=set(raw.listHistory(self.scene_address(source["geometry"])) or [])
+        captured_layers=[]
+        for layer in ("EyeLidSC","LipSC","CageSC","JawSC","UpMidLocSC"):
+            address=self.scene_address(layer)
+            if not raw.objExists(address) or address.lstrip(":") not in {n.lstrip(":") for n in history}:
+                continue
+            name="asFaceSkinWeightsHolderLayer"+str(number)
+            c.polySphere(name=name,constructionHistory=False)
+            shape=c.listRelatives(name,shapes=True,noIntermediate=True,fullPath=True)[0]
+            mesh=self.scene_address(source["geometry"])
+            raw.connectAttr(mesh+".outMesh",self.scene_address(shape)+".inMesh")
+            c.polyEvaluate(name,vertex=True)
+            raw.disconnectAttr(mesh+".outMesh",self.scene_address(shape)+".inMesh")
+            influences=raw.skinCluster(address,query=True,influence=True) or []
+            c.skinCluster(influences,name,toSelectedBones=True,maximumInfluences=3,
+                          dropoffRate=4,removeUnusedInfluence=False,name=name+"SC")
+            c.parent(name,prefix)
+            raw.copySkinWeights(sourceSkin=address,destinationSkin=self.scene_address(name+"SC"),
+                noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="name")
+            for attr,value in (("sourceObject",source["geometry"]),("sourceSkin",layer)):
+                c.addAttr(name,longName=attr,dataType="string")
+                c.setAttr(name+"."+attr,value,type="string")
+            holders.append(name); number+=1
+            captured_layers.append(address)
+        # Old layers must not deform the mesh while the new graph samples Fit
+        # curves and creates its own layers. Their weights now live on holders;
+        # retain the old controllers/SDKs for the normal prefix restoration.
+        if captured_layers: raw.delete(captured_layers)
         if (source["keep_all"] or source["keep_custom"]) and c.objExists("FaceCustomSystem"):
             c.parent("FaceCustomSystem", world=True)
         fit = self._fit(required=True)

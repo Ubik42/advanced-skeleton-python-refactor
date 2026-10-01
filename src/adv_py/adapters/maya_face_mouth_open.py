@@ -1,6 +1,7 @@
 """ADV 6.925 asFaceDesignMouthOpen, source 29232–29342."""
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_face_jaw_lip_weights import MayaFaceJawLipWeightsHost
+from .maya_face_deformer_sets import original_face_deformer_sets
 
 class MayaFaceMouthOpenHost(MayaFaceJawLipWeightsHost):
     def capture_mouth_open_input(self):
@@ -20,13 +21,9 @@ class MayaFaceMouthOpenHost(MayaFaceJawLipWeightsHost):
         self._lip_node("transform","LipDeformations","FaceBuildInProgressHidden")
         c.duplicate("templateLayer",name="LipDeform",returnRootsOnly=True)
         raw.sets(self.scene_address("LipDeform"),edit=True,forceElement=":initialShadingGroup")
-        option="deformationUseComponentTags"
-        tags=int(raw.optionVar(query=option)) if raw.optionVar(exists=option) else 0
-        try:
-            if tags: raw.optionVar(intValue=(option,0))
-            soft,handle=c.softMod("LipDeform",name="mouthOpenSoftMod")
-        finally:
-            if tags: raw.optionVar(intValue=(option,tags))
+        with original_face_deformer_sets(c):
+            soft,handle=c.softMod("LipDeform",name="mouthOpenSoftMod",
+                                  falloffMode=1,falloffAroundSelection=False)
         if handle!="mouthOpenSoftModHandle": handle=c.rename(handle,"mouthOpenSoftModHandle")
         shape=(c.listRelatives(handle,shapes=True,fullPath=True) or [None])[0]
         if shape.rsplit("|",1)[-1]!="mouthOpenSoftModHandleShape": shape=c.rename(shape,"mouthOpenSoftModHandleShape")

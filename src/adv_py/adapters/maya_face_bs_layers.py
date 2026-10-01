@@ -149,9 +149,9 @@ class MayaFaceBSLayersMixin:
         for stem in ("upper", "lower"):
             y = c.xform(stem + "Face_M", query=True, worldSpace=True, translation=True)[1]
             c.select(main, replace=True)
-            raw.polySelectConstraint(mode=3, type=1, distance=3,
-                distancebound=(y, 9999) if stem == "upper" else (0, y),
-                distanceaxis=(0, 1, 0), distancepoint=(0, 0, 0))
+            raw.polySelectConstraint(mode=3, type=1, dist=3,
+                distbound=(y, 9999) if stem == "upper" else (0, y),
+                distaxis=(0, 1, 0), distpoint=(0, 0, 0))
             vertices = raw.ls(selection=True, flatten=True) or []
             try:
                 c.skinPercent(main + "SC", vertices, transformValue=((stem + "FaceJoint_M", 1),))

@@ -120,7 +120,7 @@ class MayaFaceJawHost(MayaFaceJawPosesMixin,MayaFaceTeethMixin,MayaFaceJawWeight
         if source.multi_skin_clusters:
             raw.connectAttr(self.scene_address(source.head)+".worldInverseMatrix[0]",
                 self.scene_address("JawJointMM_M")+".matrixIn[2]",force=True)
-            matrix=raw.getAttr(self.scene_address(source.head)+".worldMatrix[0]")
+            matrix=self.original_face_matrix_values(source.head+".worldMatrix[0]")
             c.setAttr("JawJointMM_M.matrixIn[3]",*matrix,type="matrix")
             parent=(c.listRelatives("JawJoint_M",parent=True) or [None])[0]
             c.connectAttr(parent+".worldInverseMatrix[0]","JawJointMM_M.matrixIn[4]")

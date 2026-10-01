@@ -110,12 +110,12 @@ class MayaFaceJawWeightsMixin:
     def _jaw_bounds_selection(self,lower,upper,z_origin,z_radius=100):
         raw=getattr(self._cmds,"raw",self._cmds); mesh=self.scene_address("JawOpenLayer")
         raw.select(mesh,replace=True)
-        raw.polySelectConstraint(mode=3,type=1,distance=3,distancebound=(0,(upper-lower)/2),
-            distancepoint=(0,(upper+lower)/2,0),distanceaxis=(0,1,0))
+        raw.polySelectConstraint(mode=3,type=1,dist=3,distbound=(0,(upper-lower)/2),
+            distpoint=(0,(upper+lower)/2,0),distaxis=(0,1,0))
         y=set(raw.ls(selection=True,long=True,flatten=True) or [])
         raw.select(mesh,replace=True)
-        raw.polySelectConstraint(mode=3,type=1,distance=3,distancebound=(0,z_radius),
-            distancepoint=(0,0,z_origin),distanceaxis=(0,0,1))
+        raw.polySelectConstraint(mode=3,type=1,dist=3,distbound=(0,z_radius),
+            distpoint=(0,0,z_origin),distaxis=(0,0,1))
         z=set(raw.ls(selection=True,long=True,flatten=True) or [])
         raw.polySelectConstraint(mode=0)
         return y,z
@@ -178,9 +178,9 @@ class MayaFaceJawWeightsMixin:
             inside=y-z
             y,_=self._jaw_bounds_selection(top_bound[1],top_bound[4],bottom_bound[5]-100)
             raw.select(self.scene_address("JawOpenLayer"),replace=True)
-            raw.polySelectConstraint(mode=3,type=1,distance=3,
-                distancebound=(0,(bottom_bound[5]-bottom_bound[2])/2*1.001),
-                distanceaxis=(0,0,1),distancepoint=(0,0,(bottom_bound[5]+bottom_bound[2])/2))
+            raw.polySelectConstraint(mode=3,type=1,dist=3,
+                distbound=(0,(bottom_bound[5]-bottom_bound[2])/2*1.001),
+                distaxis=(0,0,1),distpoint=(0,0,(bottom_bound[5]+bottom_bound[2])/2))
             z=set(raw.ls(selection=True,long=True,flatten=True) or []); raw.polySelectConstraint(mode=0)
             boundary=(y|z)-outside
             selected=[]
@@ -217,12 +217,18 @@ class MayaFaceJawWeightsMixin:
             if disabled: c.setAttr("JawOpenLayerDeleteComponent.nodeState",0)
             c.delete(temporary); temporary=[]
             c.skinPercent("JawLayerSC","JawLayer",transformValue=[("JawJoint_M",0)])
-            # Preserve the source's selection-based LipDeform -> JawLayer copy.
+            # LipDeform has only the design SoftMod, never a Skin. Its sampled
+            # weights were stored in JawOpenLayer by asFaceWeightLips above.
+            # Maya 2024 rejects the MEL's implicit LipDeform -> JawLayer Skin
+            # lookup. Address that sampled Skin explicitly, retaining the
+            # source lip subset and closest-point/joint transfer.
             lip_members=self._jaw_set_members("lipArea")
-            from_vertices=self._jaw_layer_cast(lip_members,"LipDeform")
+            from_vertices=self._jaw_layer_cast(lip_members,"JawOpenLayer")
             to_vertices=self._jaw_layer_cast(lip_members,"JawLayer")
             raw.select(tuple(self.scene_address(v) for v in (*from_vertices,*to_vertices)),replace=True)
-            raw.copySkinWeights(noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
+            raw.copySkinWeights(sourceSkin=self.scene_address("JawOpenLayerSC"),
+                destinationSkin=self.scene_address("JawLayerSC"),noMirror=True,
+                surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
             falloff=cast(self._jaw_set_members("lipFalloffArea")) if c.objExists("lipFalloffArea") else ()
             self.hammer_original_face_weights("JawOpenLayerSC",falloff)
             geometry=self.scene_address(source.geometry)

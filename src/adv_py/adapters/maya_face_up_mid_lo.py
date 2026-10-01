@@ -51,7 +51,7 @@ class MayaFaceUpMidLoMixin:
             if source.multi_skin_clusters:
                 mm=stem+"FaceJointMM_M"
                 raw.connectAttr(self.scene_address(source.head)+".worldInverseMatrix[0]",self.scene_address(mm)+".matrixIn[2]",force=True)
-                c.setAttr(mm+".matrixIn[3]",*raw.getAttr(self.scene_address(source.head)+".worldMatrix[0]"),type="matrix")
+                c.setAttr(mm+".matrixIn[3]",*self.original_face_matrix_values(source.head+".worldMatrix[0]"),type="matrix")
                 c.connectAttr("FaceJoint_M.worldInverseMatrix[0]",mm+".matrixIn[4]")
             else:
                 nodes=[]
@@ -66,7 +66,7 @@ class MayaFaceUpMidLoMixin:
         try:
             for stem,bounds in (("upper",(self._lip_pos("upperFace")[1],9999)),("lower",(0,self._lip_pos("lowerFace")[1]))):
                 raw.select(self.scene_address("UpMidLoLayer"),replace=True)
-                raw.polySelectConstraint(mode=3,type=1,distance=3,distancebound=bounds,distanceaxis=(0,1,0),distancepoint=(0,0,0))
+                raw.polySelectConstraint(mode=3,type=1,dist=3,distbound=bounds,distaxis=(0,1,0),distpoint=(0,0,0))
                 raw.skinPercent(self.scene_address("UpMidLoSC"),transformValue=[(self.scene_address(stem+"FaceJoint_M"),1)])
         finally: raw.polySelectConstraint(mode=0)
         all_vertices=tuple(c.ls("UpMidLoLayer.vtx[*]",long=True,flatten=True) or [])

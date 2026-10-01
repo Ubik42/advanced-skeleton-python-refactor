@@ -249,13 +249,9 @@ class MayaFaceEyeBallMixin:
 
     @contextmanager
     def _original_eye_deformer_sets(self):
-        raw=getattr(self._cmds,"raw",self._cmds); option="deformationUseComponentTags"
-        previous=raw.optionVar(query=option) if raw.optionVar(exists=option) else 0
-        try:
-            if previous: raw.optionVar(intValue=(option,0))
+        from .maya_face_deformer_sets import original_face_deformer_sets
+        with original_face_deformer_sets(self._cmds):
             yield
-        finally:
-            if previous: raw.optionVar(intValue=(option,previous))
 
     def _original_eye_squash(self,source,side,suffix,geometry,skins):
         c=self._cmds; raw=getattr(c,"raw",c)

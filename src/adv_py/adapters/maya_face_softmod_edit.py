@@ -4,21 +4,14 @@ import re
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_face_softmod_weights import MayaFaceSoftModWeightsMixin
+from .maya_face_deformer_sets import original_face_deformer_sets
 
 
 class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
     @contextmanager
     def _original_face_softmod_sets(self):
-        raw = getattr(self._cmds, "raw", self._cmds)
-        option = "deformationUseComponentTags"
-        previous = int(raw.optionVar(query=option)) if raw.optionVar(exists=option) else 0
-        if previous:
-            raw.optionVar(intValue=(option, 0))
-        try:
+        with original_face_deformer_sets(self._cmds):
             yield
-        finally:
-            if previous:
-                raw.optionVar(intValue=(option, previous))
 
     def _original_face_falloff_commands(self, text):
         """Read generated falloff setAttr data without evaluating MEL code."""
@@ -128,7 +121,7 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
             if vertices:
                 c.skinPercent("SoftModSC", vertices, transformValue=((head, 1),))
         raw.select(self.scene_address(geometry), replace=True)
-        raw.polySelectConstraint(mode=3, type=1, distance=1, distancebound=(0, radius), distancepoint=position)
+        raw.polySelectConstraint(mode=3, type=1, dist=1, distbound=(0, radius), distpoint=position)
         raw.polySelectConstraint(mode=0)
         vertices = tuple(raw.ls(selection=True, flatten=True) or [])
         c.select(clear=True)

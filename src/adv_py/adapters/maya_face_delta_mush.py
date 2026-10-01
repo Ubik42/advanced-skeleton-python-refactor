@@ -92,20 +92,11 @@ class MayaFaceDeltaMushHost(MayaFacePreHost):
             raise FitSkeletonValidationError("asFaceDeltaMushSet 名称已被占用")
         with self.transaction("创建 Face DeltaMush"):
             self._transaction_changed = True
-            component_tags = None
-            if c.optionVar(exists="deformationUseComponentTags"):
-                component_tags = int(c.optionVar(
-                    query="deformationUseComponentTags"))
-            try:
-                if component_tags:
-                    c.optionVar(intValue=("deformationUseComponentTags", 0))
+            from .maya_face_deformer_sets import original_face_deformer_sets
+            with original_face_deformer_sets(c):
                 created = c.deltaMush(
                     mesh, smoothingIterations=10, smoothingStep=.5,
                     pinBorderVertices=True, envelope=1.)
-            finally:
-                if component_tags:
-                    c.optionVar(intValue=(
-                        "deformationUseComponentTags", component_tags))
             if len(created) != 1:
                 raise RuntimeError("Face DeltaMush 创建结果不唯一")
             deformer = c.rename(created[0], self._name("asFaceDeltaMush"))

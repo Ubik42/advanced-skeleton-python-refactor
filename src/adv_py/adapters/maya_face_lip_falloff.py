@@ -136,10 +136,13 @@ class MayaFaceLipFalloffHost(MayaFaceFitSelectionMixin,MayaFaceEyeLidRigHost):
                 toSelectedBones=True,maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False,
                 name=self.scene_address("LipFalloffLayerSC"))[0]
         raw.select((self.scene_address(geometry),self.scene_address("LipFalloffLayer")),replace=True)
-        raw.copySkinWeights(noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
+        raw.copySkinWeights(sourceSkin=self.scene_address(skin),destinationSkin=layer_skin,
+            noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
         raw.skinPercent(layer_skin,pruneWeights=.01)
         for index in range(2,count//4):
-            control="upperLip"+lip_control_letter(index)+"_R"
+            # MEL asNrToLetter is one-based (2=B); the Python helper is
+            # zero-based. Preserve the original B.. falloff fitting controls.
+            control="upperLip"+lip_control_letter(index-1)+"_R"
             c.setKeyframe(control+".ty",time=0,value=0)
             c.setKeyframe(control+".ty",time=30,value=1)
         c.currentTime(30); c.select(clear=True)

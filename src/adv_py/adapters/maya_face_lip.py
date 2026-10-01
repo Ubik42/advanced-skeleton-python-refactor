@@ -5,6 +5,7 @@ fleshy curves, roll/scale and lipsTogether are one ordered transaction.
 """
 from __future__ import annotations
 from math import dist
+from contextlib import nullcontext
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.face_lip import FaceLipInput
 from adv_py.core.face_lip_falloff import lip_control_letter
@@ -89,8 +90,9 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
             head=self._lip_node("joint","MultiSkinClustersFaceLipJoint_M","FaceJoint_M")
             c.setAttr(head+".drawStyle",2)
             c.setAttr(head+".inheritsTransform",False,lock=True)
-            skin=raw.skinCluster(self.scene_address(head),self.scene_address(source.geometry),
-                multi=True,frontOfChain=True,toSelectedBones=True,name=self.scene_address("LipSC"))[0]
+            with c._creation_namespace() if hasattr(c,"_creation_namespace") else nullcontext():
+                skin=raw.skinCluster(self.scene_address(head),self.scene_address(source.geometry),
+                    multi=True,frontOfChain=True,toSelectedBones=True,name=self.scene_address("LipSC"))[0]
             skin="LipSC"
         area=self.sample_face_fit_vertices("LipInnerAreaMesh",source.geometry)
         c.sets(empty=True,name="lipArea"); c.sets("lipArea",add="FaceAreas")
@@ -163,7 +165,7 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
             c.xform(f"LipRegion_M.cv[{index}]",worldSpace=True,translation=(x*1.2,y,z))
 
     def _lip_build_curves(self,source):
-        c=self._cmds; counts={}
+        c=self._cmds; counts={}; orientation_curves=[]
         motion=self._lip_node("motionPath","lipOrientMotionTemp#")
         transform=self._lip_node("transform","lipOrientTransformTemp#")
         c.connectAttr(motion+".allCoordinates",transform+".translate")
@@ -187,14 +189,17 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
                     c.setAttr(joint+".segmentScaleCompensate",False); c.setAttr(joint+".radius",.1)
                     c.xform(joint,worldSpace=True,translation=self._lip_pos(curve+f".cv[{index}]"))
                 rebuilt=c.duplicate(arc+"LipMainCurve"+suffix,name="lipOrientCurveTemp#",returnRootsOnly=True)[0]
+                orientation_curves.append(rebuilt)
                 c.rebuildCurve(rebuilt,constructionHistory=False,replaceOriginal=True,rebuildType=0,
                     endKnots=1,keepRange=1,keepControlPoints=True,keepEndPoints=True,degree=3,tolerance=.01)
                 c.connectAttr(rebuilt+".worldSpace[0]",motion+".geometryPath",force=True)
                 for index in range(1,count):
                     c.setAttr(motion+".uValue",index if index==count-1 else index-1)
                     c.setAttr(f"{arc}LipJoint{index}"+side+".ry",c.getAttr(transform+".ry"))
-                c.delete(rebuilt)
-        c.delete(motion,transform)
+                # asFaceLip retains all four sampling curves until the shared
+                # motionPath is deleted. Deleting a connected path in Maya
+                # also deletes the motionPath and breaks the next lip arc.
+        c.delete(motion,transform,*orientation_curves)
         for arc in ("upper","lower"):
             c.rename(arc+"LipJoint0_R",arc+"LipJoint0_M"); c.delete(arc+"LipJoint0_L")
         for side in ("_R","_L"): c.delete(f"lowerLipJoint{counts['lower']-1}"+side)
@@ -431,7 +436,7 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
         self._lip_falloff_hammer(skin,remaining,5)
 
     def _lip_red_controls(self,source,shaped):
-        c=self._cmds; controls=[]
+        c=self._cmds; controls=[]; sampling_geometry=[]
         nearest=self._lip_node("nearestPointOnCurve","lipControlCurveSamplerTemp#")
         surface=self._lip_node("closestPointOnSurface","lipControlSurfaceSamplerTemp#")
         for arc,factor in (("upper",1),("lower",-1)):
@@ -442,6 +447,7 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
             extrusion=c.extrude(shaped[arc][1],name="lipControlSurfaceTemp#",constructionHistory=False,
                 range=False,polygon=0,extrudeType=0,useProfileNormal=True,
                 length=source.face_scale/100,rotation=0,scale=1,degreeAlongLength=3)[0]
+            sampling_geometry.extend((extrusion,*shaped[arc]))
             c.connectAttr(extrusion+".worldSpace[0]",surface+".inputSurface",force=True)
             for side in ("_R","_L"):
                 u=source.ribbon_spans//2+(2 if side=="_R" else 1)
@@ -490,7 +496,7 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
                         plug=name+"AttachMM"+side+".matrixIn[1]"
                         incoming=c.listConnections(plug,source=True,destination=False,plugs=True) or []
                         if incoming:
-                            matrix=c.getAttr(incoming[0]); c.disconnectAttr(incoming[0],plug)
+                            matrix=self.original_face_matrix_values(incoming[0]); c.disconnectAttr(incoming[0],plug)
                             c.setAttr(plug,*matrix,type="matrix")
                     joint=c.rename(name+"Joint"+side,name+"RibbonJoint"+side)
                     offset=c.rename(name+"JointOffset"+side,name+"RibbonJointOffset"+side)
@@ -499,9 +505,10 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
                     if index==0 and side=="_R": self._lip_skin(ribbon+"SC",(joint,),ribbon)
                     else: c.skinCluster(ribbon+"SC",edit=True,addInfluence=joint,dropoffRate=4,lockWeights=False,weight=0)
                     c.skinPercent(ribbon+"SC",ribbon+f".cv[{u}][0:1]",transformValue=[(joint,1)])
-            c.delete(extrusion,*shaped[arc])
             c.parent(curve,ribbon,"LipRibbon",absolute=True)
-        c.delete(nearest,surface)
+        # As in the MEL, shared samplers outlive both upper/lower surfaces.
+        # Maya deletes downstream sampler nodes with their input geometry.
+        c.delete(nearest,surface,*sampling_geometry)
         for side,u in (("_R",0),("_L",source.end*2+1)):
             joint="cornerLipRibbonJoint"+side
             c.skinCluster("lowerLipRibbonSC",edit=True,addInfluence=joint,dropoffRate=4,lockWeights=False,weight=0)
@@ -619,7 +626,7 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
         c.delete(nearest)
 
     def _lip_roll_scale(self,source,counts):
-        c=self._cmds
+        c=self._cmds; closest_a=closest_b=None
         def smooth(value,maximum=1):
             t=max(0.,min(1.,value/maximum)); return t*t*(3-2*t)
         for arc in ("upper","lower"):
@@ -637,13 +644,17 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
                     side="_M" if index==0 else lateral
                     if index==0 and lateral=="_L" or arc=="lower" and index==counts[arc]-1: continue
                     parameter=float(c.getAttr(f"{arc}follicle{index}"+side+".parameterU"))
-                    below=[(parameter-p,ctrl) for ctrl,p in samples if parameter-p>0]
-                    above=[(p-parameter,ctrl) for ctrl,p in samples if p-parameter>0]
-                    # At an exact boundary use its control for the missing side;
-                    # avoids MEL's accidental reuse of a preceding loop value.
-                    exact=min(samples,key=lambda item:abs(item[1]-parameter))[0]
-                    d1,a=min(below) if below else (0.,exact)
-                    d2,b=min(above) if above else (0.,exact)
+                    # MEL 35437–35457 uses strict inequalities, first-match
+                    # tie handling and retains its prior closest control when
+                    # one side has no candidate. Preserve those source rules.
+                    d1=d2=999.
+                    for control,ctrl_parameter in samples:
+                        distance=parameter-ctrl_parameter
+                        if 0<distance<d1: d1=distance; closest_a=control
+                        if distance<0 and -distance<d2: d2=-distance; closest_b=control
+                    if closest_a is None or closest_b is None:
+                        raise FitSkeletonValidationError("Lip Roll 采样缺少原版两侧控制器")
+                    a,b=closest_a,closest_b
                     blend=self._lip_node("blendWeighted",f"{arc}LipBW{index}"+side)
                     for number,control in enumerate((a,b,"SDK"+a,"SDK"+b,arc+"Lip_M","SDK"+arc+"Lip_M")):
                         c.connectAttr(control+".rx",blend+f".input[{number}]")
@@ -695,10 +706,10 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
                     child=self._lip_node("transform","lipTogetherChildTemp#",parent)
                     if index==0:
                         c.xform(child,worldSpace=True,translation=self._lip_pos(control))
-                        matrix=c.getAttr(child+".matrix")
+                        matrix=self.original_face_matrix_values(child+".matrix")
                     else:
                         c.pointConstraint("upperLip_M","lowerLip_M",child)
-                        matrix=c.getAttr(child+".inverseMatrix")
+                        matrix=self.original_face_matrix_values(child+".inverseMatrix")
                     c.setAttr(mm+f".matrixIn[{index}]",*matrix,type="matrix"); c.delete(parent)
                 pick=self._lip_node("pickMatrix",arc+"LipsTogetherFollowPM"+side)
                 for attr in ("useScale","useShear"): c.setAttr(pick+"."+attr,False)

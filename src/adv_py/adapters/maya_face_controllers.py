@@ -364,8 +364,8 @@ class MayaFaceControllersMixin:
         elif existing:
             destination=(c.listConnections(existing+".output",source=False,destination=True,plugs=True) or [None])[0]
         else:
-            destination=bw+f".input[{max(indices,default=-1)+1}]"
-            if start and indices: value-=1; start-=1
+            destination=self.next_original_face_bw_input(bw)
+            if start and not destination.endswith("[0]"): value-=1; start-=1
         if c.objExists("ARKitQuickConnecting"):
             destination=driven
         before=set(c.listConnections(destination,source=True,destination=False,type="animCurve") or [])
@@ -523,9 +523,9 @@ class MayaFaceControllersMixin:
         c=self._cmds; stem,side=joint.rsplit("_",1); side="_"+side
         opm=self.face_use_offset_parent_matrix()
         plug=joint+".offsetParentMatrix" if opm else stem+"DM"+side+".inputMatrix"
-        matrix=c.getAttr(plug)
+        matrix=self.original_face_matrix_values(plug)
         if .999<float(matrix[10])<1.001: return
-        inverse=c.getAttr("SideReverse"+side+".worldInverseMatrix[0]")
+        inverse=self.original_face_matrix_values("SideReverse"+side+".worldInverseMatrix[0]")
         nodes=c.listConnections(plug,source=True,destination=False,type="multMatrix") or []
         if not nodes: raise ValueError("Face OPM Scale Reset 缺少 MultMatrix："+joint)
         mm=nodes[0]; first=mm+".matrixIn[0]"
@@ -535,11 +535,11 @@ class MayaFaceControllersMixin:
             for index in sorted(indices,reverse=True):
                 old=mm+f".matrixIn[{index}]"; new=mm+f".matrixIn[{index+1}]"
                 connection=c.listConnections(old,source=True,destination=False,plugs=True) or []
-                value=c.getAttr(old)
+                value=self.original_face_matrix_values(old)
                 if connection:
                     c.disconnectAttr(connection[0],old); c.connectAttr(connection[0],new,force=True)
                 else: c.setAttr(new,*value,type="matrix")
             value=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]
-        else: value=list(c.getAttr(first))
+        else: value=list(self.original_face_matrix_values(first))
         for index in (0,5,10): value[index]=inverse[index]
         c.setAttr(first,*value,type="matrix")

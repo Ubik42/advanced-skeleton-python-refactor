@@ -80,16 +80,9 @@ class MayaFaceHeadSquashHost(MayaFaceEyeLidRigHost):
     @contextmanager
     def _head_squash_deformer_sets(self):
         """asDeformer temporarily disables component tags for legacy sets."""
-        c = getattr(self._cmds, "raw", self._cmds)
-        option = "deformationUseComponentTags"
-        previous = int(c.optionVar(query=option)) if c.optionVar(exists=option) else 0
-        try:
-            if previous:
-                c.optionVar(intValue=(option, 0))
+        from .maya_face_deformer_sets import original_face_deformer_sets
+        with original_face_deformer_sets(self._cmds):
             yield
-        finally:
-            if previous:
-                c.optionVar(intValue=(option, previous))
 
     def create_head_squash(self,source):
         with self._head_squash_deformer_sets():

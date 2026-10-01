@@ -110,7 +110,7 @@ class MayaFaceSoftModWeightsMixin:
         if self._original_restore_leaf(joint).startswith("MouthNarrowJoint_") and not c.objExists("tempSoftModCopy"):
             c.setAttr(soft + ".falloffCurve[0].falloffCurve_Interp", 1)
         c.select("tempMesh", replace=True)
-        raw.polySelectConstraint(mode=3, type=1, distance=1, distancebound=(0, radius), distancepoint=position)
+        raw.polySelectConstraint(mode=3, type=1, dist=1, distbound=(0, radius), distpoint=position)
         vertices = tuple(raw.ls(selection=True, flatten=True) or [])
         raw.polySelectConstraint(mode=0)
         initial = [raw.xform(vertex, query=True, worldSpace=True, translation=True)[1] for vertex in vertices]

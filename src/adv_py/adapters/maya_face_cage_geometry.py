@@ -65,7 +65,7 @@ class MayaFaceCageGeometryMixin:
                     self.reset_original_face_joint_matrix_scale("lowerLidOuterJoint"+side)
         finally: c.delete("TempPos")
         if source.multi_skin_clusters:
-            matrix=raw.getAttr(self.scene_address(source.head)+".worldMatrix[0]")
+            matrix=self.original_face_matrix_values(source.head+".worldMatrix[0]")
             for joint in joints:
                 stem,side=joint.rsplit("_",1); mm=stem+"MM_"+side
                 raw.connectAttr(self.scene_address(source.head)+".worldInverseMatrix[0]",

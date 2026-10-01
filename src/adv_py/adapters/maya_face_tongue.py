@@ -128,14 +128,9 @@ class MayaFaceTongueHost(MayaFaceEyeLidRigHost):
 
     @contextmanager
     def _tongue_deformer_sets(self):
-        c=self._tongue_maya
-        option="deformationUseComponentTags"
-        previous=int(c.optionVar(query=option)) if c.optionVar(exists=option) else 0
-        try:
-            if previous: c.optionVar(intValue=(option,0))
+        from .maya_face_deformer_sets import original_face_deformer_sets
+        with original_face_deformer_sets(self._tongue_maya):
             yield
-        finally:
-            if previous: c.optionVar(intValue=(option,previous))
 
     def create_tongue_rig(self,source):
         self._require_transaction()
