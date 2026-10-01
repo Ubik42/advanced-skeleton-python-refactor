@@ -7,7 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
 
-def main(source, output, *, rebuild=False, restricted_skin=False):
+def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
+         bendy=False, export=True):
     import maya.standalone
     maya.standalone.initialize(name='python')
     from maya import cmds
@@ -18,6 +19,15 @@ def main(source, output, *, rebuild=False, restricted_skin=False):
     cmds.file(str(source.resolve()), open=True, force=True,
               executeScriptNodes=False)
     cmds.undoInfo(state=True)
+    if opm:
+        if not cmds.objExists('FitSkeleton.useOffsetParentMatrix'):
+            cmds.addAttr('FitSkeleton', ln='useOffsetParentMatrix', at='bool')
+        cmds.setAttr('FitSkeleton.useOffsetParentMatrix', True)
+    if bendy:
+        for joint in ('Shoulder', 'Elbow'):
+            if not cmds.objExists(joint + '.bendyCtrls'):
+                cmds.addAttr(joint, ln='bendyCtrls', at='long', min=0)
+            cmds.setAttr(joint + '.bendyCtrls', 3)
     # This proxy checks binding/deformation plumbing, not model appearance.
     mesh = cmds.polyCube(name='BipedBindProxy', width=30, height=100,
                          depth=20, subdivisionsY=10)[0]
@@ -28,7 +38,7 @@ def main(source, output, *, rebuild=False, restricted_skin=False):
     registration = host.read_character_registration()
     assert result.joint_count == len(registration.body)
     assert result.segment_joint_count > 0
-    skins = cmds.ls(type='skinCluster') or []
+    skins = cmds.ls(cmds.listHistory(mesh) or [], type='skinCluster') or []
     assert len(skins) == 1, skins
     mesh=cmds.ls(mesh,long=True)[0]
     if restricted_skin:
@@ -66,16 +76,19 @@ def main(source, output, *, rebuild=False, restricted_skin=False):
     cmds.file(str(scene.resolve()), open=True, force=True, executeScriptNodes=False)
     reopened = MayaBodyBuildHost().read_character_registration()
     assert reopened == registration
-    published = controller.publish_fbx(':', output / 'original-biped-current.fbx',
+    published = (controller.publish_fbx(':', output / 'original-biped-current.fbx',
                                        start=1, end=5, include_skins=True)
-    assert published.bytes_written > 0
+                 if export else None)
+    if export:
+        assert published.bytes_written > 0
     report = dict(source=str(source.resolve()), body_joints=result.joint_count,
+                  opm=opm, bendy=bendy,
                   part_joints=result.segment_joint_count,
                   channels=result.channel_count, skins=skins,
                   restricted_skin=restricted_skin,portable_pose_roundtrip=True,
                   portable_animation_roundtrip=True,
                   native_global_deformation=True, registry_reopened=True,
-                  fbx_bytes=published.bytes_written, scene=str(scene.resolve()))
+                  fbx_bytes=published.bytes_written if published else None, export_tested=export, scene=str(scene.resolve()))
     (output / 'original-biped-current.json').write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     print('PASS original biped current build', report)
@@ -86,7 +99,7 @@ def main(source, output, *, rebuild=False, restricted_skin=False):
         retained=MayaBodyBuildHost(namespace='').read_character_registration()
         assert len(retained.body) == len(registration.body)
         assert not cmds.namespace(exists='BipedRebuild')
-        assert len(cmds.ls(type='skinCluster') or []) == 1
+        assert len(cmds.ls(cmds.listHistory(mesh) or [], type='skinCluster') or []) == 1
         assert cmds.ls(skins[0],uuid=True)==[skin_uuid]
         actual_curves={curve.uuid for curve in CaptureBodyCharacterPreservation(
             MayaBodyBuildHost(namespace='')).execute().curves}
@@ -118,4 +131,6 @@ def main(source, output, *, rebuild=False, restricted_skin=False):
 
 if __name__ == '__main__':
     main(Path(sys.argv[1]), Path(sys.argv[2]),rebuild='--rebuild' in sys.argv[3:],
-         restricted_skin='--restricted-skin' in sys.argv[3:])
+         restricted_skin='--restricted-skin' in sys.argv[3:],
+         opm='--opm' in sys.argv[3:], bendy='--bendy' in sys.argv[3:],
+         export='--no-export' not in sys.argv[3:])

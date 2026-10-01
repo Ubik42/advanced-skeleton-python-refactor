@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from adv_py.core.fit_bendy import FitBendyChainSpec, FitBendyFkScaleSpec
 from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
+from .maya_source_parent_inverse import parent_world_inverse
 
 if TYPE_CHECKING:
     from adv_py.application.fit_bendy import FitBendyFollowSpec, FitBendyWorldSource
@@ -284,7 +285,7 @@ class MayaFitBendyMixin:
                               world + ".matrixIn[0]")
                 c.connectAttr(translation + ".outputMatrix",
                               world + ".matrixIn[1]")
-                c.connectAttr(joint + ".parentInverseMatrix[0]",
+                c.connectAttr(parent_world_inverse(self, joint),
                               world + ".matrixIn[2]")
                 c.setAttr(joint + ".translate", 0, 0, 0)
                 c.setAttr(joint + ".rotate", 0, 0, 0)
@@ -322,7 +323,7 @@ class MayaFitBendyMixin:
                                           name=follow_name + "MM")
                     c.connectAttr(driver + ".worldMatrix[0]",
                                   matrix + ".matrixIn[0]")
-                    c.connectAttr(joint + ".parentInverseMatrix[0]",
+                    c.connectAttr(parent_world_inverse(self, joint),
                                   matrix + ".matrixIn[1]")
                     c.setAttr(joint + ".translate", 0, 0, 0)
                     c.setAttr(joint + ".rotate", 0, 0, 0)
@@ -400,7 +401,7 @@ class MayaFitBendyMixin:
                 pick = c.createNode("pickMatrix", name=pick_name)
                 c.connectAttr(transform + ".worldMatrix[0]",
                               matrix + ".matrixIn[0]")
-                c.connectAttr(offset + ".parentInverseMatrix[0]",
+                c.connectAttr(parent_world_inverse(self, offset),
                               matrix + ".matrixIn[1]")
                 c.connectAttr(matrix + ".matrixSum",
                               pick + ".inputMatrix")
@@ -427,7 +428,7 @@ class MayaFitBendyMixin:
         if len(curves) != 1:
             return False
         shapes = c.listRelatives(curves[0], shapes=True,
-                                 fullPath=True) or []
+                                 fullPath=True, noIntermediate=True) or []
         if (len(shapes) != 1 or c.nodeType(shapes[0]) != "nurbsCurve"
                 or not c.objExists(spec.secondary_skin_name)
                 or c.nodeType(spec.secondary_skin_name) != "skinCluster"):
@@ -453,18 +454,9 @@ class MayaFitBendyMixin:
                 matrix = follow + "MM"
                 return (c.objExists(matrix)
                         and c.nodeType(matrix) == "multMatrix"
-                        and c.connectionInfo(
-                            matrix + ".matrixIn[0]",
-                            sourceFromDestination=True)
-                        == driver + ".worldMatrix[0]"
-                        and c.connectionInfo(
-                            matrix + ".matrixIn[1]",
-                            sourceFromDestination=True)
-                        == name + ".parentInverseMatrix[0]"
-                        and c.connectionInfo(
-                            name + ".offsetParentMatrix",
-                            sourceFromDestination=True)
-                        == matrix + ".matrixSum"
+                        and c.isConnected(driver + ".worldMatrix[0]", matrix + ".matrixIn[0]", ignoreUnitConversion=True)
+                        and c.isConnected(parent_world_inverse(self, name), matrix + ".matrixIn[1]")
+                        and c.isConnected(matrix + ".matrixSum", name + ".offsetParentMatrix", ignoreUnitConversion=True)
                         and all(abs(float(value)) <= 1e-7
                                 for attribute in ("translate", "rotate")
                                 for value in c.getAttr(name + "." + attribute)[0]))
@@ -502,51 +494,28 @@ class MayaFitBendyMixin:
                     or c.nodeType(rotation) != "pickMatrix"
                     or not c.objExists(world)
                     or c.nodeType(world) != "multMatrix"
-                    or c.connectionInfo(translation + ".inputMatrix",
-                                        sourceFromDestination=True)
-                    != child_driver + ".worldMatrix[0]"
-                    or c.connectionInfo(rotation + ".inputMatrix",
-                                        sourceFromDestination=True)
-                    != ((spec.parent_untwist_names[3]
+                    or not c.isConnected(child_driver + ".worldMatrix[0]", translation + ".inputMatrix", ignoreUnitConversion=True)
+                    or not c.isConnected((spec.parent_untwist_names[3]
                          if c.objExists(spec.parent_untwist_names[3])
                          else spec.follow_node_names[0])
-                        + ".worldMatrix[0]")
-                    or c.connectionInfo(world + ".matrixIn[0]",
-                                        sourceFromDestination=True)
-                    != rotation + ".outputMatrix"
-                    or c.connectionInfo(world + ".matrixIn[1]",
-                                        sourceFromDestination=True)
-                    != translation + ".outputMatrix"
-                    or c.connectionInfo(world + ".matrixIn[2]",
-                                        sourceFromDestination=True)
-                    != end + ".parentInverseMatrix[0]"
+                        + ".worldMatrix[0]", rotation + ".inputMatrix", ignoreUnitConversion=True)
+                    or not c.isConnected(rotation + ".outputMatrix", world + ".matrixIn[0]", ignoreUnitConversion=True)
+                    or not c.isConnected(translation + ".outputMatrix", world + ".matrixIn[1]", ignoreUnitConversion=True)
+                    or not c.isConnected(parent_world_inverse(self, end), world + ".matrixIn[2]")
                     or ((not spec.secondary_matrix_follow
                          or spec.opm_offset_only_scale)
-                        and c.connectionInfo(
-                            end + ".offsetParentMatrix",
-                            sourceFromDestination=True)
-                        != world + ".matrixSum")):
+                        and not c.isConnected(world + ".matrixSum", end + ".offsetParentMatrix", ignoreUnitConversion=True))):
                 return False
             if (spec.secondary_matrix_follow
                     and not spec.opm_offset_only_scale):
                 decompose = spec.secondary_end_decompose_name
                 if (not c.objExists(decompose)
                         or c.nodeType(decompose) != "decomposeMatrix"
-                        or c.connectionInfo(decompose + ".inputMatrix",
-                                            sourceFromDestination=True)
-                        != world + ".matrixSum"
-                        or c.connectionInfo(end + ".translate",
-                                            sourceFromDestination=True)
-                        != decompose + ".outputTranslate"
-                        or c.connectionInfo(end + ".rotate",
-                                            sourceFromDestination=True)
-                        != decompose + ".outputRotate"
-                        or c.connectionInfo(end + ".scale",
-                                            sourceFromDestination=True)
-                        != decompose + ".outputScale"
-                        or c.connectionInfo(end + ".shear",
-                                            sourceFromDestination=True)
-                        != decompose + ".outputShear"):
+                        or not c.isConnected(world + ".matrixSum", decompose + ".inputMatrix", ignoreUnitConversion=True)
+                        or not c.isConnected(decompose + ".outputTranslate", end + ".translate", ignoreUnitConversion=True)
+                        or not c.isConnected(decompose + ".outputRotate", end + ".rotate", ignoreUnitConversion=True)
+                        or not c.isConnected(decompose + ".outputScale", end + ".scale", ignoreUnitConversion=True)
+                        or not c.isConnected(decompose + ".outputShear", end + ".shear", ignoreUnitConversion=True)):
                     return False
             for node, disabled in ((translation, ("useRotate", "useScale",
                                                   "useShear")),
@@ -569,23 +538,15 @@ class MayaFitBendyMixin:
                     or int(c.getAttr(path + ".worldUpType")) != 2
                     or int(c.getAttr(path + ".frontAxis")) != 0
                     or int(c.getAttr(path + ".upAxis")) != 1
-                    or c.connectionInfo(path + ".geometryPath",
-                                        sourceFromDestination=True)
-                    != shapes[0] + ".worldSpace[0]"
-                    or c.connectionInfo(transform + ".translate",
-                                        sourceFromDestination=True)
-                    != path + ".allCoordinates"
-                    or c.connectionInfo(transform + ".rotate",
-                                        sourceFromDestination=True)
-                    != path + ".rotate"
+                    or not c.isConnected(shapes[0] + ".worldSpace[0]", path + ".geometryPath", ignoreUnitConversion=True)
+                    or not c.isConnected(path + ".allCoordinates", transform + ".translate", ignoreUnitConversion=True)
+                    or not c.isConnected(path + ".rotate", transform + ".rotate", ignoreUnitConversion=True)
                     or not self._bendy_fraction_mode_matches(
                         path, spec.control_names[0])
-                    or c.connectionInfo(path + ".worldUpMatrix",
-                                        sourceFromDestination=True)
-                    != ((spec.control_names[0]
+                    or not c.isConnected((spec.control_names[0]
                          if spec.legacy_twist_outputs else
                          spec.twist_projection_names[0][0])
-                        + ".worldMatrix[0]")
+                        + ".worldMatrix[0]", path + ".worldUpMatrix", ignoreUnitConversion=True)
                     or not self._bendy_motion_parameter_matches(path)):
                 return False
             if spec.secondary_matrix_follow:
@@ -596,18 +557,10 @@ class MayaFitBendyMixin:
                         or c.nodeType(matrix) != "multMatrix"
                         or not c.objExists(pick)
                         or c.nodeType(pick) != "pickMatrix"
-                        or c.connectionInfo(matrix + ".matrixIn[0]",
-                                            sourceFromDestination=True)
-                        != transform + ".worldMatrix[0]"
-                        or c.connectionInfo(matrix + ".matrixIn[1]",
-                                            sourceFromDestination=True)
-                        != offset + ".parentInverseMatrix[0]"
-                        or c.connectionInfo(pick + ".inputMatrix",
-                                            sourceFromDestination=True)
-                        != matrix + ".matrixSum"
-                        or c.connectionInfo(offset + ".offsetParentMatrix",
-                                            sourceFromDestination=True)
-                        != pick + ".outputMatrix"
+                        or not c.isConnected(transform + ".worldMatrix[0]", matrix + ".matrixIn[0]", ignoreUnitConversion=True)
+                        or not c.isConnected(parent_world_inverse(self, offset), matrix + ".matrixIn[1]")
+                        or not c.isConnected(matrix + ".matrixSum", pick + ".inputMatrix", ignoreUnitConversion=True)
+                        or not c.isConnected(pick + ".outputMatrix", offset + ".offsetParentMatrix", ignoreUnitConversion=True)
                         or not c.getAttr(pick + ".useTranslate")
                         or not c.getAttr(pick + ".useRotate")
                         or c.getAttr(pick + ".useScale")
@@ -664,7 +617,9 @@ class MayaFitBendyMixin:
                 raise ValueError("Bendy 变形关节或 Micro 输出不唯一：" + name)
             marker = ("advPySourceJoint" if index == 0
                       else "advPyAuxiliaryInfluenceKind")
-            if not c.objExists(joints[0] + "." + marker):
+            owned = (self._is_owned_body_or_mechanism(joints[0]) if index == 0
+                     else c.objExists(joints[0] + "." + marker))
+            if not owned:
                 raise ValueError("Bendy 变形关节不属于当前角色：" + name)
             if index and c.getAttr(joints[0] + "." + marker) != "fit-part-v1":
                 raise ValueError("Bendy 需要 Twist Part 关节：" + name)
@@ -827,15 +782,11 @@ class MayaFitBendyMixin:
                     or c.nodeType(constraint) != "parentConstraint"
                     or not c.objExists(scale_pick)
                     or c.nodeType(scale_pick) != "pickMatrix"
-                    or c.connectionInfo(joints[0] + ".offsetParentMatrix",
-                                        sourceFromDestination=True)
-                    != scale_pick + ".outputMatrix"
+                    or not c.isConnected(scale_pick + ".outputMatrix", joints[0] + ".offsetParentMatrix", ignoreUnitConversion=True)
                     or not c.objExists(scale_mult)
                     or c.nodeType(scale_mult) != "multiplyDivide"
                     or (not spec.opm_offset_only_scale
-                        and c.connectionInfo(joints[0] + ".scale",
-                                             sourceFromDestination=True)
-                        != scale_mult + ".output")
+                        and not c.isConnected(scale_mult + ".output", joints[0] + ".scale", ignoreUnitConversion=True))
                     or (not spec.non_opm_additive_micro_scale
                         and not spec.opm_offset_only_scale
                         and c.connectionInfo(
@@ -848,22 +799,14 @@ class MayaFitBendyMixin:
             if (spec.non_opm_additive_micro_scale
                     or spec.opm_offset_only_scale):
                 guide = spec.motion_transform_names[index]
-                if (c.connectionInfo(offset + ".scale",
-                                     sourceFromDestination=True)
-                        != scale_mult + ".output"
+                if (not c.isConnected(scale_mult + ".output", offset + ".scale", ignoreUnitConversion=True)
                         or (spec.opm_offset_only_scale
-                            and c.connectionInfo(
-                                joints[0] + ".scale",
-                                sourceFromDestination=True)
-                            == scale_mult + ".output")
+                            and c.isConnected(scale_mult + ".output", joints[0] + ".scale", ignoreUnitConversion=True))
                         or c.connectionInfo(scale_mult + ".input2X",
                                             sourceFromDestination=True)
                         or abs(float(c.getAttr(scale_mult + ".input2X"))
                                - 1.0) > 1e-8
-                        or any(c.connectionInfo(
-                            scale_mult + ".input2" + axis,
-                            sourceFromDestination=True)
-                            != guide + ".scale" + axis
+                        or any(not c.isConnected(guide + ".scale" + axis, scale_mult + ".input2" + axis, ignoreUnitConversion=True)
                             for axis in "YZ")):
                     return False
                 if spec.opm_offset_only_scale:
@@ -894,21 +837,11 @@ class MayaFitBendyMixin:
                         or c.nodeType(decompose) != "decomposeMatrix"
                         or not c.objExists(combine)
                         or c.nodeType(combine) != "multiplyDivide"
-                        or c.connectionInfo(relative + ".matrixIn[0]",
-                                            sourceFromDestination=True)
-                        != output + ".worldMatrix[0]"
-                        or c.connectionInfo(relative + ".matrixIn[1]",
-                                            sourceFromDestination=True)
-                        != offset + ".worldInverseMatrix[0]"
-                        or c.connectionInfo(decompose + ".inputMatrix",
-                                            sourceFromDestination=True)
-                        != relative + ".matrixSum"
-                        or c.connectionInfo(combine + ".input1",
-                                            sourceFromDestination=True)
-                        != offset + ".scale"
-                        or c.connectionInfo(combine + ".input2",
-                                            sourceFromDestination=True)
-                        != decompose + ".outputScale"):
+                        or not c.isConnected(output + ".worldMatrix[0]", relative + ".matrixIn[0]", ignoreUnitConversion=True)
+                        or not c.isConnected(offset + ".worldInverseMatrix[0]", relative + ".matrixIn[1]", ignoreUnitConversion=True)
+                        or not c.isConnected(relative + ".matrixSum", decompose + ".inputMatrix", ignoreUnitConversion=True)
+                        or not c.isConnected(offset + ".scale", combine + ".input1", ignoreUnitConversion=True)
+                        or not c.isConnected(decompose + ".outputScale", combine + ".input2", ignoreUnitConversion=True)):
                     return False
             targets = c.parentConstraint(constraint, query=True,
                                          targetList=True) or []
@@ -935,9 +868,7 @@ class MayaFitBendyMixin:
                 or not c.objExists(spec.bendy_scale_name)
                 or c.nodeType(spec.bendy_scale_name) != "multiplyDivide"
                 or c.objExists(spec.multiply_name)
-                or c.connectionInfo(spec.body_joint + ".scale",
-                                    sourceFromDestination=True)
-                != spec.bendy_scale_name + ".output"):
+                or not c.isConnected(spec.bendy_scale_name + ".output", spec.body_joint + ".scale", ignoreUnitConversion=True)):
             raise ValueError("通用 Bendy FK 缩放的 Body 或来源无效："
                              + spec.body_joint)
 
@@ -966,15 +897,9 @@ class MayaFitBendyMixin:
         return (c.objExists(node)
                 and c.nodeType(node) == "multiplyDivide"
                 and int(c.getAttr(node + ".operation")) == 1
-                and c.connectionInfo(node + ".input1",
-                                     sourceFromDestination=True)
-                == spec.bendy_scale_name + ".output"
-                and c.connectionInfo(node + ".input2",
-                                     sourceFromDestination=True)
-                == spec.control_path + ".scale"
-                and c.connectionInfo(spec.body_joint + ".scale",
-                                     sourceFromDestination=True)
-                == node + ".output")
+                and c.isConnected(spec.bendy_scale_name + ".output", node + ".input1", ignoreUnitConversion=True)
+                and c.isConnected(spec.control_path + ".scale", node + ".input2", ignoreUnitConversion=True)
+                and c.isConnected(node + ".output", spec.body_joint + ".scale", ignoreUnitConversion=True))
 
     def preflight_fit_bendy_micro(self, spec: FitBendyChainSpec) -> None:
         c = self._cmds
@@ -1218,7 +1143,7 @@ class MayaFitBendyMixin:
                 matrix = c.createNode("multMatrix", name=follow_name + "MM")
                 c.connectAttr(driver + ".worldMatrix[0]",
                               matrix + ".matrixIn[0]")
-                c.connectAttr(joint + ".parentInverseMatrix[0]",
+                c.connectAttr(parent_world_inverse(self, joint),
                               matrix + ".matrixIn[1]")
                 c.setAttr(joint + ".translate", 0, 0, 0)
                 c.setAttr(joint + ".rotate", 0, 0, 0)
@@ -1303,7 +1228,7 @@ class MayaFitBendyMixin:
             world = c.createNode("multMatrix", name=world_name,
                                  skipSelect=True)
             c.connectAttr(matrix, world + ".matrixIn[0]")
-            c.connectAttr(proxy + ".parentInverseMatrix[0]",
+            c.connectAttr(parent_world_inverse(self, proxy),
                           world + ".matrixIn[1]")
             c.connectAttr(world + ".matrixSum",
                           proxy + ".offsetParentMatrix")
@@ -1320,9 +1245,9 @@ class MayaFitBendyMixin:
                         else chain.control_positions[index - 1])
             offset = c.createNode("transform", name=control + "Offset",
                                   parent=_GROUPS[0], skipSelect=True)
+            c.setAttr(offset + ".rotateOrder", chain.rotation_order)
             self._align_bendy_control(
                 offset, position, chain.start_world_axes)
-            c.setAttr(offset + ".rotateOrder", chain.rotation_order)
             if index == 0 and chain.start_world_axes is not None:
                 c.addAttr(offset, longName="advPyBendyOrientedBind",
                           attributeType="bool", defaultValue=True)
@@ -1376,7 +1301,7 @@ class MayaFitBendyMixin:
                           world + ".matrixIn[0]")
             c.connectAttr(translation + ".outputMatrix",
                           world + ".matrixIn[1]")
-            c.connectAttr(chain.end_proxy_name + ".parentInverseMatrix[0]",
+            c.connectAttr(parent_world_inverse(self, chain.end_proxy_name),
                           world + ".matrixIn[2]")
             c.setAttr(chain.end_proxy_name + ".translate", 0, 0, 0)
             c.setAttr(chain.end_proxy_name + ".rotate", 0, 0, 0)
@@ -1417,7 +1342,7 @@ class MayaFitBendyMixin:
                       world + ".matrixIn[0]")
         c.connectAttr(start_proxy + ".worldMatrix[0]",
                       world + ".matrixIn[1]")
-        c.connectAttr(frame + ".parentInverseMatrix[0]",
+        c.connectAttr(parent_world_inverse(self, frame),
                       world + ".matrixIn[2]")
         c.connectAttr(world + ".matrixSum",
                       frame + ".offsetParentMatrix")
@@ -1490,14 +1415,13 @@ class MayaFitBendyMixin:
         bind = c.createNode("multMatrix", name=bind_name,
                             skipSelect=True)
         c.setAttr(bind + ".matrixIn[0]",
-                  *(float(bind_offset[row][column])
-                    for row in range(4) for column in range(4)),
+                  *tuple(float(value) for value in bind_offset),
                   type="matrix")
         c.connectAttr(aim + ".outputMatrix", bind + ".matrixIn[1]")
         world = c.createNode("multMatrix", name=world_name,
                              skipSelect=True)
         c.connectAttr(bind + ".matrixSum", world + ".matrixIn[0]")
-        c.connectAttr(offset + ".parentInverseMatrix[0]",
+        c.connectAttr(parent_world_inverse(self, offset),
                       world + ".matrixIn[1]")
         pick = c.createNode("pickMatrix", name=pick_name,
                             skipSelect=True)
@@ -1607,27 +1531,13 @@ class MayaFitBendyMixin:
                 and c.nodeType(length) == "multDoubleLinear"
                 and c.objExists(amount)
                 and c.nodeType(amount) == "multDoubleLinear"
-                and c.connectionInfo(relative + ".matrixIn[0]",
-                                     sourceFromDestination=True)
-                == spec.child_source_proxy + ".worldMatrix[0]"
-                and c.connectionInfo(relative + ".matrixIn[1]",
-                                     sourceFromDestination=True)
-                == spec.follow_node_names[0] + ".worldInverseMatrix[0]"
-                and c.connectionInfo(angle + ".inputMatrix",
-                                     sourceFromDestination=True)
-                == relative + ".matrixSum"
-                and c.connectionInfo(length + ".input1",
-                                     sourceFromDestination=True)
-                == angle + ".outputRotateZ"
-                and c.connectionInfo(amount + ".input1",
-                                     sourceFromDestination=True)
-                == length + ".output"
-                and c.connectionInfo(amount + ".input2",
-                                     sourceFromDestination=True)
-                == spec.child_junction_control + ".circular"
-                and c.connectionInfo(circular + ".translateY",
-                                     sourceFromDestination=True)
-                == amount + ".output")
+                and c.isConnected(spec.child_source_proxy + ".worldMatrix[0]", relative + ".matrixIn[0]", ignoreUnitConversion=True)
+                and c.isConnected(spec.follow_node_names[0] + ".worldInverseMatrix[0]", relative + ".matrixIn[1]", ignoreUnitConversion=True)
+                and c.isConnected(relative + ".matrixSum", angle + ".inputMatrix", ignoreUnitConversion=True)
+                and c.isConnected(angle + ".outputRotateZ", length + ".input1", ignoreUnitConversion=True)
+                and c.isConnected(length + ".output", amount + ".input1", ignoreUnitConversion=True)
+                and c.isConnected(spec.child_junction_control + ".circular", amount + ".input2", ignoreUnitConversion=True)
+                and c.isConnected(amount + ".output", circular + ".translateY", ignoreUnitConversion=True))
 
     def capture_fit_bendy_follow(self, spec: "FitBendyFollowSpec") -> bool:
         c = self._cmds
@@ -1638,26 +1548,17 @@ class MayaFitBendyMixin:
             if (not c.objExists(proxy) or c.nodeType(proxy) != "transform"
                     or not c.objExists(world)
                     or c.nodeType(world) != "multMatrix"
-                    or c.connectionInfo(proxy + ".offsetParentMatrix",
-                                        sourceFromDestination=True)
-                    != world + ".matrixSum"):
+                    or not c.isConnected(world + ".matrixSum", proxy + ".offsetParentMatrix", ignoreUnitConversion=True)):
                 return False
             expected = source.fk_matrix
             if source.ik_matrix is not None:
                 if (not c.objExists(blend) or c.nodeType(blend) != "blendMatrix"
-                        or c.connectionInfo(blend + ".inputMatrix",
-                                            sourceFromDestination=True)
-                        != source.fk_matrix
-                        or c.connectionInfo(blend + ".target[0].targetMatrix",
-                                            sourceFromDestination=True)
-                        != source.ik_matrix
-                        or c.connectionInfo(blend + ".target[0].weight",
-                                            sourceFromDestination=True)
-                        != source.blend_plug):
+                        or not c.isConnected(source.fk_matrix, blend + ".inputMatrix")
+                        or not c.isConnected(source.ik_matrix, blend + ".target[0].targetMatrix")
+                        or not c.isConnected(source.blend_plug, blend + ".target[0].weight")):
                     return False
                 expected = blend + ".outputMatrix"
-            if c.connectionInfo(world + ".matrixIn[0]",
-                                sourceFromDestination=True) != expected:
+            if not c.isConnected(expected, world + ".matrixIn[0]"):
                 return False
         parent_proxy = (spec.chain.parent_untwist_names[3]
                         if spec.untwist_plug else names[0])
@@ -1707,6 +1608,15 @@ class MayaFitBendyMixin:
                         spec.chain, offset, names[0], names[1],
                         parent_proxy, spec.start_control_blend):
                     return False
+            elif spec.chain.secondary_matrix_follow and index >= 2:
+                # The secondary curve replaces this initial constraint with
+                # its motion-path matrix follow; verify that final receiver.
+                matrix, pick = spec.chain.secondary_interior_follow_names[index - 2]
+                if (not c.objExists(matrix) or c.nodeType(matrix) != "multMatrix"
+                        or not c.objExists(pick) or c.nodeType(pick) != "pickMatrix"
+                        or not c.isConnected(matrix + ".matrixSum", pick + ".inputMatrix")
+                        or not c.isConnected(pick + ".outputMatrix", offset + ".offsetParentMatrix")):
+                    return False
             elif (not c.objExists(follow)
                   or c.nodeType(follow) != "parentConstraint"):
                 return False
@@ -1733,25 +1643,13 @@ class MayaFitBendyMixin:
                     or c.nodeType(rotation) != "pickMatrix"
                     or not c.objExists(world)
                     or c.nodeType(world) != "multMatrix"
-                    or c.connectionInfo(translation + ".inputMatrix",
-                                        sourceFromDestination=True)
-                    != ((chain.child_start_influence or names[1])
-                        + ".worldMatrix[0]")
-                    or c.connectionInfo(rotation + ".inputMatrix",
-                                        sourceFromDestination=True)
-                    != parent_proxy + ".worldMatrix[0]"
-                    or c.connectionInfo(world + ".matrixIn[0]",
-                                        sourceFromDestination=True)
-                    != rotation + ".outputMatrix"
-                    or c.connectionInfo(world + ".matrixIn[1]",
-                                        sourceFromDestination=True)
-                    != translation + ".outputMatrix"
-                    or c.connectionInfo(world + ".matrixIn[2]",
-                                        sourceFromDestination=True)
-                    != end + ".parentInverseMatrix[0]"
-                    or c.connectionInfo(end + ".offsetParentMatrix",
-                                        sourceFromDestination=True)
-                    != world + ".matrixSum"):
+                    or not c.isConnected((chain.child_start_influence or names[1])
+                        + ".worldMatrix[0]", translation + ".inputMatrix", ignoreUnitConversion=True)
+                    or not c.isConnected(parent_proxy + ".worldMatrix[0]", rotation + ".inputMatrix", ignoreUnitConversion=True)
+                    or not c.isConnected(rotation + ".outputMatrix", world + ".matrixIn[0]", ignoreUnitConversion=True)
+                    or not c.isConnected(translation + ".outputMatrix", world + ".matrixIn[1]", ignoreUnitConversion=True)
+                    or not c.isConnected(parent_world_inverse(self, end), world + ".matrixIn[2]")
+                    or not c.isConnected(world + ".matrixSum", end + ".offsetParentMatrix", ignoreUnitConversion=True)):
                 return False
             for node, disabled in ((translation, ("useRotate", "useShear")),
                                    (rotation, ("useTranslate", "useScale",
@@ -1782,24 +1680,12 @@ class MayaFitBendyMixin:
                 < 1e-6
                 and _bendy_parent_name(c, frame) == _GROUPS[0]
                 and not bool(c.getAttr(frame + ".visibility"))
-                and c.connectionInfo(negate + ".input1",
-                                     sourceFromDestination=True)
-                == twist_plug
-                and c.connectionInfo(compose + ".inputRotateX",
-                                     sourceFromDestination=True)
-                == negate + ".output"
-                and c.connectionInfo(world + ".matrixIn[0]",
-                                     sourceFromDestination=True)
-                == compose + ".outputMatrix"
-                and c.connectionInfo(world + ".matrixIn[1]",
-                                     sourceFromDestination=True)
-                == start_proxy + ".worldMatrix[0]"
-                and c.connectionInfo(world + ".matrixIn[2]",
-                                     sourceFromDestination=True)
-                == frame + ".parentInverseMatrix[0]"
-                and c.connectionInfo(frame + ".offsetParentMatrix",
-                                     sourceFromDestination=True)
-                == world + ".matrixSum")
+                and c.isConnected(twist_plug, negate + ".input1", ignoreUnitConversion=True)
+                and c.isConnected(negate + ".output", compose + ".inputRotateX", ignoreUnitConversion=True)
+                and c.isConnected(compose + ".outputMatrix", world + ".matrixIn[0]", ignoreUnitConversion=True)
+                and c.isConnected(start_proxy + ".worldMatrix[0]", world + ".matrixIn[1]", ignoreUnitConversion=True)
+                and c.isConnected(parent_world_inverse(self, frame), world + ".matrixIn[2]")
+                and c.isConnected(world + ".matrixSum", frame + ".offsetParentMatrix", ignoreUnitConversion=True))
 
     def _capture_fit_bendy_master_aim_follow(
             self, chain: FitBendyChainSpec, offset: str,
@@ -1836,11 +1722,10 @@ class MayaFitBendyMixin:
             (bind + ".matrixIn[1]", aim + ".outputMatrix"),
             (world + ".matrixIn[0]", bind + ".matrixSum"),
             (world + ".matrixIn[1]",
-             offset + ".parentInverseMatrix[0]"),
+             parent_world_inverse(self, offset)),
             (pick + ".inputMatrix", world + ".matrixSum"),
             (offset + ".offsetParentMatrix", pick + ".outputMatrix"))
-        if any(c.connectionInfo(destination,
-                                sourceFromDestination=True) != source
+        if any(not c.isConnected(source, destination)
                for destination, source in connections):
             return False
         if c.connectionInfo(bind + ".matrixIn[0]",
@@ -2210,24 +2095,12 @@ class MayaFitBendyMixin:
                 or c.nodeType(aim) != "aimMatrix"
                 or not c.objExists(decompose)
                 or c.nodeType(decompose) != "decomposeMatrix"
-                or c.connectionInfo(compose + ".inputTranslate",
-                                    sourceFromDestination=True)
-                != spec.motion_path_names[index] + ".allCoordinates"
-                or c.connectionInfo(aim + ".inputMatrix",
-                                    sourceFromDestination=True)
-                != compose + ".outputMatrix"
-                or c.connectionInfo(aim + ".primaryTargetMatrix",
-                                    sourceFromDestination=True)
-                != target + ".worldMatrix[0]"
-                or c.connectionInfo(aim + ".secondaryTargetMatrix",
-                                    sourceFromDestination=True)
-                != up_matrix + ".matrixSum"
-                or c.connectionInfo(decompose + ".inputMatrix",
-                                    sourceFromDestination=True)
-                != aim + ".outputMatrix"
-                or c.connectionInfo(guide + ".rotate",
-                                    sourceFromDestination=True)
-                != decompose + ".outputRotate"
+                or not c.isConnected(spec.motion_path_names[index] + ".allCoordinates", compose + ".inputTranslate", ignoreUnitConversion=True)
+                or not c.isConnected(compose + ".outputMatrix", aim + ".inputMatrix", ignoreUnitConversion=True)
+                or not c.isConnected(target + ".worldMatrix[0]", aim + ".primaryTargetMatrix", ignoreUnitConversion=True)
+                or not c.isConnected(up_matrix + ".matrixSum", aim + ".secondaryTargetMatrix", ignoreUnitConversion=True)
+                or not c.isConnected(aim + ".outputMatrix", decompose + ".inputMatrix", ignoreUnitConversion=True)
+                or not c.isConnected(decompose + ".outputRotate", guide + ".rotate", ignoreUnitConversion=True)
                 or int(c.getAttr(aim + ".secondaryMode")) != 2):
             return False
         for attribute, expected in (
@@ -2268,18 +2141,10 @@ class MayaFitBendyMixin:
                     or c.nodeType(decompose) != "decomposeMatrix"
                     or not c.objExists(project)
                     or c.nodeType(project) != "quatToEuler"
-                    or c.connectionInfo(matrix + ".matrixIn[0]",
-                                        sourceFromDestination=True)
-                    != output + ".worldMatrix[0]"
-                    or c.connectionInfo(matrix + ".matrixIn[1]",
-                                        sourceFromDestination=True)
-                    != control + "Offset.worldInverseMatrix[0]"
-                    or c.connectionInfo(project + ".inputQuatX",
-                                        sourceFromDestination=True)
-                    != decompose + ".outputQuatX"
-                    or c.connectionInfo(project + ".inputQuatW",
-                                        sourceFromDestination=True)
-                    != decompose + ".outputQuatW"):
+                    or not c.isConnected(output + ".worldMatrix[0]", matrix + ".matrixIn[0]", ignoreUnitConversion=True)
+                    or not c.isConnected(control + "Offset.worldInverseMatrix[0]", matrix + ".matrixIn[1]", ignoreUnitConversion=True)
+                    or not c.isConnected(decompose + ".outputQuatX", project + ".inputQuatX", ignoreUnitConversion=True)
+                    or not c.isConnected(decompose + ".outputQuatW", project + ".inputQuatW", ignoreUnitConversion=True)):
                 return False
         for index, (offset, extra, control, output, guide) in enumerate(zip(
                 spec.micro_offset_names, spec.micro_extra_names,
@@ -2295,14 +2160,9 @@ class MayaFitBendyMixin:
                                    else spec.follow_node_names[0])
                     if (not c.objExists(blend)
                             or c.nodeType(blend) != "blendMatrix"
-                            or c.connectionInfo(blend + ".inputMatrix",
-                                                sourceFromDestination=True)
-                            != start_frame + ".worldMatrix[0]"
-                            or c.connectionInfo(
-                                blend + ".target[0].targetMatrix",
-                                sourceFromDestination=True)
-                            != spec.follow_node_names[1]
-                            + ".worldMatrix[0]"
+                            or not c.isConnected(start_frame + ".worldMatrix[0]", blend + ".inputMatrix", ignoreUnitConversion=True)
+                            or not c.isConnected(spec.follow_node_names[1]
+                            + ".worldMatrix[0]", blend + ".target[0].targetMatrix", ignoreUnitConversion=True)
                             or abs(float(c.getAttr(
                                 blend + ".target[0].weight"))
                                 - index / (len(spec.part_names) + 1)) > 1e-8):
@@ -2319,14 +2179,9 @@ class MayaFitBendyMixin:
                                else spec.follow_node_names[0])
                 if (not c.objExists(blend)
                         or c.nodeType(blend) != "blendMatrix"
-                        or c.connectionInfo(blend + ".inputMatrix",
-                                            sourceFromDestination=True)
-                        != start_frame + ".worldMatrix[0]"
-                        or c.connectionInfo(
-                            blend + ".target[0].targetMatrix",
-                            sourceFromDestination=True)
-                        != spec.follow_node_names[1]
-                        + ".worldMatrix[0]"
+                        or not c.isConnected(start_frame + ".worldMatrix[0]", blend + ".inputMatrix", ignoreUnitConversion=True)
+                        or not c.isConnected(spec.follow_node_names[1]
+                        + ".worldMatrix[0]", blend + ".target[0].targetMatrix", ignoreUnitConversion=True)
                         or abs(float(c.getAttr(
                             blend + ".target[0].weight"))
                             - index / (len(spec.part_names) + 1)) > 1e-8):
@@ -2357,67 +2212,43 @@ class MayaFitBendyMixin:
                         else twist_add + ".output1D")
                     or not c.objExists(scale_add)
                     or c.nodeType(scale_add) != "plusMinusAverage"
-                    or (c.connectionInfo(scale_add + ".input3D[0]",
-                                         sourceFromDestination=True)
-                        != control + ".scale"
+                    or (not c.isConnected(control + ".scale", scale_add + ".input3D[0]", ignoreUnitConversion=True)
                         if spec.non_opm_additive_micro_scale else
                         any(abs(float(value) - 1.0) > 1e-8
                             for value in c.getAttr(
                                 scale_add + ".input3D[0]")[0]))
                     or (not spec.micro_yz_scale_only
-                        and c.connectionInfo(offset + ".scale",
-                                             sourceFromDestination=True)
-                        != scale_add + ".output3D")
+                        and not c.isConnected(scale_add + ".output3D", offset + ".scale", ignoreUnitConversion=True))
                     or not self._capture_fit_bendy_micro_aim(
                         spec, index, guide, third)
                     or not c.objExists(guide + "MicroFollow")
                     or c.nodeType(guide + "MicroFollow")
                     != "parentConstraint"
-                    or c.connectionInfo(offset + ".visibility",
-                                        sourceFromDestination=True)
-                    != master + ".microVis"):
+                    or not c.isConnected(master + ".microVis", offset + ".visibility", ignoreUnitConversion=True)):
                 return False
             if spec.micro_yz_scale_only:
                 if (spec.non_opm_additive_micro_scale
                         or spec.opm_offset_only_scale) and c.objExists(
                         spec.deform_scale_mult_names[index]):
-                    if (c.connectionInfo(offset + ".scale",
-                                         sourceFromDestination=True)
-                            != (spec.deform_scale_mult_names[index]
-                                + ".output")
-                            or any(c.connectionInfo(
-                                guide + ".scale" + axis.upper(),
-                                sourceFromDestination=True)
-                                != scale_add + ".output3D" + axis
+                    if (not c.isConnected(spec.deform_scale_mult_names[index]
+                                + ".output", offset + ".scale", ignoreUnitConversion=True)
+                            or any(not c.isConnected(scale_add + ".output3D" + axis, guide + ".scale" + axis.upper(), ignoreUnitConversion=True)
                                 for axis in "yz")):
                         return False
                 elif (c.connectionInfo(offset + ".scaleX",
                                        sourceFromDestination=True)
-                      or any(c.connectionInfo(
-                          ((guide if (spec.non_opm_additive_micro_scale
+                      or any(not c.isConnected(scale_add + ".output3D" + axis, (guide if (spec.non_opm_additive_micro_scale
                                       or spec.opm_offset_only_scale)
-                            else offset) + ".scale" + axis.upper()),
-                          sourceFromDestination=True)
-                          != scale_add + ".output3D" + axis
+                            else offset) + ".scale" + axis.upper(), ignoreUnitConversion=True)
                           for axis in "yz")):
                     return False
             if spec.micro_matrix_aim:
-                if (c.connectionInfo(second + ".inputRotateX",
-                                     sourceFromDestination=True)
-                        != twist_add + ".output1D"
-                        or c.connectionInfo(third + ".matrixIn[0]",
-                                            sourceFromDestination=True)
-                        != second + ".outputMatrix"
-                        or c.connectionInfo(third + ".matrixIn[1]",
-                                            sourceFromDestination=True)
-                        != up_source):
+                if (not c.isConnected(twist_add + ".output1D", second + ".inputRotateX", ignoreUnitConversion=True)
+                        or not c.isConnected(second + ".outputMatrix", third + ".matrixIn[0]", ignoreUnitConversion=True)
+                        or not c.isConnected(up_source, third + ".matrixIn[1]", ignoreUnitConversion=True)):
                     return False
-            elif (c.connectionInfo(second + ".inputMatrix",
-                                   sourceFromDestination=True)
-                  != blend + ".outputMatrix"
-                  or c.connectionInfo(third + ".rotate",
-                                      sourceFromDestination=True)
-                  != second + ".outputRotate"):
+            elif (not c.isConnected(blend + ".outputMatrix", second + ".inputMatrix", ignoreUnitConversion=True)
+                  or not c.isConnected(second + ".outputRotate", third + ".rotate", ignoreUnitConversion=True)):
                 return False
             if spec.micro_base_twist:
                 deform_joint = spec.deform_names[index]
@@ -2435,23 +2266,13 @@ class MayaFitBendyMixin:
                         or c.nodeType(amount_offset) != "plusMinusAverage"
                         or not c.objExists(mult)
                         or c.nodeType(mult) != "multDoubleLinear"
-                        or c.connectionInfo(
-                            amount_offset + ".input1D[0]",
-                            sourceFromDestination=True) != amount
+                        or not c.isConnected(amount, amount_offset + ".input1D[0]", ignoreUnitConversion=True)
                         or abs(float(c.getAttr(
                             amount_offset + ".input1D[1]")) + 1) > 1e-8
-                        or c.connectionInfo(mult + ".input1",
-                                            sourceFromDestination=True)
-                        != base_twist_plug
-                        or c.connectionInfo(mult + ".input2",
-                                            sourceFromDestination=True)
-                        != amount_offset + ".output1D"
-                        or c.connectionInfo(
-                            twist_add + f".input1D[{next_index}]",
-                            sourceFromDestination=True) != mult + ".output"
-                        or c.connectionInfo(
-                            twist_add + f".input1D[{next_index + 1}]",
-                            sourceFromDestination=True) != addition):
+                        or not c.isConnected(base_twist_plug, mult + ".input1", ignoreUnitConversion=True)
+                        or not c.isConnected(amount_offset + ".output1D", mult + ".input2", ignoreUnitConversion=True)
+                        or not c.isConnected(mult + ".output", twist_add + f".input1D[{next_index}]", ignoreUnitConversion=True)
+                        or not c.isConnected(addition, twist_add + f".input1D[{next_index + 1}]", ignoreUnitConversion=True)):
                     return False
             if spec.micro_up_twist and index > 0:
                 up_name = spec.micro_up_twist_names[index - 1]
@@ -2461,29 +2282,17 @@ class MayaFitBendyMixin:
                 if (not up_twist_plug
                         or not c.objExists(up_name)
                         or c.nodeType(up_name) != "multDoubleLinear"
-                        or c.connectionInfo(up_name + ".input1",
-                                            sourceFromDestination=True)
-                        != up_twist_plug
-                        or c.connectionInfo(up_name + ".input2",
-                                            sourceFromDestination=True)
-                        != spec.deform_names[index] + ".twistAmount"
-                        or c.connectionInfo(
-                            twist_add + f".input1D[{up_index}]",
-                            sourceFromDestination=True)
-                        != up_name + ".output"):
+                        or not c.isConnected(up_twist_plug, up_name + ".input1", ignoreUnitConversion=True)
+                        or not c.isConnected(spec.deform_names[index] + ".twistAmount", up_name + ".input2", ignoreUnitConversion=True)
+                        or not c.isConnected(up_name + ".output", twist_add + f".input1D[{up_index}]", ignoreUnitConversion=True)):
                     return False
             for control_index, (projection, mult_name, weight) in enumerate(zip(
                     spec.twist_projection_names, twist_mults,
                     spec.twist_weights(index))):
                 if (not c.objExists(mult_name)
                         or c.nodeType(mult_name) != "multDoubleLinear"
-                        or c.connectionInfo(mult_name + ".input1",
-                                            sourceFromDestination=True)
-                        != projection[3] + ".outputRotateX"
-                        or c.connectionInfo(
-                            twist_add + f".input1D[{control_index}]",
-                            sourceFromDestination=True)
-                        != mult_name + ".output"
+                        or not c.isConnected(projection[3] + ".outputRotateX", mult_name + ".input1", ignoreUnitConversion=True)
+                        or not c.isConnected(mult_name + ".output", twist_add + f".input1D[{control_index}]", ignoreUnitConversion=True)
                         or abs(float(c.getAttr(mult_name + ".input2"))
                                - weight) > 1e-8):
                     return False
@@ -2494,21 +2303,14 @@ class MayaFitBendyMixin:
                 if (not c.objExists(delta_name)
                         or c.nodeType(delta_name) != "plusMinusAverage"
                         or int(c.getAttr(delta_name + ".operation")) != 2
-                        or c.connectionInfo(delta_name + ".input3D[0]",
-                                            sourceFromDestination=True)
-                        != bend_control + ".scale"
+                        or not c.isConnected(bend_control + ".scale", delta_name + ".input3D[0]", ignoreUnitConversion=True)
                         or any(abs(float(value) - 1.0) > 1e-8
                                for value in c.getAttr(
                                    delta_name + ".input3D[1]")[0])
                         or not c.objExists(weight_name)
                         or c.nodeType(weight_name) != "multiplyDivide"
-                        or c.connectionInfo(weight_name + ".input1",
-                                            sourceFromDestination=True)
-                        != delta_name + ".output3D"
-                        or c.connectionInfo(
-                            scale_add + f".input3D[{control_index}]",
-                            sourceFromDestination=True)
-                        != weight_name + ".output"
+                        or not c.isConnected(delta_name + ".output3D", weight_name + ".input1", ignoreUnitConversion=True)
+                        or not c.isConnected(weight_name + ".output", scale_add + f".input3D[{control_index}]", ignoreUnitConversion=True)
                         or any(abs(float(value) - weight) > 1e-8
                                for value in c.getAttr(
                                    weight_name + ".input2")[0])):
@@ -2519,38 +2321,26 @@ class MayaFitBendyMixin:
                     spec.micro_end_scale_names[index])
                 if (not c.objExists(twist_end)
                         or c.nodeType(twist_end) != "multDoubleLinear"
-                        or c.connectionInfo(twist_end + ".input1",
-                                            sourceFromDestination=True)
-                        != ("AdvPy_" + spec.child_start_control
-                            + "TwistQTE.outputRotateX")
-                        or c.connectionInfo(
-                            twist_add + f".input1D[{len(spec.control_names)}]",
-                            sourceFromDestination=True)
-                        != twist_end + ".output"
+                        or not c.isConnected("AdvPy_" + spec.child_start_control
+                            + "TwistQTE.outputRotateX", twist_end + ".input1", ignoreUnitConversion=True)
+                        or not c.isConnected(twist_end + ".output", twist_add + f".input1D[{len(spec.control_names)}]", ignoreUnitConversion=True)
                         or abs(float(c.getAttr(twist_end + ".input2"))
                                - index / len(spec.part_names)) > 1e-8
                         or not c.objExists(scale_delta)
                         or c.nodeType(scale_delta) != "plusMinusAverage"
                         or not c.objExists(scale_weight)
                         or c.nodeType(scale_weight) != "multiplyDivide"
-                        or c.connectionInfo(scale_delta + ".input3D[0]",
-                                            sourceFromDestination=True)
-                        != spec.child_start_control + ".scale"
+                        or not c.isConnected(spec.child_start_control + ".scale", scale_delta + ".input3D[0]", ignoreUnitConversion=True)
                         or int(c.getAttr(scale_delta + ".operation")) != 2
                         or any(abs(float(value) - 1.0) > 1e-8
                                for value in c.getAttr(
                                    scale_delta + ".input3D[1]")[0])
-                        or c.connectionInfo(scale_weight + ".input1",
-                                            sourceFromDestination=True)
-                        != scale_delta + ".output3D"
+                        or not c.isConnected(scale_delta + ".output3D", scale_weight + ".input1", ignoreUnitConversion=True)
                         or any(abs(float(value)
                                    - (1.0 - spec.control_weights(index)[1]))
                                > 1e-8 for value in c.getAttr(
                                    scale_weight + ".input2")[0])
-                        or c.connectionInfo(
-                            scale_add + f".input3D[{len(spec.control_names) + 1}]",
-                            sourceFromDestination=True)
-                        != scale_weight + ".output"):
+                        or not c.isConnected(scale_weight + ".output", scale_add + f".input3D[{len(spec.control_names) + 1}]", ignoreUnitConversion=True)):
                     return False
         return True
 
@@ -2574,7 +2364,7 @@ class MayaFitBendyMixin:
         if len(curve) != 1:
             return False
         shapes = c.listRelatives(curve[0], shapes=True,
-                                 fullPath=True) or []
+                                 fullPath=True, noIntermediate=True) or []
         if (len(shapes) != 1 or c.nodeType(shapes[0]) != "nurbsCurve"
                 or not c.objExists(spec.skin_name)
                 or c.nodeType(spec.skin_name) != "skinCluster"):
@@ -2601,15 +2391,9 @@ class MayaFitBendyMixin:
                 matrix = follow_name + "MM"
                 if (not c.objExists(matrix)
                         or c.nodeType(matrix) != "multMatrix"
-                        or c.connectionInfo(matrix + ".matrixIn[0]",
-                                            sourceFromDestination=True)
-                        != driver + ".worldMatrix[0]"
-                        or c.connectionInfo(matrix + ".matrixIn[1]",
-                                            sourceFromDestination=True)
-                        != name + ".parentInverseMatrix[0]"
-                        or c.connectionInfo(name + ".offsetParentMatrix",
-                                            sourceFromDestination=True)
-                        != matrix + ".matrixSum"):
+                        or not c.isConnected(driver + ".worldMatrix[0]", matrix + ".matrixIn[0]", ignoreUnitConversion=True)
+                        or not c.isConnected(parent_world_inverse(self, name), matrix + ".matrixIn[1]")
+                        or not c.isConnected(matrix + ".matrixSum", name + ".offsetParentMatrix", ignoreUnitConversion=True)):
                     return False
             else:
                 if (not c.objExists(follow_name)
@@ -2751,12 +2535,9 @@ class MayaFitBendyMixin:
                 spec.motion_path_names, spec.motion_transform_names)):
             if (not c.objExists(path) or c.nodeType(path) != "motionPath"
                     or not c.objExists(transform)
-                    or c.connectionInfo(path + ".geometryPath",
-                        sourceFromDestination=True)
-                    != shapes[0] + ".worldSpace[0]"
-                    or c.connectionInfo(transform + ".translate",
-                        sourceFromDestination=True)
-                    != path + ".allCoordinates"
+                    or not c.isConnected(shapes[0] + ".worldSpace[0]",
+                                         path + ".geometryPath")
+                    or not c.isConnected(path + ".allCoordinates", transform + ".translate", ignoreUnitConversion=True)
                     or not self._bendy_fraction_mode_matches(
                         path, spec.control_names[0])
                     or not self._bendy_motion_parameter_matches(path)):

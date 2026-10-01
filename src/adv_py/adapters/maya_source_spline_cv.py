@@ -7,6 +7,7 @@ from adv_py.core.source_spline_cv import source_spline_cv_bindings
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.body_controller_layers import audit_body_extra_controller
 from .maya_adv_icons import create_adv_icon
+from .maya_source_parent_inverse import parent_world_inverse
 
 
 def capture_control_positions(host, plan):
@@ -120,7 +121,7 @@ def create(host, plan, shape):
             c.setAttr(blend+'.target[0].weight', binding.weight)
             parent = c.createNode('multMatrix', name=prefix+'ParentMatrix', skipSelect=True)
             c.connectAttr(blend+'.outputMatrix', parent+'.matrixIn[0]')
-            c.connectAttr(offset+'.parentInverseMatrix[0]', parent+'.matrixIn[1]')
+            c.connectAttr(parent_world_inverse(host,offset), parent+'.matrixIn[1]')
             for kind, value in (('translate',0.), ('rotate',0.), ('scale',1.)):
                 c.setAttr(offset+'.'+kind, value,value,value, type='double3')
             if plan.use_offset_parent_matrix:
@@ -178,7 +179,7 @@ def audit(host, plan, shape):
                       (prefix+'Follow2.matrixSum', prefix+'Blend.inputMatrix'),
                       (prefix+'Follow1.matrixSum', prefix+'Blend.target[0].targetMatrix'),
                       (prefix+'Blend.outputMatrix', prefix+'ParentMatrix.matrixIn[0]'),
-                      (offset+'.parentInverseMatrix[0]', prefix+'ParentMatrix.matrixIn[1]')))
+                      (parent_world_inverse(host,offset), prefix+'ParentMatrix.matrixIn[1]')))
         if plan.use_offset_parent_matrix:
             edges.append((prefix+'ParentMatrix.matrixSum', offset+'.offsetParentMatrix'))
         else:

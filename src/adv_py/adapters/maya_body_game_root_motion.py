@@ -11,6 +11,7 @@ from adv_py.core.character_registry import (
     REGISTRY_NAME, CharacterBindJoint, CharacterChannel,
     CharacterRegistration, encode_registration,
 )
+from .maya_source_parent_inverse import parent_world_inverse
 
 class MayaBodyGameRootMotionMixin:
     def _root_motion_cmds(self):
@@ -96,7 +97,17 @@ class MayaBodyGameRootMotionMixin:
             paths.update(new_nodes)
         else:
             paths.difference_update(new_nodes)
-        nodes = tuple(self._registry_node(path) for path in sorted(paths))
+        # Preserve existing member order so create/delete restores the exact
+        # original registration, including previously appended Part nodes.
+        ordered_paths = tuple(rewrite(node.path) for node in before.nodes
+                              if rewrite(node.path) in paths)
+        ordered_paths += tuple(sorted(paths.difference(ordered_paths)))
+        user_plugs = {channel.node + "." + channel.attribute for channel in channels}
+        nodes = tuple(replace(node, inputs=tuple(
+            (attribute, source) for attribute, source in node.inputs
+            if not (node.path + "." + attribute in user_plugs
+                    and self._character_direct_animation(source))))
+            for node in (self._registry_node(path) for path in ordered_paths))
         updated = CharacterRegistration(
             new_root, before.container, channels, body, nodes,
             rewrite(before.spine), rewrite(before.spaces),
@@ -107,12 +118,16 @@ class MayaBodyGameRootMotionMixin:
         c.setAttr(member_plug, lock=False)
         for index in c.getAttr(member_plug, multiIndices=True) or []:
             target = member_plug + f"[{index}]"
+            # A saved multi attribute can retain element locks after its
+            # parent is unlocked. Unlock the exact member before rewiring.
+            c.setAttr(target, lock=False)
             source = c.connectionInfo(target, sourceFromDestination=True)
             if source:
                 c.disconnectAttr(source, target)
         for index, node in enumerate(nodes):
-            c.connectAttr(node.path + ".message",
-                          member_plug + f"[{index}]")
+            target = member_plug + f"[{index}]"
+            c.setAttr(target, lock=False)
+            c.connectAttr(node.path + ".message", target)
         c.setAttr(member_plug, lock=True)
         document_plug = REGISTRY_NAME + ".advPyRegistryDocument"
         c.setAttr(document_plug, lock=False)
@@ -352,7 +367,7 @@ class MayaBodyGameRootMotionMixin:
             matrix = c.createNode("multMatrix", name=plan.matrix_name)
             c.connectAttr(control + ".worldMatrix[0]",
                           matrix + ".matrixIn[0]")
-            c.connectAttr(joint + ".parentInverseMatrix[0]",
+            c.connectAttr(parent_world_inverse(self, joint),
                           matrix + ".matrixIn[1]")
             c.connectAttr(matrix + ".matrixSum",
                           joint + ".offsetParentMatrix")
@@ -448,7 +463,7 @@ class MayaBodyGameRootMotionMixin:
                         control + ".worldMatrix[0]",
                         plan.matrix_name + ".matrixIn[0]")
                     or not c.isConnected(
-                        plan.joint_path + ".parentInverseMatrix[0]",
+                        parent_world_inverse(self, plan.joint_path),
                         plan.matrix_name + ".matrixIn[1]")):
                 body_driver = None
         else:

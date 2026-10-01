@@ -1,5 +1,6 @@
 """ADV asFollowLevels graph for the detached first IKhybrid Extra receiver."""
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from .maya_source_parent_inverse import parent_world_inverse
 
 
 def _matrix(value):
@@ -36,7 +37,7 @@ def create(host,plan):
         c.connectAttr(weight+'.output',blend+f'.target[{index}].weight')
     output=c.createNode('multMatrix',name='AdvPy_SplineHybridFollowOutput',skipSelect=True)
     c.connectAttr(blend+'.outputMatrix',output+'.matrixIn[0]')
-    c.connectAttr(driven+'.parentInverseMatrix[0]',output+'.matrixIn[1]')
+    c.connectAttr(parent_world_inverse(host,driven),output+'.matrixIn[1]')
     # MEL asMatrixConnectAttr gives the detached receiver its own OPM even
     # when the rest of the character uses legacy transform constraints.
     for kind,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
@@ -56,7 +57,7 @@ def audit(host,plan):
         if targets!=(source,):
             raise FitSkeletonValidationError('来源 Spline 起点跟随目标改变')
     edges=[('AdvPy_SplineHybridFollowBlend.outputMatrix','AdvPy_SplineHybridFollowOutput.matrixIn[0]'),
-           (plan.hybrid_follow+'.parentInverseMatrix[0]','AdvPy_SplineHybridFollowOutput.matrixIn[1]'),
+           (parent_world_inverse(host,plan.hybrid_follow),'AdvPy_SplineHybridFollowOutput.matrixIn[1]'),
            ('AdvPy_SplineHybridFollowOutput.matrixSum',plan.hybrid_follow+'.offsetParentMatrix')]
     for index,(label,path,_) in enumerate(plan.source_follow_targets):
         stem='AdvPy_SplineHybridFollow'+label

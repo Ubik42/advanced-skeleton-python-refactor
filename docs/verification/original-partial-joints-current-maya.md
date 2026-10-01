@@ -18,11 +18,11 @@
 - 修复写 buildPose 时属性变量被中性通道循环覆盖；Partial 加入现有辅助影响关节身份体系。
 - 多段与已有单段遵循原版创建入口的先行跳过规则。
 
-## OPM 尚未通过
+## OPM 已通过本批主体与 Partial 验收
 
-真实 OPM Body 新建未完成，不能报告 Partial 的 OPM 已验收。集中运行已发现并修正父矩阵读回把短 DAG 名称误判为接线变化的问题；补入按绑定世界矩阵与实际父驱动反算 FK 缩放补偿偏移，以及祖先先于后代的创建顺序。这些 OPM 改动处于代码接入，尚未通过完整主体验收。
+原先 Neck Inbetween 与 Cup_L → PinkyFinger1_L 阻断已经修复。根因是通用 FK 跟随图把接收节点 parentInverseMatrix 送回自己的 OPM；按原版改为实际 DAG 父节点 worldInverseMatrix 后，完整原版默认 biped 无需关闭 Inbetween／Part 即可通过新建、Skin、保存重开、FBX 和原位重建。
 
-原始 biped OPM 继续卡在 Neck Inbetween 改接 Head FK Offset 的绑定姿态变化；关闭 Fit 的 inbetweenJoints 后，卡在 Cup_L → PinkyFinger1_L 的缩放补偿绑定姿态。没有删除检查或放宽容差。失败报告保存在 `validation/results/partial-joints-opm/partial-joints.json`；下一主项是按原版完成这两个主体接线，随后重跑完整 OPM Body 与 Partial 对照。
+OPM Partial 的公开生命周期通过；未修改原版 MEL 的相同五组共 66 姿态最大矩阵差为 **4.6629367034256575e-15**，报告 `validation/results/partial-joints-opm-parity/partial-parity.json`。真实 GUI 的原版 OPM UI 复选框也按输入设置，未修改原版过程。普通和 OPM 两批共 132 姿态，该对照仅证明对应 Partial 行为。
 
 Partial 的完整 Body 重建保留、带已有权重的所有删除组合、全部角色侧别和独立角色命名空间仍未在本批验证。代码存在和本批通过范围都不能代表全量 ADV 完成。
 

@@ -42,6 +42,7 @@ def main(opm=False):
                     cmds.deleteAttr('buildPose.udAttr')
                 cmds.createNode('transform', name='asBatch')
                 cmds.checkBox('asBodyPartialJointsIncCtrlCheckBox', e=True, v=control)
+                cmds.checkBox('asBodyOffsetParentMatrixCheckBox', e=True, v=opm)
                 cmds.checkBox('asBodyMultiPartialJointsBindCheckBox', e=True, v=count > 1)
                 cmds.intFieldGrp('multiPartialJointsIntFieldGrp', e=True, value1=count)
                 cmds.select('Elbow_' + side, r=True)

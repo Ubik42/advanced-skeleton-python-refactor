@@ -2059,8 +2059,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 from maya.api import OpenMaya as om
 
                 def values(matrix):
-                    return tuple(float(matrix[row][column])
-                                 for row in range(4) for column in range(4))
+                    return tuple(float(value) for value in matrix)
 
                 def set_matrix(plug, matrix):
                     self._cmds.setAttr(plug, *values(matrix), type="matrix")
@@ -10399,7 +10398,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                                       skipSelect=True)
                 c.connectAttr(follower.source_body_joint
                               + ".worldMatrix[0]", matrix + ".matrixIn[0]")
-                c.connectAttr(node + ".parentInverseMatrix[0]",
+                c.connectAttr(plan.root_path + ".worldInverseMatrix[0]",
                               matrix + ".matrixIn[1]")
                 pick = c.createNode("pickMatrix", name=follower.pick_name,
                                     skipSelect=True)
@@ -10478,8 +10477,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 from maya.api import OpenMaya as om
 
                 def matrix_values(matrix):
-                    return tuple(float(matrix[row][column])
-                                 for row in range(4) for column in range(4))
+                    return tuple(float(value) for value in matrix)
 
                 source_plug = endpoint.follow_fk_matrix
                 if endpoint.follow_ik_matrix is not None:
@@ -10547,10 +10545,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                             sourceFromDestination=True)
                             != follower.source_body_joint
                                + ".worldMatrix[0]"
-                        or c.connectionInfo(
-                            driver + ".matrixIn[1]",
-                            sourceFromDestination=True)
-                            != follower.path + ".parentInverseMatrix[0]"
+                        or not c.isConnected(plan.root_path + ".worldInverseMatrix[0]",
+                                             driver + ".matrixIn[1]")
                         or c.connectionInfo(
                             follower.path + ".offsetParentMatrix",
                             sourceFromDestination=True)
@@ -10756,7 +10752,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     spec.wrist_joint + ".worldMatrix[0]",
                     follow + ".matrixIn[0]")
                 self._cmds.connectAttr(
-                    root + ".parentInverseMatrix[0]",
+                    spec.parent_path + ".worldInverseMatrix[0]",
                     follow + ".matrixIn[1]")
                 self._cmds.connectAttr(
                     follow + ".matrixSum", root + ".offsetParentMatrix")

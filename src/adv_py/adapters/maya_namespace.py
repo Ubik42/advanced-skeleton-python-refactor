@@ -99,6 +99,9 @@ _NODE_ARGS |= {'polyProjection','polyCopyUV','offsetCurve','nurbsToPoly','extend
 _NODE_RESULTS |= {'polyProjection','polyCopyUV','offsetCurve','nurbsToPoly','extendSurface'}
 _CREATE |= {'polyProjection','polyCopyUV','offsetCurve','nurbsToPoly','extendSurface'}
 
+# Version queries carry no scene addresses and are shared by all characters.
+_GLOBAL |= {'about'}
+
 class MayaCharacterCommands:
     def __init__(self,commands,namespace):
         self.identity=CharacterIdentity(namespace)

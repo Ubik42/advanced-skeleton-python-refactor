@@ -287,7 +287,9 @@ def audit(host,staged):
             settings=_curve_display_settings(a,old)
             # Solver curves receive their CVs from owned graph connections.
             # Their evaluated animation is not an editable control shape.
-            driven = a.listConnections(old+'.controlPoints',source=True,destination=False) or []
+            driven = any(a.listConnections(old+'.'+attribute,
+                                           source=True,destination=False)
+                         for attribute in ('create', 'controlPoints'))
             if not affected or editable:
                 shapes.append((role,() if driven else tuple(shape_a),tuple(settings),_curve_topology(host,old)))
         if 'dagNode' in (a.nodeType(old,inherited=True) or []):

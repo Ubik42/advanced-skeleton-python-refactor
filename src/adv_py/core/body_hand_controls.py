@@ -749,7 +749,7 @@ def audit_body_hand_fk_controls(
             ))
         expected_follow = (
             (spec.wrist_joint + ".worldMatrix[0]",
-             spec.path + ".parentInverseMatrix[0]",
+             spec.parent_path + ".worldInverseMatrix[0]",
              spec.follow_matrix_name + ".matrixSum")
             if spec.follow_matrix_name else (None, None, None)
         )
