@@ -82,6 +82,8 @@ class RetargetCharacterSpineIk:
         host = self._host
         source = host.read_source_character_registration(source_namespace)
         target = host.read_character_registration()
+        if source.additional_spines or target.additional_spines:
+            raise CharacterRegistryError('跨角色 Spline 动画迁移仍需单一系统；多系统不能只交接主链')
         if not isinstance(source.spine, BodySplinePlan) or not isinstance(target.spine, BodySplinePlan):
             raise CharacterRegistryError('IK 跨段数迁移要求两个登记的 Spline 角色')
         if len(source.spine.body_joints) == len(target.spine.body_joints):
@@ -105,9 +107,11 @@ class RetargetCharacterSpineIk:
         target_channels = {ch.key for ch in target.channels}
         if not source_channels.issubset(target_channels):
             raise CharacterRegistryError('目标角色缺少来源控制通道')
-        source_ik = {key for key in source_channels if key.startswith('spine.spline.')}
-        target_ik = {key for key in target_channels if key.startswith('spine.spline.')}
-        if source_ik != target_ik or 'spine.spline.spineIkFk' not in source_ik:
+        from adv_py.core.source_spline_animation import registered_spline_mode_channel,registered_spline_control_keys
+        source_ik=registered_spline_control_keys(source)
+        target_ik=registered_spline_control_keys(target)
+        mode=registered_spline_mode_channel(source).key
+        if source_ik != target_ik or mode!=registered_spline_mode_channel(target).key:
             raise CharacterRegistryError('来源与目标 Spline IK 通道不对应')
         schedule=host.capture_registered_spine_mode_curve(source_namespace,source) if allow_fk else None
         event_times=(tuple(right for left,right,a,b in
@@ -121,7 +125,6 @@ class RetargetCharacterSpineIk:
         channels, meshes, body = host.capture_registered_spine_ik_take(
             source_namespace, source, tuple(mesh for _,mesh in skins),
             body_names, all_frames)
-        mode = 'spine.spline.spineIkFk'
         modes = tuple(dict(row)[mode] for row in channels)
         if any(min(abs(value),abs(value-1.)) > 1e-8 for value in modes):
             raise CharacterRegistryError('脊柱迁移不接受采样区间内的 FK/IK 混合权重')

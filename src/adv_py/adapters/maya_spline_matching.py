@@ -214,6 +214,8 @@ def match_fk(host, registration, before,*,_scoped=False):
                   else (tuple(c.getAttr(j+'.rotate')[0]),tuple(c.getAttr(j+'.scale')[0]))
                   for index,j in enumerate(plan.body_joints))
     c.setAttr(plan.settings+'.spineIkFk', 0.)
+    if plan.source_first_translate:
+        _match_source_first_fk(host,registration,wanted,global_scale)
     for index, control in enumerate(plan.fk_controls):
         if not index:continue
         joint = plan.body_joints[index]
@@ -226,6 +228,42 @@ def match_fk(host, registration, before,*,_scoped=False):
             read_output=(lambda joint=joint:sum(local_rotation_scale(host,joint),()))
             if index in matrix_indices else None)
         c.xform(control, worldSpace=True, translation=matrix[12:15])
+
+
+def _match_source_first_fk(host,registration,wanted,global_scale):
+    """Match the actual start FK; BaseFK is not the start Body receiver."""
+    from adv_py.core.source_spline_animation import resolve_source_spline
+    from adv_py.core.least_squares import least_squares
+    binding=resolve_source_spline(registration,registration.spine.system_name)
+    c=host._cmds
+    joint=binding.plan.body_joints[0]
+    matrix=wanted[joint.rsplit('|',1)[-1]]
+    control=binding.fk_controls[0]
+    components=(0,1,2,4,5,6,8,9,10,12,13,14)
+    length=max(sum(binding.plan.lengths),1.)
+    def residual():
+        actual=host._spine_world_frame(joint)[0]
+        return tuple((actual[index]-matrix[index])/(global_scale*(length if index>=12 else 1.))
+                     for index in components)
+    if max(abs(value) for value in residual())<=1e-7:return
+    registered={(ch.node,ch.attribute) for ch in registration.channels}
+    parameters=[]
+    for kind,unit in (('translate',length),('rotate',180.),('scale',1.)):
+        for axis in 'XYZ':
+            attribute=kind+axis
+            plug=control+'.'+attribute
+            if (control,attribute) in registered and c.getAttr(plug,settable=True):
+                parameters.append((plug,unit,.001 if kind=='scale' else None,None))
+    if not parameters:
+        raise CharacterRegistryError('来源 Spline 起点 FK 没有可匹配的登记通道')
+    initial=tuple(float(c.getAttr(plug))/unit for plug,unit,_,_ in parameters)
+    def evaluate(values):
+        for value,(plug,unit,_,_) in zip(values,parameters):c.setAttr(plug,value*unit)
+        return residual()
+    result=least_squares(evaluate,initial,bounds=tuple((low,high) for _,_,low,high in parameters),
+                         tolerance=1e-7,max_iterations=40,step=1e-4)
+    if not result.converged:
+        raise CharacterRegistryError('来源 Spline 起点 FK 姿态无法完整表示：'+joint)
 
 
 def _solve_linear(matrix, values):

@@ -1436,12 +1436,20 @@ def create_panel(controller: MayaPanelController | None = None):
             self.spine_mode = QtWidgets.QComboBox()
             self.spine_mode.addItem("转为 IK", "ik")
             self.spine_mode.addItem("转为 FK", "fk")
+            self.spline_system = QtWidgets.QComboBox()
+            self.spline_system.addItem("读取后选择 Spline 系统", None)
             group, form = self._group("04 · 区间模式转换", [
                 ("部位", self.limb_part), ("侧别", self.limb_side),
                 ("四肢目标模式", self.limb_mode),
-                ("脊柱目标模式", self.spine_mode)])
+                ("脊柱目标模式", self.spine_mode),
+                ("Spline 系统", self.spline_system)])
             form.addRow(self._button("读取当前角色 IK 系统", self._load_limb_systems))
             form.addRow(self._button("当前姿态切换来源 IK 系统", self._match_source_limb_mode))
+            form.addRow(self._button("读取当前角色 Spline 系统", self._load_spline_systems))
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(self._button("对齐 FK / IK", lambda: self._match_source_spline_mode(True)))
+            row.addWidget(self._button("切换 FK / IK", lambda: self._match_source_spline_mode(False)))
+            form.addRow(row)
             form.addRow(QtWidgets.QLabel("使用上方的起始帧、结束帧和采样步长。"))
             row = QtWidgets.QHBoxLayout()
             row.addWidget(self._button("转换四肢模式", self._bake_limb_mode))
@@ -3777,6 +3785,18 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.start_frame.value(), self.end_frame.value(),
                 self.spine_mode.currentData(), self.frame_step.value())
             return f"脊柱模式已转换：{count} 个采样帧"
+
+        def _load_spline_systems(self):
+            systems=self.controller.animation_spline_systems(self._namespace())
+            self.spline_system.clear()
+            for system in systems:
+                self.spline_system.addItem(system or '主 Spline',system)
+            return f'已读取 {len(systems)} 个 Spline 系统'
+
+        def _match_source_spline_mode(self,align_only=False):
+            changed=self.controller.animation_match_source_spline(self._namespace(),
+                self.spine_mode.currentData(),self.spline_system.currentData(),align_only=align_only)
+            return ('Spline 控制器已对齐' if align_only else 'Spline 模式已切换') if changed else '当前模式无法切换，请查看 Maya 提示'
 
         def _switch_animation_space(self):
             mode = self.controller.animation_switch_space(self._namespace(),

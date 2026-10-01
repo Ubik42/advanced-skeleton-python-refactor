@@ -2069,6 +2069,16 @@ class MayaPanelController:
             start, end, mode, step)
         return len(animation.samples)
 
+    def animation_spline_systems(self,namespace: str):
+        from adv_py.core.body_spline import BodySplinePlan
+        registration=self._host(namespace).read_character_registration()
+        return tuple(plan.system_name for plan in (registration.spine,*registration.additional_spines)
+                     if isinstance(plan,BodySplinePlan) and plan.source_curve_points)
+
+    def animation_match_source_spline(self,namespace: str,mode: str,system=None,*,align_only=False):
+        from adv_py.application.character_spine_animation import MatchSourceBodySplineMode
+        return MatchSourceBodySplineMode(self._host(namespace)).execute(mode,system,align_only=align_only)
+
     def animation_switch_space(self, namespace: str, key: str,
                                mode: str, frame: int) -> str:
         pose = SwitchBodyCharacterSpace(self._host(namespace)).execute(

@@ -54,7 +54,8 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
             system=saved.system_name
         generated_sources={joint.path:joint.source_joint for plan in plans for joint in plan.joints}
         fk,spline=_plan_source_chain(fk,source,info,options,metadata,system,generated_sources)
-        spline=replace(spline,source_fixed_orient_unique=True)
+        spline=replace(spline,source_fixed_orient_unique=True,source_first_translate=True,
+                       source_world_controls=True)
         plans.append(retain_source_spline_layout(spline,saved))
     if saved_layouts is not None and len(plans)!=len(saved_layouts):
         raise FitSkeletonValidationError('来源 Spline 重建不能静默增删已保存系统')

@@ -78,6 +78,8 @@ class BodySplinePlan:
     source_body_matrix_indices: tuple[int, ...] = ()
     source_bendy_matrix_indices: tuple[int, ...] = ()
     source_fixed_orient_unique: bool = False
+    source_first_translate: bool = False
+    source_world_controls: bool = False
 
     @scoped_spline_property
     def source_fixed_orient_name(self):
@@ -322,7 +324,9 @@ class BodySplinePlan:
 
 def spline_ik_scale_weights(joint_index: int, joint_count: int,
                             target_count: int) -> tuple[float, ...]:
-    if not (2 <= joint_count <= 64 and target_count >= 2
+    if not (type(joint_count) is int and joint_count >= 2
+            and type(target_count) is int and target_count >= 2
+            and type(joint_index) is int
             and 0 <= joint_index < joint_count):
         raise FitSkeletonValidationError('Spline IK 缩放权重输入无效')
     position = joint_index / (joint_count - 1)

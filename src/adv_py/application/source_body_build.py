@@ -228,8 +228,8 @@ def source_character_channels(rig):
     for spline in p.all_splines:
         spline_key='source.spline'+('.'+spline.system_name if spline.system_name else '')
         for index, target in enumerate(spline.targets):
-            attributes = (() if index == 0 else tuple("translate" + axis for axis in "XYZ"))
-            if index in (0, len(spline.targets) - 1) or spline.twist_ramp_graph:
+            attributes = (() if index == 0 and not spline.source_first_translate else tuple("translate" + axis for axis in "XYZ"))
+            if index in (0, len(spline.targets) - 1) or spline.twist_ramp_graph or spline.source_first_translate:
                 attributes += tuple("rotate" + axis for axis in "XYZ")
             attributes += tuple("scale" + axis for axis in "XYZ")
             if spline.mid_follow_graph and 0 < index < len(spline.targets) - 1:

@@ -38,6 +38,8 @@ def capture_control_positions(host, plan):
         orientation = c.createNode('transform',skipSelect=True)
         positions = [tuple(plan.curve_points[0])]
         axes = [plan.joints[0].world_axes]
+        if plan.source_world_controls:
+            axes[0]=host._spine_world_frame(plan.body_joints[0])[1]
         for index in range(1, len(plan.targets)-1):
             c.setAttr(path+'.uValue', index/(len(plan.targets)-1))
             positions.append(tuple(c.getAttr(path+'.allCoordinates')[0]))

@@ -27,8 +27,8 @@ class MayaOriginalSkinSpineMigrationHost(MayaMocapControlHost):
 
     def capture_registered_spine_mode_curve(self, source_namespace, registration):
         source=MayaBodyBuildHost(namespace=source_namespace)
-        channel=next(ch for ch in registration.channels
-                     if ch.key=='spine.spline.spineIkFk')
+        from adv_py.core.source_spline_animation import registered_spline_mode_channel
+        channel=registered_spline_mode_channel(registration)
         plug=channel.node+'.'+channel.attribute
         driver=source._cmds.connectionInfo(plug,sourceFromDestination=True)
         if not driver or not source._character_direct_animation(driver):
@@ -47,6 +47,8 @@ class MayaOriginalSkinSpineMigrationHost(MayaMocapControlHost):
         target=self.install_character_spline_animation(take.target_registration)
         _,samples=self.capture_resampled_character_source(
             source_namespace,take.target_registration,take.fk_source_frames)
+        if target.spine.source_curve_points:
+            return self._match_source_spine_fk_take(take,target,samples)
         c=self._cmds
         self._transaction_changed=True
         with self._character_sampling_time(preserve_modified=False) as seek:
@@ -75,6 +77,37 @@ class MayaOriginalSkinSpineMigrationHost(MayaMocapControlHost):
                     if max(abs(a-b) for a,b in zip(actual,pose[name]))>1e-4:
                         raise CharacterRegistryError('混合脊柱 FK 身体姿态不一致：'
                                                      +name+' frame='+str(frame))
+
+    def _match_source_spine_fk_take(self,take,target,samples):
+        """Use the native OPM and Root-aware matching path for source builds."""
+        from dataclasses import replace
+        from adv_py.core.source_spline_animation import resolve_source_spline
+        from adv_py.core.character_registry import CharacterRegistryError
+        from .maya_spline_matching import match_fk
+        c=self._cmds
+        binding=resolve_source_spline(target,target.spine.system_name)
+        controls=set((*binding.fk_controls,*target.spine.fk_controls))
+        keyed=tuple(ch for ch in target.channels if ch.node in controls
+                    and (ch.attribute.startswith(('translate','rotate','scale','matchScale'))))
+        self._transaction_changed=True
+        with self._character_sampling_time(preserve_modified=False) as seek:
+            for frame,(_,pose) in zip(take.fk_frames,samples):
+                seek(frame)
+                before=self.capture_character_pose(target)
+                wanted=tuple((name,tuple(pose[name.rsplit(':',1)[-1]]))
+                             for name,_ in before.body_frames)
+                source_pose=replace(before,body_frames=wanted)
+                with self._character_static_controls(target,before):
+                    match_fk(self,target,source_pose)
+                    after=self.capture_character_pose(target)
+                    error=max(abs(a-b) for (_,left),(_,right) in zip(wanted,after.body_frames)
+                              for a,b in zip(left,right))
+                    if error>1e-4:
+                        raise CharacterRegistryError('来源 Spline 混合迁移的 FK 姿态不一致：frame='+str(frame)+' error='+str(error))
+                values=dict(after.channels)
+                for channel in keyed:
+                    c.setKeyframe(channel.node,attribute=channel.attribute,time=frame,value=values[channel.key],
+                                  inTangentType='linear',outTangentType='linear')
 
     def _spine_mesh_points(self, mesh_path):
         from maya import cmds

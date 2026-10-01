@@ -5,6 +5,18 @@ from adv_py.core.character_registry import CharacterRegistryError
 
 
 class MayaCharacterPoseMixin:
+    def enable_source_spline_first_translation(self,registration):
+        from .maya_source_spline_matching import enable_first_translation
+        return enable_first_translation(self,registration)
+
+    def align_source_character_spline(self,registration,binding,mode,*,baking=False):
+        from .maya_source_spline_matching import align
+        return align(self,registration,binding,mode,baking=baking)
+
+    def switch_source_character_spline(self,registration,binding,mode,*,time_range=None):
+        from .maya_source_spline_matching import switch
+        return switch(self,registration,binding,mode,time_range=time_range)
+
     def preflight_character_pose(self,registration):
         c=self._cmds
         self._validate_character_registration(registration)

@@ -35,7 +35,15 @@ def decode_spline(raw, body):
         for key, value in (('source_hybrid_graph',False),('source_control_axes',[]),('source_ik_local',False),('source_cv_axes',[]),('source_controller_layers',False),('source_follow_parent',None),('source_follow_targets',[]),('system_name',''),('source_body_matrix_indices',[]),('source_bendy_matrix_indices',[]),('source_fixed_orient_unique',False)):
             if key not in raw:
                 raw = {**raw,key:value}
+    if isinstance(raw,dict) and 'source_first_translate' not in raw:
+        raw={**raw,'source_first_translate':False}
+    if isinstance(raw,dict) and 'source_world_controls' not in raw:
+        raw={**raw,'source_world_controls':False}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
+    if type(raw['source_first_translate']) is not bool or raw['source_first_translate'] and not raw['source_curve_points']:
+        raise CharacterRegistryError('来源 Spline 首控制器位移标记无效')
+    if type(raw['source_world_controls']) is not bool or raw['source_world_controls'] and not raw['source_curve_points']:
+        raise CharacterRegistryError('来源 Spline 世界控制朝向标记无效')
     if type(raw['use_offset_parent_matrix']) is not bool:
         raise CharacterRegistryError('Spline OPM 开关无效')
     if type(raw['even_stretch_graph']) is not bool:
@@ -57,7 +65,7 @@ def decode_spline(raw, body):
         raise CharacterRegistryError('来源 Spline 固定朝向命名标记无效')
     body_paths = tuple(path(p) for p in raw['body_joints'])
     count = len(body_paths)
-    if not 2 <= count <= 64 or len(set(body_paths)) != count:
+    if count<2 or (not raw['source_curve_points'] and count>64) or len(set(body_paths)) != count:
         raise CharacterRegistryError('曲线脊柱关节数量或身份无效')
     matrix_indices=raw['source_body_matrix_indices']
     if (not isinstance(matrix_indices,(list,tuple))
@@ -192,7 +200,9 @@ def decode_spline(raw, body):
                           raw['source_controller_layers'],follow_parent,follow_targets,
                           source_body_matrix_indices=tuple(matrix_indices),
                           source_bendy_matrix_indices=tuple(bendy_indices),
-                          source_fixed_orient_unique=raw['source_fixed_orient_unique'])
+                          source_fixed_orient_unique=raw['source_fixed_orient_unique'],
+                          source_first_translate=raw['source_first_translate'],
+                          source_world_controls=raw['source_world_controls'])
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

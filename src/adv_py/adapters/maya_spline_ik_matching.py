@@ -35,7 +35,7 @@ def match_ik(host, registration, before,*,_scoped=False):
             for matrix in matrices[1:] for start in (0,4,8)))
     parameters = []
     for index,control in enumerate(plan.driver_targets):
-        if index:
+        if index or plan.source_first_translate:
             parameters.extend((control+'.translate'+axis,length,None,None) for axis in 'XYZ')
         if index in (0,len(plan.targets)-1) or plan.twist_ramp_graph:
             parameters.extend((control+'.rotate'+axis,180./pi,None,None) for axis in 'XYZ')
@@ -66,7 +66,8 @@ def match_ik(host, registration, before,*,_scoped=False):
     def evaluate(values):
         for value,(plug,unit,_,_) in zip(values,parameters):c.setAttr(plug,value*unit)
         rows = []
-        for node,target in zip(plan.body_joints[1:],matrices[1:]):
+        start=0 if plan.source_first_translate else 1
+        for node,target in zip(plan.body_joints[start:],matrices[start:]):
             actual = host._spine_world_frame(node)[0]
             rows.extend((actual[index]-target[index])/(scale*(length if index>=12 else 1.)) for index in components)
         return tuple(rows)

@@ -92,8 +92,9 @@ def create(host,plan):
         offset=plan.offset_targets[i]
         parent=plan.target_parent(i)
         control_axes = plan.source_control_axes[i] if plan.source_control_axes else plan.axes
+        world_axes=((1.,0.,0.),(0.,1.,0.),(0.,0.,1.)) if plan.source_world_controls else plan.axes
         host._spine_frame(f'AdvPy_SplineIK{i}Offset',parent,position,
-                          control_axes if plan.source_ik_local else plan.axes)
+                          control_axes if plan.source_ik_local else world_axes)
         extra = plan.extra_targets[i] if plan.extra_targets else None
         if extra:
             host._create_body_extra_layer(
@@ -120,12 +121,15 @@ def create(host,plan):
                                parent=plan.driver_targets[i],skipSelect=True)
             c.parentConstraint(plan.driver_targets[i],proxy,maintainOffset=False,
                                name=f'AdvPy_SplineIK{i}XParent')
-        locked=(['translate'+a for a in 'XYZ'] if i==0 else [])+(
+        locked=(['translate'+a for a in 'XYZ'] if i==0 and not plan.source_first_translate else [])+(
             ['rotate'+a for a in 'XYZ']
-            if 0<i<len(plan.targets)-1 and not plan.twist_ramp_graph else [])
+            if 0<i<len(plan.targets)-1 and not plan.twist_ramp_graph and not plan.source_first_translate else [])
         for attr in locked:c.setAttr(target+'.'+attr,lock=True,keyable=False)
         orientation=(plan.joints[n-1].world_axes
                      if i==len(plan.targets)-1 else plan.joints[0].world_axes)
+        if plan.source_world_controls:
+            source_joint=plan.body_joints[-1] if i==len(plan.targets)-1 else plan.body_joints[0]
+            orientation=host._spine_world_frame(source_joint)[1]
         local=host._spine_frame(f'AdvPy_SplineIKLocalOrient{i}',
                                 plan.driver_targets[i],
                                 position,orientation)
@@ -402,6 +406,11 @@ def audit(host,plan,*,source_visibility_ready=True):
         expected_parent = extra or plan.offset_targets[index]
         if (c.listRelatives(target, parent=True, fullPath=True) or []) != [expected_parent]:
             raise FitSkeletonValidationError('Spline IK 主控父层改变')
+        if plan.source_first_translate and any(
+                c.getAttr(target+'.'+kind+axis,lock=True)
+                or not c.getAttr(target+'.'+kind+axis,keyable=True)
+                for kind in ('translate','rotate') for axis in 'XYZ'):
+            raise FitSkeletonValidationError('来源 Spline 原版位移／旋转通道不可动画')
     for name, command, source in (
             ('AdvPy_SplineFKRootPoint', c.pointConstraint,
              _fk_root_source(host, plan)),
