@@ -90,6 +90,26 @@ class MayaCharacterPoseMixin:
         for spec in registration.spaces.spaces:
             self.preflight_control_space_switch(spec)
 
+    def preflight_character_preservation(self,registration):
+        """Read-only rebuild capture accepts original Keep Lock/Hide states."""
+        c=self._cmds
+        self._validate_character_registration(registration)
+        if (c.ls(type='animLayer') or c.currentUnit(q=True,angle=True)!='deg'
+                or c.currentUnit(q=True,linear=True)!='cm'
+                or not c.undoInfo(q=True,state=True)):
+            raise CharacterRegistryError('重建保留要求 cm / degree、Undo 开启且无动画层')
+        for channel in registration.channels:
+            plug=channel.node+'.'+channel.attribute
+            source=c.connectionInfo(plug,sourceFromDestination=True)
+            if not source:continue
+            if not self._character_direct_animation(source):
+                raise CharacterRegistryError('重建控制通道含未支持的外部动画输入：'+channel.key)
+            curve=source.rsplit('.',1)[0]
+            if c.referenceQuery(curve,isNodeReferenced=True) or any(c.lockNode(curve,q=True,lock=True) or []):
+                raise CharacterRegistryError('重建动画曲线被引用或锁定：'+curve)
+        # Rebuild moves complete native curves; it neither keys controls nor
+        # switches spaces. Shared outputs are recorded and audited at handoff.
+
     def capture_character_key_state(self,registration):
         c=self._cmds
         rows=[]

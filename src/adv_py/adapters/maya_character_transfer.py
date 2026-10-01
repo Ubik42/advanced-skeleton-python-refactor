@@ -69,7 +69,8 @@ def preflight(host,staged):
         raise CharacterRegistryError('保留动画曲线迁移到同一命名空间后发生重名')
     registered={n.path for n in staged.original.registration.nodes}
     custom={row.path+'.'+a[0] for row in staged.custom_properties for a in row.attributes}
-    if any(c.objExists(target.scene_address(plug)) for plug in custom):
+    animator={channel.node+'.'+channel.attribute for channel in actual.channels}
+    if any(c.objExists(target.scene_address(plug)) for plug in custom-animator):
         raise CharacterRegistryError('暂存用户属性名称已被占用')
     if any(row.path in registered for row in staged.original.extensions):
         raise CharacterRegistryError('当前交接的附件应为独立用户节点，不得包含整个已登记 Rig')
@@ -167,9 +168,12 @@ def transfer(host,staged):
         selection.append((c.ls(node,uuid=True)[0],separator+component))
     try:
         from .maya_character_properties import install,lock_and_verify
-        install(target,staged.custom_properties)
+        install(target,staged.custom_properties,existing_plugs=frozenset(
+            channel.node+'.'+channel.attribute for channel in staged.registration.channels))
         from .maya_character_ownership import transfer_shapes
-        transfer_shapes(target,staged.ownership)
+        transfer_shapes(target,staged.ownership,old.selection_sets)
+        from .maya_character_selection_preservation import install as install_selection_sets
+        install_selection_sets(host,staged)
         # Match the original solver policy before any animation is moved.
         if host._cmds.objExists('AdvPy_SpineIKHandle') and host._cmds.ikHandle('AdvPy_SpineIKHandle',q=True,solver=True)=='AdvPy_SpineRPSolver':
             target._transaction_active=True
@@ -349,6 +353,8 @@ def transfer(host,staged):
         # from the identical scene evaluated after reopening.
         _refresh_skin_inputs(c,host,old.skins)
         lock_and_verify(target,staged.custom_properties,apply_locks=True)
+        from .maya_character_control_state import install as install_control_states
+        install_control_states(target,old.control_states)
         if (any(not c.isConnected(x,y) for x,y in connected_geometry_drivers)
                 or any(not c.isConnected(x,y)
                        for x,y in connected_geometry_outputs)
@@ -373,6 +379,10 @@ def verify_retained(host,staged):
             destination for _,destination in staged.geometry_container_drivers}:
         raise RuntimeError('暂存 Geometry 原生驱动连接变化')
     old=staged.original
+    from .maya_character_control_state import verify as verify_control_states
+    verify_control_states(target,old.control_states)
+    from .maya_character_selection_preservation import verify as verify_selection_sets
+    verify_selection_sets(staged)
     if host.capture_character_deformer_animation_state(
             old.deformers,old.skins)!=staged.deformer_animation_state:
         raise RuntimeError('交接改变了 Skin 或生产变形器的动画关键帧')

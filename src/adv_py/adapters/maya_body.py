@@ -7805,6 +7805,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         shapes = self._cmds.listRelatives(
             extra, shapes=True, noIntermediate=True,
             fullPath=True) or []
+        if getattr(self,'_allow_authored_control_state',False) and len(shapes)>1:
+            expected=extra+'|'+extra.rsplit('|',1)[-1]+'Shape'
+            shapes=([expected] if expected in shapes else
+                    next(([shape] for shape in shapes
+                          if self._cmds.nodeType(shape)=='nurbsCurve'),shapes))
         main_shapes = self._cmds.listRelatives(
             control, shapes=True, noIntermediate=True,
             fullPath=True) or []
@@ -7860,6 +7865,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             sub, parent=True, fullPath=True) or []
         shapes = self._cmds.listRelatives(
             sub, shapes=True, noIntermediate=True, fullPath=True) or []
+        if getattr(self,'_allow_authored_control_state',False) and len(shapes)>1:
+            expected=sub+'|'+sub.rsplit('|',1)[-1]+'Shape'
+            shapes=([expected] if expected in shapes else
+                    next(([shape] for shape in shapes
+                          if self._cmds.nodeType(shape)=='nurbsCurve'),shapes))
         control_shapes = self._cmds.listRelatives(
             control, shapes=True, noIntermediate=True, fullPath=True) or []
         shape_type = (self._cmds.nodeType(shapes[0])

@@ -44,11 +44,18 @@ def promote(host,staged):
          [host.scene_address(path)])[0]
         for path in retained_mesh_paths}
     replacement_by_role={role:new for role,_,new,_ in rows}
+    curve_roles={row[0] for row in staged.ownership.curve_geometry}
+    shape_handoffs={
+        (_by_uuid(c,old)+'.local',_by_uuid(c,new)+'.create')
+        for role,old,new,_ in rows if role in curve_roles}
     shared={host.scene_address(name).lstrip(':') for name in SHARED_NODES}
     # After handoff, no preserved data may still depend on a deletion candidate.
     for node in old_paths:
         logical=host._cmds.identity.to_local(node)
         for a,b in connections(host,logical):
+            physical_edge=(host.scene_address(a),host.scene_address(b))
+            if physical_edge in shape_handoffs:
+                continue
             for plug in (a,b):
                 physical=host.scene_address(plug.split('.',1)[0])
                 physical=(c.ls(physical,long=True) or [physical])[0]
@@ -68,6 +75,10 @@ def promote(host,staged):
         old_node=_by_uuid(c,old)
         rename.append((new,old_node.rsplit('|',1)[-1]))
         references[target._cmds.identity.to_local(_by_uuid(c,new))]=host._cmds.identity.to_local(old_node)
+    for role,uuid in (*staged.ownership.created_shapes,
+                      *((role,uuid) for role,uuid,_,_ in staged.ownership.retained_shapes)):
+        name=host.scene_address(role).rsplit('|',1)[-1]
+        rename.append((uuid,name))
     for curve in staged.original.curves:
         name=host.scene_address(_curve_name(curve))
         if c.objExists(name) and (c.ls(name,uuid=True) or [None])[0] not in old_ids:

@@ -389,7 +389,8 @@ def audit(host,plan,*,source_visibility_ready=True):
             issues = audit_body_extra_controller(
                 plan.offset_targets[index], target, extra,
                 state,
-                extra_curve=plan.extra_curve)
+                extra_curve=plan.extra_curve,
+                authored_shapes=getattr(host,'_allow_authored_control_state',False))
             if issues:
                 raise FitSkeletonValidationError(
                     'Spline IK Extra 层复检失败：'+'；'.join(issues))
@@ -399,7 +400,8 @@ def audit(host,plan,*,source_visibility_ready=True):
             state = maya_source_spline_visibility.normalize_layer_state(
                 host,state,target+'.subControl','outColorR')
         issues = audit_body_sub_controller(
-            target, sub, state)
+            target, sub, state,
+            authored_shapes=getattr(host,'_allow_authored_control_state',False))
         if issues:
             raise FitSkeletonValidationError(
                 'Spline IK Sub 层复检失败：'+'；'.join(issues))
@@ -407,10 +409,14 @@ def audit(host,plan,*,source_visibility_ready=True):
         if (c.listRelatives(target, parent=True, fullPath=True) or []) != [expected_parent]:
             raise FitSkeletonValidationError('Spline IK 主控父层改变')
         if plan.source_first_translate and any(
+                not c.objExists(target+'.'+kind+axis)
+                for kind in ('translate','rotate') for axis in 'XYZ'):
+            raise FitSkeletonValidationError('来源 Spline 原版位移／旋转通道缺失')
+        if plan.source_first_translate and not getattr(host,'_allow_authored_control_state',False) and any(
                 c.getAttr(target+'.'+kind+axis,lock=True)
                 or not c.getAttr(target+'.'+kind+axis,keyable=True)
                 for kind in ('translate','rotate') for axis in 'XYZ'):
-            raise FitSkeletonValidationError('来源 Spline 原版位移／旋转通道不可动画')
+            raise FitSkeletonValidationError('来源 Spline 新建位移／旋转通道不可动画')
     for name, command, source in (
             ('AdvPy_SplineFKRootPoint', c.pointConstraint,
              _fk_root_source(host, plan)),
@@ -561,7 +567,7 @@ def audit(host,plan,*,source_visibility_ready=True):
                           'AdvPy_SplineVolumeDelta.input1'))
     bad=[(a,b) for a,b in edges if not c.isConnected(a,b)]
     if bad:raise FitSkeletonValidationError('Spline 曲线或伸展连接被替换：'+repr(bad[:2]))
-    if new_scaling and any(
+    if new_scaling and not getattr(host,'_allow_authored_control_state',False) and any(
             c.getAttr(target+'.scale'+axis,lock=True)
             or not c.getAttr(target+'.scale'+axis,keyable=True)
             for target in plan.targets for axis in 'XYZ'):

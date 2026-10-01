@@ -9,6 +9,7 @@ def plan(host,original,namespace):
     target=MayaBodyBuildHost(namespace=namespace)
     c=target._cmds
     rows=[]
+    animator={channel.node+'.'+channel.attribute for channel in original.registration.channels}
     for row in original.properties:
         existing={a[0] for a in row.attributes
                   if c.objExists(row.path+'.'+a[0])
@@ -16,10 +17,23 @@ def plan(host,original,namespace):
         if existing:
             actual={a[0]:a for a in capture_extension(target,row.path).attributes}
             source={a[0]:a for a in row.attributes}
-            if any(actual.get(name)!=source[name] for name in existing):
+            def equivalent(name):
+                left=source[name];right=actual.get(name)
+                if right is None:return False
+                if row.path+'.'+name not in animator:return left==right
+                # Values and Lock/Hide are authored state, not attribute
+                # definitions. A fresh default is expected to differ from an
+                # animated saved value. Keep the closed type/range contract.
+                definition=lambda item:(item[0],item[1],tuple(
+                    (key,value) for key,value in item[5] if key!='channelBox'))
+                return definition(left)==definition(right)
+            if any(not equivalent(name) for name in existing):
                 raise CharacterRegistryError(
                     '目标 Rig 同名用户属性与原角色不同：'+row.path)
-        attributes=tuple(a for a in row.attributes if not c.objExists(row.path+'.'+a[0]) and a[0]!='lockInfluenceWeights')
+        attributes=tuple(a for a in row.attributes
+                         if a[0]!='lockInfluenceWeights'
+                         and (not c.objExists(row.path+'.'+a[0])
+                              or row.path+'.'+a[0] in animator))
         if not attributes:continue
         pending={item[0] for item in attributes}
         for name,datatype,value,locked,keyable,metadata in attributes:
@@ -33,7 +47,7 @@ def plan(host,original,namespace):
     return tuple(rows)
 
 
-def install(target,rows):
+def install(target,rows,*,existing_plugs=frozenset()):
     c=target._cmds
     for row in rows:
         pending={item[0]:item for item in row.attributes}
@@ -55,7 +69,9 @@ def install(target,rows):
                 del pending[item[0]]
         for name,datatype,value,locked,keyable,metadata in ordered:
             plug=row.path+'.'+name;meta=dict(metadata)
-            if c.objExists(plug):raise CharacterRegistryError('目标用户属性已存在：'+plug)
+            present=c.objExists(plug)
+            if present and plug not in existing_plugs:
+                raise CharacterRegistryError('目标用户属性已存在：'+plug)
             options={'longName':name,'niceName':meta['niceName'],'keyable':keyable}
             parent=tuple(meta.get('parent') or ())
             if parent:options['parent']=parent[0]
@@ -67,7 +83,11 @@ def install(target,rows):
             if meta.get('default'):options['defaultValue']=meta['default'][0]
             for source,flag in (('minimum','minValue'),('maximum','maxValue'),('softMin','softMinValue'),('softMax','softMaxValue')):
                 if meta.get(source):options[flag]=meta[source][0]
-            c.addAttr(row.path,**options)
+            if present:
+                c.setAttr(plug,lock=False,keyable=keyable)
+                c.setAttr(plug,channelBox=meta['channelBox'])
+            else:
+                c.addAttr(row.path,**options)
             if datatype=='string':
                 if value is not None:c.setAttr(plug,value,type='string')
             elif datatype=='matrix':

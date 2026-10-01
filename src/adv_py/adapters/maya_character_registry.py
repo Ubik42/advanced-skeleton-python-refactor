@@ -1484,6 +1484,17 @@ class MayaCharacterRegistryMixin:
         self._validate_character_registration(plan)
 
     def _validate_character_registration(self, plan):
+        # Saved characters may legitimately have edited control shapes,
+        # colors, size and Lock/Hide state. Fresh builders still run their
+        # strict construction audits before creating this registration.
+        previous=getattr(self,'_allow_authored_control_state',False)
+        self._allow_authored_control_state=True
+        try:
+            return self._validate_character_registration_graph(plan)
+        finally:
+            self._allow_authored_control_state=previous
+
+    def _validate_character_registration_graph(self, plan):
         c = self._cmds
         from .maya_source_rp_dynamics import audit as audit_source_rp
         audit_source_rp(self,plan)

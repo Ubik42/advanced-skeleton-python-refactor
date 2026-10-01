@@ -5,7 +5,7 @@ class CaptureBodyCharacterPreservation:
     def execute(self,*,extensions=()):
         host=self._host
         registration=host.read_character_registration()
-        host.preflight_character_keyframe(registration)
+        host.preflight_character_preservation(registration)
         keys=host.capture_character_key_state(registration)
         result=host.capture_character_preservation(registration,tuple(extensions))
         if host.read_character_registration()!=registration or host.capture_character_key_state(registration)!=keys:

@@ -58,7 +58,8 @@ def audit(host,plan,*,visibility_ready=True):
         if plan.hybrid_extras:
             extra_parent=plan.hybrid_follow if index==0 and plan.source_follow_parent else offset
             issues=audit_body_extra_controller(extra_parent,control,parent,
-                host._capture_body_extra_layer(parent,control),extra_curve=False)
+                host._capture_body_extra_layer(parent,control),extra_curve=False,
+                authored_shapes=getattr(host,'_allow_authored_control_state',False))
             if issues:
                 raise FitSkeletonValidationError('来源 Spline IKhybrid Extra 层改变：'+'；'.join(issues))
         if ((c.listRelatives(control,parent=True,fullPath=True) or [])!=[parent]
@@ -67,6 +68,7 @@ def audit(host,plan,*,visibility_ready=True):
         shapes = c.listRelatives(control,shapes=True,fullPath=True) or []
         source = ('AdvPy_SplineHybridVisibility.output1D' if visibility_ready
                   else plan.settings+'.ikHybridVis')
-        if not shapes or any(not c.isConnected(source,shape+'.visibility')
-                             for shape in shapes):
+        if not getattr(host,'_allow_authored_control_state',False) and (
+                not shapes or any(not c.isConnected(source,shape+'.visibility')
+                                  for shape in shapes)):
             raise FitSkeletonValidationError('来源 Spline IKhybrid 显示连接改变')

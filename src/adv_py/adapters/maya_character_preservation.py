@@ -3,7 +3,70 @@ from math import isfinite
 
 from adv_py.core.character_registry import CharacterRegistryError
 from dataclasses import replace
-from adv_py.core.character_preservation import PreservedCurve, PreservedSkin, PreservedDeformer, PreservedExtension, CharacterPreservation, validate_preservation
+from adv_py.core.character_preservation import PreservedCurve, PreservedSkin, PreservedDeformer, PreservedExtension, PreservedControlState, CharacterPreservation, validate_preservation
+
+
+def capture_control_states(host,registration):
+    """Original Keep Lock/Hide and enabled transform limits (78208–78249)."""
+    c=host._cmds
+    controls={channel.node for channel in registration.channels}
+    if c.objExists('ControlSet'):
+        for member in c.sets('ControlSet',q=True) or []:
+            if '.' in member:continue
+            paths=c.ls(member,long=True) or []
+            if len(paths)==1 and paths[0] in {n.path for n in registration.nodes}:
+                controls.add(paths[0])
+    joints={node.path for node in registration.nodes if node.node_type=='joint'
+            and node.path!=registration.container
+            and not node.path.startswith(registration.container+'|')}
+    rows=[]
+    for node in sorted(controls|joints):
+        channels=()
+        if node in controls:
+            channels=tuple((attr,bool(c.getAttr(node+'.'+attr,lock=True)),
+                            bool(c.getAttr(node+'.'+attr,keyable=True)),
+                            bool(c.getAttr(node+'.'+attr,channelBox=True)))
+                           for kind in ('translate','rotate','scale') for axis in 'XYZ'
+                           for attr in (kind+axis,) if c.objExists(node+'.'+attr))
+        limits=[]
+        for kind in 'trs':
+            for axis in 'xyz':
+                flag=kind+axis
+                enabled=tuple(bool(value) for value in c.transformLimits(node,q=True,**{'e'+flag:True}))
+                if any(enabled):
+                    values=tuple(float(value) for value in c.transformLimits(node,q=True,**{flag:True}))
+                    limits.append((flag,values,enabled))
+        if channels or limits:
+            rows.append(PreservedControlState(node,c.ls(node,uuid=True)[0],channels,tuple(limits)))
+    return tuple(rows)
+
+
+def _added_control_roots(host,registration):
+    """MEL keeps added ControlSet/DeformSet members outside AllSet."""
+    c=host._cmds
+    generated={row.path for row in registration.nodes}
+    roots=set()
+    members={member for name in ('ControlSet','DeformSet') if c.objExists(name)
+             for member in c.sets(name,q=True) or []}
+    for member in sorted(members):
+        if '.' in member:continue
+        paths=c.ls(member,long=True) or []
+        if len(paths)!=1:
+            raise CharacterRegistryError('新增控制器或变形关节身份不唯一：'+member)
+        node=paths[0]
+        if (node in generated or node==registration.container
+                or node.startswith(registration.container+'|')):
+            continue
+        if c.objExists('AllSet') and c.sets(node,isMember='AllSet'):
+            continue
+        if c.nodeType(node) not in ('transform','joint'):
+            raise CharacterRegistryError('新增控制器或变形关节需要独立的变换节点：'+node)
+        roots.add(node)
+    # A custom controller's complete subtree survives once; nested controls
+    # keep their own membership without capturing the same native object twice.
+    return tuple(sorted(node for node in roots
+                        if not any(node.startswith(parent+'|')
+                                   for parent in roots if parent!=node)))
 
 
 def _plug(host,plug):
@@ -209,7 +272,7 @@ def capture(host,registration,extensions):
         if influences & members:
             skins.append(capture_skin(host,node))
     extension_paths=set()
-    for node in extensions:
+    for node in (*extensions,*_added_control_roots(host,registration)):
         resolved=c.ls(node,long=True) or []
         if len(resolved)!=1:raise CharacterRegistryError('用户扩展根缺失或歧义：'+node)
         node=resolved[0];extension_paths.add(node)
@@ -253,6 +316,8 @@ def capture(host,registration,extensions):
                             or any(c.lockNode(node,q=True,lock=True) or [])):
                         raise CharacterRegistryError('用户扩展动画没有独占的原生时间曲线保留边界：'+source)
                 curves.add(node)
+    from .maya_character_selection_preservation import capture as capture_selection_sets
     return validate_preservation(CharacterPreservation(registration,host.capture_character_pose(registration),
         float(c.currentTime(q=True)),host.character_time_unit(),host.namespace,tuple(capture_curve(host,node) for node in sorted(curves)),
-        tuple(skins),extension_rows,tuple(properties),capture_deformers(host,skins)))
+        tuple(skins),extension_rows,tuple(properties),capture_deformers(host,skins),
+        capture_control_states(host,registration),capture_selection_sets(host,registration)))

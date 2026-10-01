@@ -168,7 +168,8 @@ def audit(host, plan, shape):
             extra=plan.cv_extras[binding.index-1]
             control=plan.cv_controls[binding.index-1]
             issues=audit_body_extra_controller(offset,control,extra,
-                host._capture_body_extra_layer(extra,control),extra_curve=False)
+                host._capture_body_extra_layer(extra,control),extra_curve=False,
+                authored_shapes=getattr(host,'_allow_authored_control_state',False))
             if issues:
                 raise FitSkeletonValidationError('来源 Spline CV Extra 层改变：'+'；'.join(issues))
         edges.extend(((plan.settings+'.ikCvVis', offset+'.visibility'),

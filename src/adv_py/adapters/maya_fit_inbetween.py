@@ -988,13 +988,15 @@ class MayaFitInbetweenMixin:
                 plan.fk_system_path + "|" + part.offset_name,
                 control_path, extra_path,
                 self._capture_body_extra_layer(extra_path, control_path),
-                extra_curve=part.extra_curve):
+                extra_curve=part.extra_curve,
+                authored_shapes=getattr(self,'_allow_authored_control_state',False)):
             return None
         sub_path = (control_path + "|" + part.sub_name
                     if part.sub_name is not None else None)
         if audit_body_sub_controller(
                 control_path, sub_path,
-                self._capture_body_ik_sub_control(control_path, sub_path)):
+                self._capture_body_ik_sub_control(control_path, sub_path),
+                authored_shapes=getattr(self,'_allow_authored_control_state',False)):
             return None
         defaults = c.attributeQuery(
             "inheritScale", node=part.control_name,

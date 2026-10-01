@@ -69,6 +69,37 @@ class RebuildOwnership:
     nodes: tuple[tuple[str,str,str,str], ...]
     connections: tuple[tuple[str,str], ...]
     shapes: tuple[tuple[str,tuple[float,...],tuple,tuple[float,...]], ...] = ()
+    # Editable controller geometry is retained independently of the new
+    # default shape topology, as in MEL's oldShape.local -> newShape.create.
+    # Role, degree, form, homogeneous CVs, knots. Solver curves stay audited
+    # against their generated topology and are never overwritten here.
+    curve_geometry: tuple[tuple[str,int,int,tuple,tuple[float,...]], ...] = ()
+    # Original extra controller shapes survive as native objects. Their
+    # destination transform is paired by UUID; no curve reconstruction occurs.
+    retained_shapes: tuple[tuple[str,str,str,tuple], ...] = ()
+    # A newly generated default shape can be absent on the edited old control.
+    created_shapes: tuple[tuple[str,str], ...] = ()
+
+
+@dataclass(frozen=True)
+class PreservedControlState:
+    node: str
+    uuid: str
+    # Attribute, locked, keyable, displayed in the Channel Box.
+    channels: tuple[tuple[str,bool,bool,bool], ...] = ()
+    # Native transformLimits flag, min/max values, enabled min/max.
+    limits: tuple[tuple[str,tuple[float,float],tuple[bool,bool]], ...] = ()
+
+
+@dataclass(frozen=True)
+class PreservedSelectionSet:
+    node: str
+    uuid: str
+    # Native member UUID and optional component address, independent of DAG
+    # names and of the namespace used by the replacement stage.
+    members: tuple[tuple[str,str], ...]
+    parents: tuple[str, ...] = ()
+    connections: tuple[tuple[str,str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -83,6 +114,8 @@ class CharacterPreservation:
     extensions: tuple[PreservedExtension, ...]
     properties: tuple[PreservedExtension, ...] = ()
     deformers: tuple[PreservedDeformer, ...] = ()
+    control_states: tuple[PreservedControlState, ...] = ()
+    selection_sets: tuple[PreservedSelectionSet, ...] = ()
 
     @property
     def content_digest(self):
@@ -95,8 +128,26 @@ def validate_preservation(snapshot):
     # Reject non-finite data at every level, including retained custom values.
     try:canonical(asdict(snapshot))
     except (ValueError,TypeError) as exc:raise CharacterRegistryError('重建保留数据包含不可序列化或非有限数值') from exc
-    for rows in (snapshot.curves,snapshot.skins,snapshot.extensions,snapshot.properties,snapshot.deformers):
+    for rows in (snapshot.curves,snapshot.skins,snapshot.extensions,snapshot.properties,snapshot.deformers,snapshot.control_states,snapshot.selection_sets):
         if len({r.uuid for r in rows})!=len(rows):raise CharacterRegistryError('重建保留对象身份重复')
+    for row in snapshot.selection_sets:
+        if (not row.node or not row.uuid or len(set(row.members))!=len(row.members)
+                or any(not uuid or component and not component.startswith('.')
+                       for uuid,component in row.members)
+                or len(set(row.parents))!=len(row.parents)):
+            raise CharacterRegistryError('重建用户选择集成员或父级身份无效')
+    for row in snapshot.control_states:
+        if (not row.node or not row.uuid
+                or len({a[0] for a in row.channels})!=len(row.channels)
+                or any(attr not in tuple(kind+axis for kind in ('translate','rotate','scale') for axis in 'XYZ')
+                       or any(type(value) is not bool for value in (locked,keyable,visible))
+                       for attr,locked,keyable,visible in row.channels)
+                or len({a[0] for a in row.limits})!=len(row.limits)
+                or any(flag not in tuple(kind+axis for kind in 'trs' for axis in 'xyz')
+                       or len(values)!=2 or len(enabled)!=2
+                       or any(type(value) is not bool for value in enabled)
+                       for flag,values,enabled in row.limits)):
+            raise CharacterRegistryError('重建控制器锁定、显示或限制状态无效')
     for curve in snapshot.curves:
         count=len(curve.times)
         if any(len(getattr(curve,field))!=count for field in ('values','in_tangents','out_tangents',

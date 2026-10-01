@@ -74,6 +74,7 @@ def audit_body_extra_controller(
     *,
     extra_curve: bool,
     tolerance: float = 1e-4,
+    authored_shapes: bool = False,
 ) -> tuple[str, ...]:
     if state is None:
         return ("缺少 Extra 层",)
@@ -81,19 +82,20 @@ def audit_body_extra_controller(
     if state.path != extra_path or state.parent_path != offset_path:
         issues.append("Extra 层父链不一致")
     if extra_curve:
-        if state.shape_path != extra_path + "|" + extra_path.rsplit(
+        if not authored_shapes and state.shape_path != extra_path + "|" + extra_path.rsplit(
                 "|", 1)[-1] + "Shape":
             issues.append("Extra 曲线名称不一致")
-        if state.shape_type != "nurbsCurve":
+        if not authored_shapes and state.shape_type != "nurbsCurve":
             issues.append("Extra 层缺少曲线")
-        if state.visibility_source != control_path + ".extraControl":
+        if state.visibility_source != control_path + ".extraControl" and not (
+                authored_shapes and state.visibility_source is None):
             issues.append("Extra 曲线可见性连接不一致")
-        if state.color != 29:
+        if not authored_shapes and state.color != 29:
             issues.append("Extra 曲线颜色不一致")
-        if (state.shape_scale is None
+        if not authored_shapes and (state.shape_scale is None
                 or abs(state.shape_scale - 1.1) > tolerance):
             issues.append("Extra 曲线尺寸不一致")
-    elif state.shape_path is not None or state.shape_type is not None:
+    elif not authored_shapes and (state.shape_path is not None or state.shape_type is not None):
         issues.append("Extra 层存在计划外曲线")
     return tuple(issues)
 
@@ -104,6 +106,7 @@ def audit_body_sub_controller(
     state: BodySubControllerState | None,
     *,
     tolerance: float = 1e-4,
+    authored_shapes: bool = False,
 ) -> tuple[str, ...]:
     if sub_path is None:
         return ("存在计划外 Sub 控制器",) if state is not None else ()
@@ -112,13 +115,14 @@ def audit_body_sub_controller(
     issues: list[str] = []
     if state.path != sub_path or state.parent_path != control_path:
         issues.append("Sub 控制器父链不一致")
-    if state.shape_type != "nurbsCurve":
+    if not authored_shapes and state.shape_type != "nurbsCurve":
         issues.append("Sub 控制器缺少曲线")
-    if state.visibility_source != control_path + ".subControl":
+    if state.visibility_source != control_path + ".subControl" and not (
+            authored_shapes and state.visibility_source is None):
         issues.append("Sub 控制器可见性连接不一致")
-    if state.color != 30:
+    if not authored_shapes and state.color != 30:
         issues.append("Sub 控制器颜色不一致")
-    if (state.shape_scale is None
+    if not authored_shapes and (state.shape_scale is None
             or abs(state.shape_scale - 0.9) > tolerance):
         issues.append("Sub 控制器尺寸不一致")
     return tuple(issues)

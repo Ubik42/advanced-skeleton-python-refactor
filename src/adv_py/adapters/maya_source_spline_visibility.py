@@ -16,6 +16,10 @@ def normalize_layer_state(host,state,flag,output):
     shape=getattr(state,'shape_path',None)
     if shape is None:
         shapes=c.listRelatives(state.path,shapes=True,noIntermediate=True,fullPath=True) or []
+        if getattr(host,'_allow_authored_control_state',False) and len(shapes)>1:
+            expected=state.path+'|'+state.path.rsplit('|',1)[-1]+'Shape'
+            shapes=([expected] if expected in shapes else
+                    next(([shape] for shape in shapes if c.nodeType(shape)=='nurbsCurve'),shapes))
         shape=shapes[0] if len(shapes)==1 else None
     expected=shape.rsplit('|',1)[-1]+'SplineVis' if shape else None
     if (node!=expected or source!=node+'.output' or c.nodeType(node)!='multDoubleLinear'

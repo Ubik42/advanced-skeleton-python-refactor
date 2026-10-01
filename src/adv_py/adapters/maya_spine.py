@@ -564,7 +564,8 @@ class MayaBodySpineMixin:
                 plan.ik_offset, plan.ik_control, plan.ik_extra_path,
                 self._capture_body_extra_layer(
                     plan.ik_extra_path, plan.ik_control),
-                extra_curve=plan.ik_extra_curve)
+                extra_curve=plan.ik_extra_curve,
+                authored_shapes=getattr(self,'_allow_authored_control_state',False))
             if issues:
                 raise FitSkeletonValidationError(
                     "Spine IK Extra 层复检失败：" + "；".join(issues))
@@ -580,7 +581,8 @@ class MayaBodySpineMixin:
                 plan.pole_extra_path,
                 self._capture_body_extra_layer(
                     plan.pole_extra_path, plan.pole_control),
-                extra_curve=False)
+                extra_curve=False,
+                authored_shapes=getattr(self,'_allow_authored_control_state',False))
             if issues:
                 raise FitSkeletonValidationError(
                     "Spine Pole Extra 层复检失败：" + "；".join(issues))
@@ -591,7 +593,8 @@ class MayaBodySpineMixin:
         sub_state = self._capture_body_ik_sub_control(
             plan.ik_control, plan.ik_sub_path)
         issues = audit_body_sub_controller(
-            plan.ik_control, plan.ik_sub_path, sub_state)
+            plan.ik_control, plan.ik_sub_path, sub_state,
+            authored_shapes=getattr(self,'_allow_authored_control_state',False))
         if issues:
             raise FitSkeletonValidationError(
                 "Spine IK Sub 层复检失败：" + "；".join(issues))
