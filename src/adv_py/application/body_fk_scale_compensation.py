@@ -35,7 +35,9 @@ class BuildBodyFkScaleCompensation:
         for spec in specs:
             self._host.preflight_body_fk_scale_compensation(spec)
         with self._host.transaction("构建 FK 分段缩放补偿"):
-            for spec in specs:
+            # Freeze each receiver after its ancestor's bind frame is final.
+            # Sibling/label order is not a hierarchy order on imported Fits.
+            for spec in sorted(specs, key=lambda item: item.offset_path.count("|")):
                 self._host.connect_body_fk_scale_compensation(spec)
             for spec in specs:
                 if not self._host.capture_body_fk_scale_compensation(spec):

@@ -35,7 +35,7 @@ class PartialJointSpec:
                                if self.include_controller else self.stem + "Partial_" + self.side)
                               + "FollowMDL_" + self.side))
                 if self.include_controller:
-                    names.append(self.stem + "PartialMM_" + self.side)
+                    names.append(self.stem + "PartialMM2_" + self.side)
             else:
                 names.extend((self.stem + "_" + self.side + "_00",
                               self.stem + "_" + self.side + "_00Offset",
@@ -46,9 +46,12 @@ class PartialJointSpec:
                 names.extend(("FKOffset" + self.stem + "Partial_" + self.side,
                               "FKExtra" + self.stem + "Partial_" + self.side,
                               "FK" + self.stem + "Partial_" + self.side,
-                              "FKX" + self.stem + "Partial_" + self.side,
-                              target + "_parentConstraint1",
-                              target + "_scaleConstraint1"))
+                              "FKX" + self.stem + "Partial_" + self.side))
+                if self.use_opm:
+                    names.append(self.stem + "PartialMM_" + self.side)
+                else:
+                    names.extend((target + "_parentConstraint1",
+                                  target + "_scaleConstraint1"))
                 target = "FKOffset" + target
             if not self.use_opm:
                 names.extend(target + "_" + kind + "Constraint1"
@@ -126,8 +129,10 @@ def plan_create_partial_joints(
         leaf = candidate.joint.rsplit("|", 1)[-1]
         ineligible = (not candidate.parent or candidate.child_count == 0
                       or naming is None or re.search(r"Part[0-9]", leaf) is not None)
-        already_exists = (candidate.existing_single if count == 1
-                          else candidate.existing_multi)
+        # asCreateMultiPartialJoints enters the same creation procedure; its
+        # first existing-Partial guard runs before the multi branch.
+        already_exists = (candidate.existing_single or
+                          (count > 1 and candidate.existing_multi))
         if ineligible or already_exists:
             continue
         stem, side = naming

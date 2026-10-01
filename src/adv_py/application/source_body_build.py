@@ -551,6 +551,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
                         if control.driven_joint == body.root)
     global_control = plan_body_character_global(
         up_axis=FitUpAxis.Y, body_root=body.root, driven_roots=roots,
+        fit_height=body.fit_height,
         scale_destinations=tuple(body.root + ".scale" + axis for axis in "XYZ"),
         radius=scale * 12, body_root_via_controls=True,
         root_fk_scale=BodyRootFkScaleSpec(body.root, root_control.control_path + ".scale"),

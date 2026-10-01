@@ -149,6 +149,11 @@ class MayaBodyParentConstraintMixin:
         for index, value in plan.matrix_inputs:
             target = f"{plan.mult_matrix}.matrixIn[{index}]"
             incoming = c.connectionInfo(target, sourceFromDestination=True)
+            if isinstance(value, str) and value.startswith("|") and incoming:
+                source_node, source_attribute = incoming.split(".", 1)
+                sources = c.ls(source_node, long=True) or []
+                if len(sources) == 1:
+                    incoming = sources[0] + "." + source_attribute
             matrix_inputs.append((index, incoming if isinstance(value, str)
                                   else _matrix(c.getAttr(target))))
         connections = []

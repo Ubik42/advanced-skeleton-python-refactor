@@ -120,6 +120,17 @@ class MayaBodyFkScaleCompensationMixin:
         offset = spec.offset_path
         parent = spec.parent_control_path
         local = _matrix(c.getAttr(offset + ".matrix"))
+        if spec.use_offset_parent_matrix:
+            # FKX carries its own bind orientation. The offset's local matrix
+            # is relative to the FK parent, so it cannot be reused against FKX.
+            # MEL aligns the receiver to Body before freezing this offset.
+            from maya.api import OpenMaya as om
+            bind_world = om.MMatrix(tuple(value for axis in spec.world_axes
+                                         for value in (*axis, 0.0)) +
+                                    (*spec.world_position, 1.0))
+            source_world = om.MMatrix(_matrix(c.getAttr(
+                spec.scale_source_path + ".worldMatrix[0]")))
+            local = tuple(bind_world * source_world.inverse())
         if len(local) != 16:
             raise RuntimeError("FK Offset 局部矩阵无效：" + offset)
         self._transaction_changed = True

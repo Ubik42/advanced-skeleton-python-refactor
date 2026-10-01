@@ -529,8 +529,8 @@ class MayaCustomControllerHost(MayaFaceHost):
                                       ("rotate", 0.0), ("scale", 1.0)):
                     for axis in "XYZ":
                         attribute = kind + axis
-                        plug = node + "." + attribute
-                        if cmds.getAttr(plug, settable=True):
+                        value_plug = node + "." + attribute
+                        if cmds.getAttr(value_plug, settable=True):
                             values.append((node, attribute, neutral))
                 if node == control:
                     for attribute in cmds.listAttr(

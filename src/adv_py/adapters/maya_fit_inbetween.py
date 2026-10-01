@@ -582,7 +582,8 @@ class MayaFitInbetweenMixin:
                             matrix=True)
             if max(abs(float(a) - float(b)) for a, b in zip(
                     before, after)) > 1e-4:
-                raise RuntimeError("Inbetween FK 改接改变绑定姿态：" + node)
+                raise RuntimeError("Inbetween FK 改接改变绑定姿态：" + node
+                                   + " before=" + repr(before) + " after=" + repr(after))
 
     def capture_inbetween_fk_rewire(
         self, plan: InbetweenFkRewirePlan

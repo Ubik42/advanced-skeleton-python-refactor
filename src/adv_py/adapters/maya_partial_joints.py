@@ -1,6 +1,9 @@
 """Maya node graph for ADV Body Partial Joints."""
 from __future__ import annotations
+from dataclasses import replace
 
+from adv_py.core.character_registry import REGISTRY_NAME
+from adv_py.core.body_parent_constraint import plan_body_parent_constraint
 from adv_py.core.partial_joints import (
     PartialDeleteSpec, PartialJointCandidate, PartialJointSpec,
 )
@@ -47,6 +50,25 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                     stem + "Partial1_" + side)))))
         return tuple(result)
 
+    def _partial_fk_sources(self):
+        c=self._cmds
+        if not c.objExists(self._node(REGISTRY_NAME)+".advPyRegistryDocument"):
+            return {}
+        registration=self.read_character_registration()
+        sources={}
+        for row in registration.channels:
+            if row.key.startswith("generic.fk.") and ".extra." not in row.key:
+                role=row.key[len("generic.fk."):].split(".",1)[0]
+                if role.endswith("FK"):
+                    sources[self._leaf(row.node)]=role[:-2]
+        for limb in registration.source_limbs:
+            sources.update((self._leaf(row.control),self._leaf(row.body)) for row in limb.joints)
+        for spine in (registration.spine,*registration.additional_spines):
+            if spine is not None:
+                sources.update((self._leaf(control),self._leaf(joint))
+                               for joint,control in zip(spine.body_joints,spine.fk_controls))
+        return sources
+
     def resolve_partial_selection(self) -> tuple[str, ...]:
         c = self._cmds
         selection = c.ls(selection=True, long=True) or []
@@ -60,8 +82,9 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                 raise ValueError("DeformSet 存在同名关节：" + leaf)
             by_leaf[leaf] = candidate.joint
         found = []
+        sources=self._partial_fk_sources()
         for path in selection:
-            leaf = self._leaf(path)
+            leaf = sources.get(self._leaf(path),self._leaf(path))
             if leaf.startswith("FK"):
                 leaf = leaf[2:]
             if "Partial" in leaf:
@@ -117,12 +140,12 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
 
     def _height(self) -> float:
         c = self._cmds
-        root = self._unique("Root_M", "joint")
-        joints = [root] + (c.listRelatives(root, allDescendents=True,
-                                          fullPath=True, type="joint") or [])
-        heights = [c.xform(node, query=True, worldSpace=True,
-                           translation=True)[1] for node in joints]
-        return max(max(heights) - min(heights), 0.001)
+        # asgetCharHeight reads Main.height, rather than the current pose bounds.
+        for name in ("Main", "AdvPy_Global"):
+            plug = self._node(name) + ".height"
+            if c.objExists(plug):
+                return float(c.getAttr(plug))
+        return 0.0
 
     def create_partial_joint(self, spec: PartialJointSpec) -> None:
         self._require_transaction()
@@ -131,6 +154,12 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
             self._create_single(spec)
         else:
             self._create_multi(spec)
+
+    def _mark_partial_influence(self, joint: str) -> None:
+        c = self._cmds
+        c.addAttr(joint, longName="advPyAuxiliaryInfluenceKind", dataType="string")
+        c.setAttr(joint + ".advPyAuxiliaryInfluenceKind", "original-partial-v1",
+                  type="string", lock=True)
 
     def _create_single(self, spec: PartialJointSpec) -> None:
         c = self._cmds
@@ -147,20 +176,23 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         joint = c.createNode("joint", name=self._node(name), parent=parent,
                              skipSelect=True)
         c.setAttr(joint + ".jointOrient", *source_orient)
-        c.xform(joint, worldSpace=True, matrix=world)
         c.setAttr(joint + ".rotateOrder", c.getAttr(source + ".rotateOrder"))
+        c.xform(joint, worldSpace=True, matrix=world)
         c.setAttr(joint + ".segmentScaleCompensate", False)
         c.addAttr(joint, longName="partialJoint", attributeType="bool",
                   defaultValue=True)
+        self._mark_partial_influence(joint)
         c.sets(joint, add=self._node("DeformSet"))
+        joint = self._unique(joint, "joint")
         zero = None
         if not spec.use_opm:
             offset = c.createNode("transform", name=self._node(
                 stem_side + "_00Offset"), parent=system, skipSelect=True)
-            c.xform(offset, worldSpace=True, matrix=world)
             c.setAttr(offset + ".rotateOrder", c.getAttr(source + ".rotateOrder"))
+            c.xform(offset, worldSpace=True, matrix=world)
             zero = c.createNode("transform", name=self._node(
                 stem_side + "_00"), parent=offset, skipSelect=True)
+            c.setAttr(zero + ".rotateOrder", c.getAttr(source + ".rotateOrder"))
             c.addAttr(zero, longName="partialJoint", attributeType="bool")
             parent_constraint = c.parentConstraint(
                 parent, offset, maintainOffset=True,
@@ -174,14 +206,23 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
             c.xform(control_offset, worldSpace=True, matrix=world)
             extra = c.createNode("transform", name=self._node(
                 "FKExtra" + name), parent=control_offset, skipSelect=True)
+            for attribute in ("sx", "sy", "sz", "v"):
+                c.setAttr(extra + "." + attribute, lock=True, keyable=False)
             control = self._create_control_icon(name, extra)
             fkx = c.createNode("transform", name=self._node(
                 "FKX" + name), parent=control, skipSelect=True)
             c.sets((control, extra), add=self._node("ControlSet"))
-            c.parentConstraint(fkx, joint, maintainOffset=False,
-                               name=self._node(name + "_parentConstraint1"))
-            c.scaleConstraint(fkx, joint, maintainOffset=False,
-                              name=self._node(name + "_scaleConstraint1"))
+            plan = plan_body_parent_constraint(replace(
+                self.capture_parent_constraint_input(
+                    self._unique(fkx, "transform"), joint, False),
+                use_offset_parent_matrix=spec.use_opm))
+            self.preflight_parent_constraint(plan)
+            self.create_parent_constraint(plan)
+            if not spec.use_opm:
+                for kind in ("parent", "scale"):
+                    constraint = self._unique(name + "_" + kind + "Constraint1",
+                                              kind + "Constraint")
+                    c.parent(constraint, system)
             target, follow = control_offset, control
             self._connect_partial_visibility(system)
         side_factor = -1 if spec.side == "L" else 1
@@ -194,7 +235,7 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                                       follow, delta)
             if spec.include_controller:
                 self._update_custom_build_pose(control, base=extra, add=True)
-                self._verify_single_control_layer(name)
+                self._verify_single_control_layer(name, use_opm=True)
             return
         target_name = self._leaf(target)
         orient = c.orientConstraint(
@@ -227,7 +268,7 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
             self._update_custom_build_pose(control, base=extra, add=True)
             self._verify_single_control_layer(name)
 
-    def _verify_single_control_layer(self, name: str) -> None:
+    def _verify_single_control_layer(self, name: str, *, use_opm=False) -> None:
         c = self._cmds
         control = self._unique("FK" + name, "transform")
         fkx = self._unique("FKX" + name, "transform")
@@ -240,6 +281,14 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
             if any(abs(float(value) - target) > 1e-6
                    for value, target in zip(actual, expected)):
                 raise RuntimeError("Partial FKX 中性通道不一致：" + name)
+        if use_opm:
+            joint = self._unique(name, "joint")
+            stem, side = name.rsplit("_", 1)
+            matrix = self._unique(stem + "MM_" + side, "multMatrix")
+            if not (c.isConnected(fkx + ".worldMatrix[0]", matrix + ".matrixIn[0]")
+                    and c.isConnected(matrix + ".matrixSum", joint + ".offsetParentMatrix")):
+                raise RuntimeError("Partial FKX OPM 连接不一致：" + name)
+            return
         for kind in ("parent", "scale"):
             constraint = self._unique(name + "_" + kind + "Constraint1",
                                       kind + "Constraint")
@@ -297,7 +346,7 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
         output = blend + ".outputMatrix"
         if spec.include_controller:
             multiply = c.createNode("multMatrix", name=self._node(
-                spec.stem + "PartialMM_" + spec.side), skipSelect=True)
+                spec.stem + "PartialMM2_" + spec.side), skipSelect=True)
             c.connectAttr(output, multiply + ".matrixIn[0]")
             c.connectAttr(parent + ".worldMatrix[0]",
                           multiply + ".matrixIn[1]")
@@ -344,27 +393,29 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                   else self._height() / 100.0)
         direction = -1 if spec.side == "L" else 1
         step = 2.0 * radius * direction / spec.count
-        world = c.xform(source, query=True, worldSpace=True, matrix=True)
-        source_orient = c.getAttr(source + ".jointOrient")[0]
+        # MEL duplicates the temporary sibling and reparents each duplicate
+        # absolutely. Maya adjusts jointOrient during that reparent; copying
+        # the source orient onto every child creates a different spline chain.
+        c.select(source, replace=True)
+        seed = c.joint(name=self._node(spec.stem + "PartialMultiSeed_" + spec.side))
+        c.setAttr(seed + ".rotateOrder", c.getAttr(source + ".rotateOrder"))
+        c.setAttr(seed + ".segmentScaleCompensate", False)
+        seed = c.parent(seed, parent, absolute=True)[0]
+        c.move(-direction * radius + step, 0, 0, seed,
+               relative=True, objectSpace=True, worldSpaceDistance=True)
         joints = []
         for index in range(1, spec.count + 1):
             name = "%sPartial%d_%s" % (spec.stem, index, spec.side)
-            ancestor = parent if index == 1 else joints[-1]
-            joint = c.createNode("joint", name=self._node(name),
-                                 parent=ancestor, skipSelect=True)
-            c.setAttr(joint + ".jointOrient", *source_orient)
-            c.setAttr(joint + ".rotateOrder", c.getAttr(source + ".rotateOrder"))
-            c.setAttr(joint + ".segmentScaleCompensate", False)
+            joint = c.duplicate(seed, name=self._node(name), returnRootsOnly=True)[0]
             c.addAttr(joint, longName="partialJoint", attributeType="bool",
                       defaultValue=True)
+            self._mark_partial_influence(joint)
             c.sets(joint, add=self._node("DeformSet"))
-            if index == 1:
-                c.xform(joint, worldSpace=True, matrix=world)
-                c.move(-direction * radius + step, 0, 0, joint,
-                       relative=True, objectSpace=True, worldSpaceDistance=True)
-            else:
+            if index > 1:
+                joint = c.parent(joint, joints[-1], absolute=True)[0]
                 c.setAttr(joint + ".translateX", step)
             joints.append(joint)
+        c.delete(seed)
         handle, effector, curve = c.ikHandle(
             startJoint=joints[0], endEffector=joints[-1],
             solver="ikSplineSolver", numSpans=1,
@@ -512,9 +563,11 @@ class MayaPartialJointsHost(MayaCustomControllerHost):
                      "FK" + single + "SR",
                      spec.stem + "PartialBM_" + spec.side,
                      spec.stem + "PartialMM_" + spec.side,
+                     spec.stem + "PartialMM2_" + spec.side,
                      single + "FollowMDL_" + spec.side,
                      "FK" + single + "FollowMDL_" + spec.side,
                      suffix + "_00Offset_parentConstraint1",
+                     single + "_parentConstraint1",
                      single + "_orientConstraint1",
                      single + "_pointConstraint1",
                      single + "_scaleConstraint1",

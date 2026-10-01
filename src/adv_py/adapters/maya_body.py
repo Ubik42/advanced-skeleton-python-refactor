@@ -1221,7 +1221,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     "root-volume-v1", "chest-volume-v1", "sdk-volume-v1",
                     "volume-half-parent-v1", "original-local-angle-v1",
                     "face-eye-v1", "custom-skin-v1",
-                    "custom-partial-parent-v1"})]
+                    "custom-partial-parent-v1", "original-partial-v1"})]
         states: list[BodyJointState] = []
         for path in paths:
             parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []

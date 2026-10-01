@@ -84,8 +84,10 @@ def audit(host,plan):
             or (c.listRelatives(mode.control,parent=True,fullPath=True) or [])!=[mode.frame]):
         raise FitSkeletonValidationError('来源 Spline FKIK 父链改变')
     follow=_follow_plan(host,plan)
-    issues=audit_body_parent_constraint(follow,host.capture_parent_constraint_state(follow))
-    if issues:raise FitSkeletonValidationError('来源 Spline FKIK 父级驱动改变：'+repr(issues))
+    state=host.capture_parent_constraint_state(follow)
+    issues=audit_body_parent_constraint(follow,state)
+    if issues:raise FitSkeletonValidationError('来源 Spline FKIK 父级驱动改变：'+repr(issues)
+        +' expected='+repr(follow)+' actual='+repr(state))
     if (tuple(c.attributeQuery('FKIKBlend',node=mode.control,minimum=True))!=(0.,)
             or tuple(c.attributeQuery('FKIKBlend',node=mode.control,maximum=True))!=(10.,)):
         raise FitSkeletonValidationError('来源 Spline FKIK 用户范围必须为 0–10')
