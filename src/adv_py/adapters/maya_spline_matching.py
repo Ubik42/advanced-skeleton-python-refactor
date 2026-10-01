@@ -128,6 +128,12 @@ def install(host, registration,*,_persist=True,_scoped=False):
         if index:
             c.pointConstraint(control, joint.path, maintainOffset=False, name=f'AdvPy_SplineFKMatchPoint{index}')
             c.connectAttr(plan.joints[index-1].path+'.scale', joint.path+'.inverseScale', force=True)
+        if index in plan.source_body_matrix_indices:
+            from .maya_source_spline_body_matrix import install_match_scale
+            install_match_scale(host,plan,index,control)
+        elif index in plan.source_bendy_matrix_indices:
+            from .maya_source_spline_body_matrix import install_bendy_match_scale
+            install_bendy_match_scale(host,plan,index,control)
     # FK mechanism inputs changed, while all registered object identities remain.
     fk_paths = {joint.path for joint in plan.joints[:count]}
     result = replace(registration, channels=registration.channels+extra,
@@ -177,6 +183,9 @@ def audit(host, registration,*,_scoped=False):
                 raise CharacterRegistryError('曲线脊柱 FK 位置输出被替换')
             if not c.isConnected(plan.joints[index-1].path+'.scale', joint+'.inverseScale'):
                 raise CharacterRegistryError('曲线脊柱 FK 缩放补偿被替换')
+    if plan.source_body_matrix_indices or plan.source_bendy_matrix_indices:
+        from .maya_source_spline_body_matrix import audit as audit_body_matrix
+        audit_body_matrix(host,plan)
 
 
 def match_fk(host, registration, before,*,_scoped=False):
@@ -199,7 +208,11 @@ def match_fk(host, registration, before,*,_scoped=False):
         raise CharacterRegistryError('曲线脊柱机制组缩放无效')
     # Preserve the actual local outputs, including the scale compensation of
     # mixed IK/FK poses. Decomposing a sheared world matrix loses this information.
-    local = tuple((tuple(c.getAttr(j+'.rotate')[0]), tuple(c.getAttr(j+'.scale')[0])) for j in plan.body_joints)
+    from .maya_source_spline_body_matrix import local_rotation_scale
+    matrix_indices=(*plan.source_body_matrix_indices,*plan.source_bendy_matrix_indices)
+    local = tuple(local_rotation_scale(host,j) if index in matrix_indices
+                  else (tuple(c.getAttr(j+'.rotate')[0]),tuple(c.getAttr(j+'.scale')[0]))
+                  for index,j in enumerate(plan.body_joints))
     c.setAttr(plan.settings+'.spineIkFk', 0.)
     for index, control in enumerate(plan.fk_controls):
         if not index:continue
@@ -209,7 +222,9 @@ def match_fk(host, registration, before,*,_scoped=False):
         c.xform(control, worldSpace=True, translation=matrix[12:15])
         for axis, start in zip('XYZ', (0,4,8)):
             c.setAttr(control+'.matchScale'+axis, sqrt(sum(v*v for v in matrix[start:start+3]))/global_scale)
-        _solve_local_output(c, control, joint, *local[index])
+        _solve_local_output(c, control, joint, *local[index],
+            read_output=(lambda joint=joint:sum(local_rotation_scale(host,joint),()))
+            if index in matrix_indices else None)
         c.xform(control, worldSpace=True, translation=matrix[12:15])
 
 
@@ -229,10 +244,11 @@ def _solve_linear(matrix, values):
     return tuple(row[-1] for row in rows)
 
 
-def _solve_local_output(c, control, joint, rotation, scale):
+def _solve_local_output(c, control, joint, rotation, scale,*,read_output=None):
     plugs = tuple(control+'.'+name+axis for name in ('rotate','matchScale') for axis in 'XYZ')
     wanted = rotation+scale
-    def output():return tuple(c.getAttr(joint+'.rotate')[0])+tuple(c.getAttr(joint+'.scale')[0])
+    def output():
+        return read_output() if read_output is not None else tuple(c.getAttr(joint+'.rotate')[0])+tuple(c.getAttr(joint+'.scale')[0])
     def difference(a,b):
         return tuple((x-y+180.)%360.-180. if i<3 else x-y for i,(x,y) in enumerate(zip(a,b)))
     for iteration in range(12):

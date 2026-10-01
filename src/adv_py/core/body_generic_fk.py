@@ -101,6 +101,9 @@ class GenericFkFeaturePolicy:
     source_rp_build_pole: bool | None = None
     source_untwister_receiver: bool | None = None
     source_body_matrix: bool | None = None
+    source_bendy_deform_matrix: bool | None = None
+    source_leg_lock_opm: bool | None = None
+    source_root_body_matrix: bool | None = None
     source_spline_layouts: tuple | None = None
     source_spline_body_root: str | None = None
     compensated_controls: frozenset[str] | None = None

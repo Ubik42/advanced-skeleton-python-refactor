@@ -50,6 +50,8 @@ class FitBendyChainSpec:
     opm_offset_only_scale: bool = False
     secondary_matrix_follow: bool = False
     mel_main_influence_follow: bool = False
+    source_deform_matrix: bool = False
+    source_scale_plugs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if (not self.part_names
@@ -127,6 +129,12 @@ class FitBendyChainSpec:
             raise ValueError("Bendy 第二曲线矩阵跟随策略无效")
         if type(self.mel_main_influence_follow) is not bool:
             raise ValueError("Bendy 主曲线导向关节策略无效")
+        if type(self.source_deform_matrix) is not bool or self.source_deform_matrix and not self.opm_offset_only_scale:
+            raise ValueError("来源 Bendy 变形矩阵要求原版 OPM 缩放分支")
+        if self.source_scale_plugs and (not self.source_deform_matrix
+                or len(self.source_scale_plugs)!=3
+                or any(not isinstance(plug,str) or '.' not in plug for plug in self.source_scale_plugs)):
+            raise ValueError('来源 Bendy 独立缩放输入必须完整声明三个轴')
         if self.opm_offset_only_scale and self.non_opm_additive_micro_scale:
             raise ValueError("Bendy OPM 与非 OPM 缩放策略不能同时启用")
         if (self.opm_offset_only_scale
@@ -447,6 +455,10 @@ class FitBendyChainSpec:
     def deform_scale_pick_names(self) -> tuple[str, ...]:
         return tuple("AdvPy_BendyScale" + name
                      for name in self.deform_names)
+
+    @property
+    def deform_matrix_names(self) -> tuple[str, ...]:
+        return tuple(name+'MM' for name in self.deform_constraint_names)
 
     @property
     def deform_scale_mult_names(self) -> tuple[str, ...]:

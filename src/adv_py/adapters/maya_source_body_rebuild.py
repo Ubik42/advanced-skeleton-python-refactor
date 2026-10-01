@@ -49,8 +49,11 @@ def capture_fk_policy(host, registration):
                 raise CharacterRegistryError('来源 FK OPM 保存身份变化：'+short)
             drivers=direct_bodies
             scale.add(control)
-        elif not outputs and c.objExists(bendy_constraint):
-            if c.nodeType(bendy_constraint) != "parentConstraint":
+        elif not outputs and (c.objExists(bendy_constraint) or any(
+                joint.path.rsplit('|',1)[-1].rsplit(':',1)[-1]==body_stem
+                and c.objExists(joint.path+'.advPySourceBendyMatrix')
+                for joint in registration.body)):
+            if c.objExists(bendy_constraint) and c.nodeType(bendy_constraint) != "parentConstraint":
                 raise CharacterRegistryError("来源 Bendy 变形驱动身份无效：" + short)
             drivers = [joint.path for joint in registration.body
                        if joint.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1] == body_stem]
@@ -140,6 +143,11 @@ def capture_fk_policy(host, registration):
             c.objExists(binding.dynamics_root+'.advPySourceBodyMatrix')
             for binding in registration.source_limbs),
         scale_controls=_pre_aim_controls(scale), compensated_controls=_pre_aim_controls(compensated),
+        source_bendy_deform_matrix=any(c.objExists(joint.path+'.advPySourceBendyMatrix')
+            for joint in registration.body),
+        source_leg_lock_opm=any(c.objExists(node.path+'.advPySourceLegLockMatrix')
+            for node in registration.nodes),
+        source_root_body_matrix=c.objExists(registration.body_root+'.advPySourceFkMatrix'),
         global_controls=_pre_aim_controls(global_controls), aim_sources=aim_sources,
         follower_sources=followers, independent_controls=_pre_aim_controls(independent),
         fkx_joint_controls=frozenset(fkx), point_controls=frozenset(points))

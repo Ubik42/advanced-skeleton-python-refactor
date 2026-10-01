@@ -29,6 +29,7 @@ class SourceBodyRootPlan:
     spline_first_control: str | None = None
     branch_offsets: tuple[str,...] = ()
     hip_swing_no_parts: bool = False
+    leg_lock_opm: bool = False
 
     @property
     def leg_lock_path(self):
@@ -48,8 +49,8 @@ class SourceBodyRootPlan:
                      for name in (control.offset_name,control.extra_name,
                                   control.control_name,control.control_name+'Shape'))+(
             'AdvPy_SourceRootHS_M','AdvPy_SourceRootFollowMM',
-            'AdvPy_LegLockConstrained','AdvPy_SourceLegLockOutputMM',
-            'AdvPy_SourceLegLockDM')+(
+            'AdvPy_LegLockConstrained','AdvPy_SourceLegLockOutputMM')+(
+            ('AdvPy_SourceLegLockDM',) if not self.leg_lock_opm else ())+(
             ('AdvPy_SourceRootFollowDM',) if not self.use_offset_parent_matrix else ())+(
             ('AdvPy_SourceRootRelativeMM','AdvPy_SourceRootRemoveRotBM',
              'AdvPy_SourceRootRemoveRotPM','AdvPy_SourceRootRemoveRotIM',
@@ -90,7 +91,7 @@ def plan_source_body_root(body,fk,metadata,instances,options,*,base_radius=1.5):
         control.offset_path,control.source_override_path or control.sub_control_path or control.control_path,
         control.constraint_name,root.world_position,root.world_axes,root.rotation_order,
         options.use_offset_parent_matrix,root_meta.leg_lock is not False,
-        root_meta.center_between_feet is True)
+        root_meta.center_between_feet is True,leg_lock_opm=options.use_offset_parent_matrix)
 
 
 def finalize_source_body_root(plan,fk,splines,inbetween_segments):
@@ -103,9 +104,7 @@ def finalize_source_body_root(plan,fk,splines,inbetween_segments):
             break
     spline=next((spline for spline in splines if spline.body_joints[0]==plan.body_root),None)
     return replace(plan,fk_receiver=receiver,relative_source=relative,
-        spline_ik_source=(spline.driver_targets[0]+'|'+spline.node_name('AdvPy_SplineIKLocalOrient0')
-                          +'|'+spline.node_name('AdvPy_SplineIKLocalOrient3')
-                          if spline else None),
+        spline_ik_source=spline.source_fixed_path if spline else None,
         spline_mode=spline.settings+'.spineIkFk' if spline else None,
         spline_reverse=spline.node_name('AdvPy_SplineReverse.outputX') if spline else None,
         spline_output=spline.root_path+'|'+spline.node_name('AdvPy_SplineFirstFixedOutput') if spline else None,

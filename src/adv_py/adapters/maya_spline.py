@@ -522,8 +522,12 @@ def audit(host,plan,*,source_visibility_ready=True):
                       (scale_frame+'.worldInverseMatrix[0]',relative+'.matrixIn[1]'),
                       (relative+'.matrixSum',decompose+'.inputMatrix'),
                       (decompose+'.outputScale',volume+'.input1')]
-            edges += [(volume+'.output'+axis,joint.path+'.scale'+axis)
-                      for axis in 'XYZ']
+            edges += [(volume+'.output'+axis,
+                       f'AdvPy_SplineBody{i}ScaleBlend.color1'+component
+                       if i in plan.source_body_matrix_indices else
+                       'AdvPy_BendySourceScale'+plan.body_joints[i].rsplit('|',1)[-1]+'.color1'+component
+                       if i in plan.source_bendy_matrix_indices else joint.path+'.scale'+axis)
+                      for axis,component in zip('XYZ','RGB')]
             for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
                 if weight:
                     orientation=(f'|AdvPy_SplineIKLocalOrient{index}'
@@ -641,6 +645,8 @@ def audit(host,plan,*,source_visibility_ready=True):
     if version>=2:
         identity=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
         for i in range(1,n):
+            if i in plan.source_body_matrix_indices:
+                continue
             node=f'AdvPy_SplineScale{i}'
             plug=node+'.constraintParentInverseMatrix'
             if (not c.isConnected(plan.body_joints[i-1]+'.scale',plan.body_joints[i]+'.inverseScale')
@@ -655,6 +661,8 @@ def audit(host,plan,*,source_visibility_ready=True):
                         or c.listConnections(target_parent,s=True,d=False) or tuple(c.getAttr(target_parent))!=identity):
                     raise FitSkeletonValidationError('Spline 世界缩放读取网络被修改')
     for i in range(1,n):
+        if i in plan.source_body_matrix_indices or i in plan.source_bendy_matrix_indices:
+            continue
         bendy_handoff = host.validate_body_bendy_handoff(plan.body_joints[i])
         for label,command,kind in (('Point',c.pointConstraint,'translate'),('Orient',c.orientConstraint,'rotate'),('Scale',c.scaleConstraint,'scale')):
             node=f'AdvPy_Spline{label}{i}'
@@ -677,6 +685,9 @@ def audit(host,plan,*,source_visibility_ready=True):
                             or c.isConnected(node + '.constraintScale', mult + '.input1')):
                         continue
                 raise FitSkeletonValidationError('Spline Body 输出被替换')
+    if plan.source_body_matrix_indices or plan.source_bendy_matrix_indices:
+        from .maya_source_spline_body_matrix import audit as audit_body_matrix
+        audit_body_matrix(host,plan)
     if plan.curved:
         import json
         for i in range(1,n):

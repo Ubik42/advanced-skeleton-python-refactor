@@ -12,8 +12,10 @@ def create(host,plan,fk,generated_sources):
     def name(value):
         return plan.node_name('AdvPy_Spline'+value)
     local=plan.driver_targets[0]+'|'+name('IKLocalOrient0')
-    fixed=c.createNode('transform',name=name('IKLocalOrient3'),parent=local,skipSelect=True)
+    fixed=c.createNode('transform',name=plan.source_fixed_orient_name,parent=local,skipSelect=True)
     fixed=(c.ls(fixed,long=True) or [fixed])[0]
+    if fixed!=plan.source_fixed_path:
+        raise FitSkeletonValidationError('来源 Spline 首关节固定朝向名称漂移')
     position=c.xform(plan.ik_outputs[0],query=True,worldSpace=True,translation=True)
     c.xform(fixed,worldSpace=True,translation=position)
     c.addAttr(plan.targets[0],longName='firstJointFixed',attributeType='double',
@@ -59,3 +61,34 @@ def create(host,plan,fk,generated_sources):
         if command==c.orientConstraint:
             c.setAttr(constraint+'.interpType',2)
     return fixed,output
+
+
+def audit(host,plan):
+    """Validate firstJointFixed after source Root and Spline outputs exist."""
+    c=host._cmds
+    def name(value):return plan.node_name('AdvPy_Spline'+value)
+    fixed=plan.source_fixed_path
+    output=plan.root_path+'|'+name('FirstFixedOutput')
+    local=plan.driver_targets[0]+'|'+name('IKLocalOrient0')
+    if (not c.objExists(fixed) or c.nodeType(fixed)!='transform'
+            or (c.listRelatives(fixed,parent=True,fullPath=True) or [])!=[local]
+            or not c.objExists(output) or c.nodeType(output)!='transform'
+            or (c.listRelatives(output,parent=True,fullPath=True) or [])!=[plan.root_path]):
+        raise FitSkeletonValidationError('来源 Spline 首关节固定朝向父链变化')
+    for label,kind in (('FirstFixedUnit','unitConversion'),('FirstFixedBM','blendMatrix'),('FirstFixedMM','multMatrix')):
+        if not c.objExists(name(label)) or c.nodeType(name(label))!=kind:
+            raise FitSkeletonValidationError('来源 Spline 首关节固定矩阵节点缺失')
+    edges=((plan.targets[0]+'.firstJointFixed',name('FirstFixedUnit')+'.input'),
+           (plan.ik_outputs[0]+'.worldMatrix[0]',name('FirstFixedBM')+'.inputMatrix'),
+           (fixed+'.worldMatrix[0]',name('FirstFixedBM')+'.target[0].targetMatrix'),
+           (name('FirstFixedUnit')+'.output',name('FirstFixedBM')+'.target[0].weight'),
+           (name('FirstFixedBM')+'.outputMatrix',name('FirstFixedMM')+'.matrixIn[0]'),
+           (output+'.parentInverseMatrix[0]',name('FirstFixedMM')+'.matrixIn[1]'),
+           (name('FirstFixedMM')+'.matrixSum',output+'.offsetParentMatrix'))
+    if (any(not c.isConnected(source,target) for source,target in edges)
+            or abs(float(c.getAttr(name('FirstFixedUnit')+'.conversionFactor'))-.1)>1e-8):
+        raise FitSkeletonValidationError('来源 Spline firstJointFixed 矩阵混合变化')
+    for attr,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
+        if (c.listConnections(output+'.'+attr,source=True,destination=False)
+                or any(abs(float(v)-value)>1e-8 for v in c.getAttr(output+'.'+attr)[0])):
+            raise FitSkeletonValidationError('来源 Spline 固定首关节输出本地变换变化')

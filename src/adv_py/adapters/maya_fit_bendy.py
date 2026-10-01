@@ -624,6 +624,10 @@ class MayaFitBendyMixin:
     def validate_body_bendy_handoff(self, joint: str) -> bool:
         """Validate the Micro handoff when a spline still owns its source graph."""
         c = self._cmds
+        if c.objExists(joint+'.advPySourceBendyMatrix'):
+            from .maya_source_bendy_body_matrix import audit_joint
+            audit_joint(self,joint)
+            return True
         leaf = joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
         constraint = "AdvPy_BendyDeform" + leaf
         if not c.objExists(constraint):
@@ -665,6 +669,7 @@ class MayaFitBendyMixin:
             if index and c.getAttr(joints[0] + "." + marker) != "fit-part-v1":
                 raise ValueError("Bendy 需要 Twist Part 关节：" + name)
             if (c.objExists(constraint) or c.objExists(scale_pick)
+                    or spec.source_deform_matrix and c.objExists(spec.deform_matrix_names[index])
                     or c.objExists(scale_mult)
                     or (spec.micro_local_scale
                         and not spec.opm_offset_only_scale
@@ -675,6 +680,10 @@ class MayaFitBendyMixin:
                 raise ValueError("Bendy 接管必须在 Skin 绑定前执行：" + name)
 
     def connect_fit_bendy_deform(self, spec: FitBendyChainSpec) -> None:
+        if spec.source_deform_matrix:
+            from .maya_source_bendy_body_matrix import create
+            create(self,spec)
+            return
         self._require_transaction()
         c = self._cmds
         poses = {}
@@ -799,6 +808,9 @@ class MayaFitBendyMixin:
         self._transaction_changed = True
 
     def capture_fit_bendy_deform(self, spec: FitBendyChainSpec) -> bool:
+        if spec.source_deform_matrix:
+            from .maya_source_bendy_body_matrix import audit
+            return audit(self,spec)
         c = self._cmds
         for index, (name, output, offset, constraint, scale_pick,
              scale_mult, micro_scale_names) in enumerate(zip(

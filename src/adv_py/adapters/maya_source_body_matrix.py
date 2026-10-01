@@ -18,14 +18,14 @@ def _reset_body(c,target):
         c.setAttr(compound,value,value,value,type='double3')
 
 
-def configure_fk(host,body,fk, *,excluded=frozenset()):
+def configure_fk(host,body,fk, *,excluded=frozenset(),include_root=False):
     from adv_py.core.source_body_matrix import plan_source_fk_body_matrix
     host._require_transaction()
     c=host._cmds
     paths={joint.path for joint in body.joints}
     for control in fk.controls:
         target=control.driven_joint
-        if target not in paths or target==body.root or target in excluded:
+        if target not in paths or target==body.root and not include_root or target in excluded:
             continue
         if not c.objExists(target+'.advPySourceJoint'):
             continue
@@ -132,8 +132,10 @@ def rebase_fk_records(host,registration,rewrites):
     from adv_py.core.fit_part import FitPartFinalPaths,rebase_plan_paths_after_parts
     paths=FitPartFinalPaths((),(),tuple(rewrites))
     c=host._cmds
-    for joint in registration.body:
-        body=rebase_plan_paths_after_parts(joint.path,paths)
+    joint_paths={joint.path for joint in registration.body}
+    joint_paths.update(node.path for node in registration.nodes if node.node_type=='joint')
+    for joint_path in sorted(joint_paths):
+        body=rebase_plan_paths_after_parts(joint_path,paths)
         end_plug=body+'.advPySourceEndMatrix'
         if c.objExists(end_plug):
             from adv_py.core.character_registry import safe_json,exact
@@ -142,13 +144,42 @@ def rebase_fk_records(host,registration,rewrites):
             if updated!=raw:
                 c.setAttr(end_plug,lock=False)
                 c.setAttr(end_plug,canonical(updated),type='string',lock=True)
-        plug=body+'.advPySourceFkMatrix'
-        if not c.objExists(plug):continue
-        plan=decode_source_body_matrix(c.getAttr(plug))
-        updated=rebase_plan_paths_after_parts(plan,paths)
-        if plan==updated:continue
-        c.setAttr(plug,lock=False)
-        c.setAttr(plug,canonical(asdict(updated)),type='string',lock=True)
+        for attribute in ('advPySourceFkMatrix','advPySourceBendyMatrix'):
+            plug=body+'.'+attribute
+            if not c.objExists(plug):continue
+            plan=decode_source_body_matrix(c.getAttr(plug))
+            updated=rebase_plan_paths_after_parts(plan,paths)
+            # MEL RootMM changes its parent inverse when RootMotion is inserted
+            # or removed. Rewriting DAG addresses alone cannot update that edge.
+            parent=(c.listRelatives(body,parent=True,fullPath=True) or [None])[0]
+            matrix_name=updated.outputs[0][0].split('.',1)[0]
+            changed=[]
+            retargeted=False
+            for node in updated.nodes:
+                connections=[]
+                for source,attr in node.connections:
+                    if node.name==matrix_name and source.endswith('.worldInverseMatrix[0]'):
+                        if parent is None:
+                            raise CharacterRegistryError('来源 Body 改挂后缺少实际父级')
+                        expected=parent+'.worldInverseMatrix[0]'
+                        destination=node.name+'.'+attr
+                        actual=c.connectionInfo(destination,sourceFromDestination=True)
+                        if actual:
+                            name,attribute=actual.split('.',1)
+                            actual=host._resolve_connected_node(name)+'.'+attribute
+                        if actual!=expected:
+                            if actual:c.disconnectAttr(actual,destination)
+                            c.connectAttr(expected,destination)
+                        retargeted|=source!=expected
+                        source=expected
+                    connections.append((source,attr))
+                changed.append(replace(node,connections=tuple(connections)))
+            updated=replace(updated,nodes=tuple(changed))
+            if retargeted:
+                _reset_body(c,body)
+            if plan==updated:continue
+            c.setAttr(plug,lock=False)
+            c.setAttr(plug,canonical(asdict(updated)),type='string',lock=True)
 
 
 def configure(host,body,fk,limbs,dynamics, *,excluded=frozenset()):

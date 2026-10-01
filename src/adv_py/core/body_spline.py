@@ -75,6 +75,17 @@ class BodySplinePlan:
     source_follow_parent: str | None = None
     source_follow_targets: tuple = ()
     system_name: str = ''
+    source_body_matrix_indices: tuple[int, ...] = ()
+    source_bendy_matrix_indices: tuple[int, ...] = ()
+    source_fixed_orient_unique: bool = False
+
+    @scoped_spline_property
+    def source_fixed_orient_name(self):
+        return 'AdvPy_SplineIKFirstFixedOrient' if self.source_fixed_orient_unique else 'AdvPy_SplineIKLocalOrient3'
+
+    @scoped_spline_property
+    def source_fixed_path(self):
+        return self.driver_targets[0]+'|AdvPy_SplineIKLocalOrient0|'+self.source_fixed_orient_name
 
     def node_name(self,name):
         from .spline_names import remap_spline_value
@@ -237,7 +248,12 @@ class BodySplinePlan:
         if self.source_curve_points and not self.use_offset_parent_matrix:
             cvs += tuple(f'AdvPy_SplineCV{i}Decompose'
                          for i in range(1, len(self.source_curve_points)-1))
-        outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints)) for kind in ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale'))
+        outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints))
+                      for kind in (('Length',) if i in self.source_body_matrix_indices
+                                   else ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale')))
+        outputs+=tuple(f'AdvPy_SplineBody{i}{suffix}'
+                       for i in self.source_body_matrix_indices
+                       for suffix in ('ScaleBlend','ScaleCM','BodyBM','BodyMM'))
         rests=tuple(f'AdvPy_SplineIKRest{i}' for i in range(1,len(self.body_joints))) if self.curved else ()
         chest = (('AdvPy_SplineChestSpaceMM', 'AdvPy_SplineChestSpacePM')
                  if self.use_offset_parent_matrix else

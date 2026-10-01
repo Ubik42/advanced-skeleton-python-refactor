@@ -439,6 +439,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             scale_guide_group=not options.use_offset_parent_matrix,
             non_opm_additive_micro_scale=not options.use_offset_parent_matrix,
             opm_offset_only_scale=options.use_offset_parent_matrix,
+            source_deform_matrix=options.use_offset_parent_matrix and (
+                generic_fk_policy is None or generic_fk_policy.source_bendy_deform_matrix is not False),
             secondary_matrix_follow=True, mel_main_influence_follow=True)
             for chain in bendy_chains)
     fk_metadata = tuple(replace(item, control=True)
@@ -475,6 +477,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         saved_layouts=generic_fk_policy.source_spline_layouts if generic_fk_policy else None)
     root = plan_source_body_root(body,fk,metadata,build.symmetry.instances,options,
                                  base_radius=scale*1.5)
+    if generic_fk_policy is not None and generic_fk_policy.source_leg_lock_opm is False:
+        root=replace(root,leg_lock_opm=False)
     root=replace(root,hip_swing_no_parts=bool(hip_selection and hip_selection.enabled
                                            and not hip_selection.root_inbetween_count))
     original_by_driver=dict((joint.path,joint.source_joint) for spline in splines
@@ -651,7 +655,11 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             if (item:=source_fit_metadata(joint.name,metadata,build.symmetry.instances)) is not None
             and item.rolling_ball)
         rp_dynamics=host.create_source_body_matrices(body,fk,limbs,rp_dynamics,excluded=excluded)
-        host.create_source_fk_body_matrices(body,fk,excluded=excluded)
+        splines=host.create_source_spline_body_matrices(body,fk,splines,excluded=excluded,
+            saved_layouts=generic_fk_policy.source_spline_layouts if generic_fk_policy else None)
+        host.create_source_fk_body_matrices(body,fk,excluded=excluded|frozenset(
+            joint for spline in splines for joint in spline.body_joints),
+            include_root=generic_fk_policy is None or generic_fk_policy.source_root_body_matrix is not False)
     # MEL selects initial IK by the actual end label containing Foot;
     # a Hip/Leg system ending in Toes alone keeps its default FK mode.
     initial_ik = tuple(limb for limb in limbs

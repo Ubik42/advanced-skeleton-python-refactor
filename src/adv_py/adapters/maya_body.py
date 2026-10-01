@@ -10086,9 +10086,24 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_body_matrix import configure
         return configure(self,body,fk,limbs,dynamics,excluded=excluded)
 
-    def create_source_fk_body_matrices(self,body,fk, *,excluded=frozenset()):
+    def create_source_fk_body_matrices(self,body,fk, *,excluded=frozenset(),include_root=False):
         from .maya_source_body_matrix import configure_fk
-        configure_fk(self,body,fk,excluded=excluded)
+        configure_fk(self,body,fk,excluded=excluded,include_root=include_root)
+
+    def create_source_spline_body_matrices(self,body,fk,splines, *,excluded=frozenset(),saved_layouts=None):
+        from .maya_source_spline_body_matrix import configure
+        return configure(self,body,fk,splines,excluded=excluded,saved_layouts=saved_layouts)
+
+    def create_source_spline_bendy_scales(self,specs):
+        self._require_transaction()
+        for spec in specs:
+            if self.find_name_collisions(spec.node.name):
+                raise FitSkeletonValidationError('来源 Spline Bendy 缩放节点名称被占用')
+        for spec in specs:
+            self._cmds.createNode(spec.node.kind,name=spec.node.name,skipSelect=True)
+            for source,attribute in spec.node.connections:
+                self._cmds.connectAttr(source,spec.node.name+'.'+attribute)
+        if specs:self._transaction_changed=True
 
     def create_source_limb_aim(self,body,fk,limbs,root,splines,global_control,policy=None,instances=(),use_offset_parent_matrix=True):
         from .maya_source_limb_aim import create

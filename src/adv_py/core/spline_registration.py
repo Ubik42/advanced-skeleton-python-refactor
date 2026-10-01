@@ -32,7 +32,7 @@ def decode_spline(raw, body):
     if isinstance(raw, dict) and 'source_curve_points' not in raw:
         raw = {**raw, 'source_curve_points': [], 'fake_mid_control': False}
     if isinstance(raw, dict):
-        for key, value in (('source_hybrid_graph',False),('source_control_axes',[]),('source_ik_local',False),('source_cv_axes',[]),('source_controller_layers',False),('source_follow_parent',None),('source_follow_targets',[]),('system_name','')):
+        for key, value in (('source_hybrid_graph',False),('source_control_axes',[]),('source_ik_local',False),('source_cv_axes',[]),('source_controller_layers',False),('source_follow_parent',None),('source_follow_targets',[]),('system_name',''),('source_body_matrix_indices',[]),('source_bendy_matrix_indices',[]),('source_fixed_orient_unique',False)):
             if key not in raw:
                 raw = {**raw,key:value}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
@@ -53,10 +53,25 @@ def decode_spline(raw, body):
         raise CharacterRegistryError('Spline IK Extra 曲线标记无效')
     if type(raw['fk_root_point_from_receiver']) is not bool:
         raise CharacterRegistryError('Spline FK 位置来源开关无效')
+    if type(raw['source_fixed_orient_unique']) is not bool or raw['source_fixed_orient_unique'] and not raw['source_curve_points']:
+        raise CharacterRegistryError('来源 Spline 固定朝向命名标记无效')
     body_paths = tuple(path(p) for p in raw['body_joints'])
     count = len(body_paths)
     if not 2 <= count <= 64 or len(set(body_paths)) != count:
         raise CharacterRegistryError('曲线脊柱关节数量或身份无效')
+    matrix_indices=raw['source_body_matrix_indices']
+    if (not isinstance(matrix_indices,(list,tuple))
+            or any(type(index) is not int or not 0<=index<count for index in matrix_indices)
+            or tuple(sorted(set(matrix_indices)))!=tuple(matrix_indices)
+            or matrix_indices and (not raw['use_offset_parent_matrix'] or not raw['source_curve_points'])):
+        raise CharacterRegistryError('来源 Spline Body 矩阵接收索引无效')
+    bendy_indices=raw['source_bendy_matrix_indices']
+    if (not isinstance(bendy_indices,(list,tuple))
+            or any(type(index) is not int or not 0<=index<count for index in bendy_indices)
+            or tuple(sorted(set(bendy_indices)))!=tuple(bendy_indices)
+            or set(bendy_indices)&set(matrix_indices)
+            or bendy_indices and (not raw['use_offset_parent_matrix'] or not raw['source_curve_points'])):
+        raise CharacterRegistryError('来源 Spline Bendy 矩阵交接索引无效')
     if raw['twist_ramp_graph'] and count<=2:
         raise CharacterRegistryError('两关节 Spline 不使用中间扭转曲线')
     if raw['mid_follow_graph'] and count<=2:
@@ -174,7 +189,10 @@ def decode_spline(raw, body):
                           raw['fk_root_point_from_receiver'], source_points,
                           raw['fake_mid_control'],raw['source_hybrid_graph'],
                           control_axes,raw['source_ik_local'],cv_axes,
-                          raw['source_controller_layers'],follow_parent,follow_targets)
+                          raw['source_controller_layers'],follow_parent,follow_targets,
+                          source_body_matrix_indices=tuple(matrix_indices),
+                          source_bendy_matrix_indices=tuple(bendy_indices),
+                          source_fixed_orient_unique=raw['source_fixed_orient_unique'])
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

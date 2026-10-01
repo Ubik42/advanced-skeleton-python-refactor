@@ -16,6 +16,7 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
     if part_result is None:
         return (), None, ()
     paths = part_result.final_paths
+    spline_plans=spline if isinstance(spline,tuple) else (spline,) if spline is not None else ()
     parts = tuple(replace(part,
         start_body=paths.remap_body_reference(part.start_body),
         end_body=paths.remap_body_reference(part.end_body))
@@ -38,7 +39,7 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
                     joint.ik_driver + ".worldMatrix[0]",
                     limb.blend.settings_path + "." + side.attribute,
                     joint.constraint_name)
-    for spline in (spline if isinstance(spline,tuple) else (spline,) if spline is not None else ()):
+    for spline in spline_plans:
         count = len(spline.body_joints)
         for index in range(1, count):
             blended[spline.body_joints[index]] = (
@@ -72,6 +73,13 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
             paths.remap_body_reference(part.start_body) + ".scale"
             for part in build.fit_parts})
     if bendy_chains:
+        if any(chain.source_deform_matrix for chain in bendy_chains):
+            from adv_py.core.source_spline_bendy_scale import plan_source_spline_bendy_scales
+            scale_specs=plan_source_spline_bendy_scales(bendy_chains,fk,spline_plans)
+            host.create_source_spline_bendy_scales(scale_specs)
+            scale_by_body={spec.body:spec for spec in scale_specs}
+            bendy_chains=tuple(replace(chain,source_scale_plugs=scale_by_body[chain.start_body].outputs)
+                              if chain.start_body in scale_by_body else chain for chain in bendy_chains)
         world_sources = {body: FitBendyWorldSource(matrix)
                          for body, matrix in independent.items()}
         world_sources.update({body: FitBendyWorldSource(fk_matrix, ik_matrix, mode)

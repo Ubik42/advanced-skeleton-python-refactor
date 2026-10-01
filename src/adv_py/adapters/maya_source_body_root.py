@@ -137,8 +137,51 @@ def connect_leg_lock(host,plan):
     local=c.createNode('multMatrix',name='AdvPy_SourceLegLockOutputMM',skipSelect=True)
     c.connectAttr(source,local+'.matrixIn[0]')
     c.connectAttr(plan.leg_lock_path+'.parentInverseMatrix[0]',local+'.matrixIn[1]')
+    if plan.leg_lock_opm:
+        for kind,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
+            c.setAttr(plan.leg_lock_path+'.'+kind,value,value,value,type='double3')
+        c.connectAttr(local+'.matrixSum',plan.leg_lock_path+'.offsetParentMatrix')
+        c.addAttr(plan.leg_lock_path,longName='advPySourceLegLockMatrix',attributeType='bool')
+        c.setAttr(plan.leg_lock_path+'.advPySourceLegLockMatrix',True,lock=True)
+        return
     dm=c.createNode('decomposeMatrix',name='AdvPy_SourceLegLockDM',skipSelect=True)
     c.connectAttr(local+'.matrixSum',dm+'.inputMatrix')
     c.connectAttr(plan.leg_lock_path+'.rotateOrder',dm+'.inputRotateOrder')
     for kind in ('Translate','Rotate','Scale','Shear'):
         c.connectAttr(dm+'.output'+kind,plan.leg_lock_path+'.'+kind.lower())
+
+
+def audit_registered(host,registration):
+    from adv_py.core.character_registry import CharacterRegistryError
+    c=host._cmds
+    for node in registration.nodes:
+        plug=node.path+'.advPySourceLegLockMatrix'
+        if not c.objExists(plug):continue
+        matrix='AdvPy_SourceLegLockOutputMM'
+        if (c.getAttr(plug,type=True)!='bool' or not c.getAttr(plug)
+                or not c.getAttr(plug,lock=True)
+                or not c.objExists(matrix) or c.nodeType(matrix)!='multMatrix'
+                or not c.isConnected(matrix+'.matrixSum',node.path+'.offsetParentMatrix')
+                or not c.isConnected(node.path+'.parentInverseMatrix[0]',matrix+'.matrixIn[1]')
+                or not c.connectionInfo(matrix+'.matrixIn[0]',sourceFromDestination=True)):
+            raise CharacterRegistryError('来源 Root LegLock OPM 接收图变化')
+        for attr,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
+            if (c.listConnections(node.path+'.'+attr,source=True,destination=False)
+                    or any(abs(float(v)-value)>1e-8 for v in c.getAttr(node.path+'.'+attr)[0])):
+                raise CharacterRegistryError('来源 Root LegLock OPM 本地变换变化')
+        relative='AdvPy_SourceRootRelativeMM'
+        if c.objExists(relative):
+            edges=((relative+'.matrixSum','AdvPy_SourceRootRemoveRotBM.target[0].targetMatrix'),
+                   ('AdvPy_SourceRootLegLockUnit.output','AdvPy_SourceRootRemoveRotBM.target[0].weight'),
+                   ('AdvPy_SourceRootRemoveRotBM.outputMatrix','AdvPy_SourceRootRemoveRotPM.inputMatrix'),
+                   ('AdvPy_SourceRootRemoveRotPM.outputMatrix','AdvPy_SourceRootRemoveRotIM.inputMatrix'),
+                   ('AdvPy_SourceRootRemoveRotIM.outputMatrix','AdvPy_SourceRootRemoveRotBM2.target[0].targetMatrix'),
+                   ('AdvPy_SourceRootRemoveRotBM2.outputMatrix','AdvPy_SourceRootRemoveRotMM.matrixIn[0]'))
+            if any(not c.isConnected(source,target) for source,target in edges):
+                raise CharacterRegistryError('来源 Root LegLock 两级旋转消除图变化')
+            pick='AdvPy_SourceRootRemoveRotPM'
+            if any(c.getAttr(pick+'.use'+kind) for kind in ('Translate','Scale','Shear')):
+                raise CharacterRegistryError('来源 Root LegLock 旋转过滤常量变化')
+        unit='AdvPy_SourceRootLegLockUnit'
+        if c.objExists(unit) and abs(float(c.getAttr(unit+'.conversionFactor'))-.1)>1e-8:
+            raise CharacterRegistryError('来源 Root LegLock 0–10 转换系数变化')

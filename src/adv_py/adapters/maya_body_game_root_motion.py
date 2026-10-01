@@ -275,6 +275,9 @@ class MayaBodyGameRootMotionMixin:
                             absolute=True)[0]
             if (c.ls(body, long=True, type="joint") or []) != [plan.body_path]:
                 raise RuntimeError("Root Motion 删除后 Body 父级漂移")
+            from .maya_source_body_matrix import rebase_fk_records
+            rebase_fk_records(self,registration,((registration.body_root,
+                self._root_motion_local(plan.body_path)),))
             self._root_motion_pose_rows(plan, create=False)
             if c.objExists(plan.body_constraint_name):
                 c.delete(plan.body_constraint_name)
@@ -304,6 +307,9 @@ class MayaBodyGameRootMotionMixin:
         if ((c.ls(joint, long=True, type="joint") or []) != [plan.joint_path]
                 or (c.ls(body, long=True, type="joint") or []) != [plan.body_path]):
             raise RuntimeError("Root Motion Body 关节改挂失败")
+        from .maya_source_body_matrix import rebase_fk_records
+        rebase_fk_records(self,registration,((registration.body_root,
+            self._root_motion_local(plan.body_path)),))
         after_world = tuple(c.xform(
             body, query=True, worldSpace=True, matrix=True))
         if max(abs(a - b) for a, b in zip(

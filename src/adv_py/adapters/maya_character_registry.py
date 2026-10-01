@@ -1366,8 +1366,7 @@ class MayaCharacterRegistryMixin:
                     paths.update(tuple(self._cmds.ls(part.name,long=True) or ())+
                                  tuple(self._cmds.ls(part.aligned_name,long=True) or ()))
         for spline in p.all_splines:
-            paths.add(spline.driver_targets[0]+'|'+spline.node_name('AdvPy_SplineIKLocalOrient0')
-                      +'|'+spline.node_name('AdvPy_SplineIKLocalOrient3'))
+            paths.add(spline.source_fixed_path)
             paths.add(spline.root_path+'|'+spline.node_name('AdvPy_SplineFirstFixedOutput'))
             paths.update((spline.root_path, spline.chest_space, spline.curve,
                           *spline.targets, *spline.ik_outputs,
@@ -1490,6 +1489,15 @@ class MayaCharacterRegistryMixin:
         audit_source_rp(self,plan)
         from .maya_source_body_matrix import audit_fk
         audit_fk(self,plan)
+        from .maya_source_bendy_body_matrix import audit_registered as audit_bendy_matrix
+        audit_bendy_matrix(self,plan)
+        from .maya_source_body_root import audit_registered as audit_root_matrix
+        audit_root_matrix(self,plan)
+        from adv_py.core.body_spline import BodySplinePlan
+        from .maya_source_spline_start import audit as audit_spline_start
+        for spline in (plan.spine,*plan.additional_spines):
+            if isinstance(spline,BodySplinePlan) and spline.source_curve_points:
+                audit_spline_start(self,spline)
         from .maya_source_limb_aim import audit as audit_source_aim
         audit_source_aim(self,plan)
         from .maya_source_limb_scale import audit as audit_source_scale
