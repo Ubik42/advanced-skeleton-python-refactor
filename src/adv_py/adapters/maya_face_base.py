@@ -81,11 +81,12 @@ class MayaFaceBaseMixin:
     def _face_base_follow(self,head,node):
         """Reuse the actual source-shaped -mo -FMM constraint implementation."""
         target=self._face_base_transform(node)
+        heads=self._cmds.ls(head,long=True,type="joint") or []
+        if len(heads)!=1:
+            raise FitSkeletonValidationError("Face Head 关节缺失或不唯一："+head)
+        head=heads[0]
         source=self.capture_parent_constraint_input(head,target,True)
-        fit=self._cmds.ls("FitSkeleton",long=True,type="transform") or []
-        opm=bool(len(fit)==1 and self._cmds.attributeQuery(
-            "useOffsetParentMatrix",node=fit[0],exists=True) and self._cmds.getAttr(
-                fit[0]+".useOffsetParentMatrix"))
+        opm=self.face_use_offset_parent_matrix()
         plan=plan_body_parent_constraint(replace(source,force_mult_matrix=True,
                                                  use_offset_parent_matrix=opm))
         self.preflight_parent_constraint(plan)

@@ -39,8 +39,8 @@ class MayaFaceRestoreDriversMixin:
                         outputs = c.listConnections(old_curve + ".output", source=False, destination=True,
                                                      skipConversionNodes=True) or []
                         target = self._original_restore_leaf(outputs[0]).replace("prefix_", "", 1)
-                        destination = target + f".input[{int(c.getAttr(target + '.input', size=True))}]"
-                        c.connectAttr(curve + ".output", destination, force=True)
+                        destination = self.next_original_face_bw_input(target)
+                        c.connectAttr(curve + ".output", destination)
                     count += 1
         return count
 

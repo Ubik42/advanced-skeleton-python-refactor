@@ -39,7 +39,7 @@ class MayaFaceExpressionHost(MayaOriginalDriverAttributesMixin,MayaFaceBSConvers
             c.setAttr(scale+".maxX",-7.3); c.setAttr(scale+".oldMaxX",100)
             c.connectAttr(multiply+".outputX",scale+".valueX")
             bw="bwctrlEye"+side+"_blink"
-            c.connectAttr(scale+".outValueX",bw+f".input[{int(c.getAttr(bw+'.input',size=True))}]")
+            c.connectAttr(scale+".outValueX",self.next_original_face_bw_input(bw))
         self.hide_original_face_controllers(True); self.mirror_original_face_controls(True)
         for side in ("_R","_L"): self.original_face_fit_animation("ctrlEye"+side+".squint",10)
         include=c.getAttr(fit+".Include",asString=True) if c.objExists(fit+".Include") else "Complete"

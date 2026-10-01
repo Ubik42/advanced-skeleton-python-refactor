@@ -108,7 +108,7 @@ class MayaFacePupilIrisMixin:
                 if source["multi"]:
                     matrix=stem+"JointMM"+side
                     c.connectAttr(source["head"]+".worldInverseMatrix",matrix+".matrixIn[1]",force=True)
-                    c.setAttr(matrix+".matrixIn[2]",*c.getAttr(source["head"]+".worldMatrix")[0],type="matrix")
+                    c.setAttr(matrix+".matrixIn[2]",*self.original_face_matrix_values(source["head"]+".worldMatrix[0]"),type="matrix")
                     parent=c.listRelatives(joint,parent=True)[0]
                     c.connectAttr(parent+".worldInverseMatrix",matrix+".matrixIn[3]")
             raw.select(pupil[0],replace=True)

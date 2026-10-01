@@ -151,7 +151,7 @@ class MayaCharacterCommands:
                 # A selected mesh may live outside the character namespace.
                 # The first argument identifies a polygon face target;
                 # constrained objects and named new nodes remain owned.
-                args=[args[0]]+[address(a) for a in args[1:]]
+                args=[self._map(args[0],identity.to_scene)]+[address(a) for a in args[1:]]
             elif name=='aliasAttr' and not query:
                 # The alias is a literal identifier; only its destination is a node plug.
                 args=[args[0]]+[address(a) for a in args[1:]]

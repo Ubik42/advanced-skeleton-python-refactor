@@ -130,8 +130,8 @@ class MayaFaceJawPosesMixin:
         c.addAttr("FaceBuildInProgress",longName="LipSideFinish",attributeType="bool",defaultValue=True)
         c.currentTime(30)
         driven=[]
-        for shape in c.listRelatives("OnFacecontrols",allDescendents=True,type="nurbsCurve") or []:
-            parents=c.listRelatives(shape,parent=True) or []
+        for shape in c.listRelatives("OnFacecontrols",allDescendents=True,fullPath=True,type="nurbsCurve") or []:
+            parents=c.listRelatives(shape,parent=True,fullPath=True) or []
             if not parents: continue
             control=parents[0].rsplit("|",1)[-1]
             if control.endswith("_L") and c.listConnections(control,source=True,destination=False,type="animCurve"):

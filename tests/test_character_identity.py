@@ -4,6 +4,28 @@ from adv_py.core.character_registry import CharacterRegistryError
 
 
 class CharacterIdentityTests(unittest.TestCase):
+    def test_face_geometry_constraints_resolve_local_targets_and_preserve_foreign_reads(self):
+        from adv_py.adapters.maya_namespace import MayaCharacterCommands
+        class Commands:
+            def __init__(self): self.current=':'; self.calls=[]
+            def namespace(self,**flags):
+                if flags.get('query'): return False
+                if flags.get('exists'): return True
+                self.current=flags['setNamespace']
+            def namespaceInfo(self,**flags): return self.current
+            def normalConstraint(self,*args,**flags):
+                self.calls.append((args,flags)); return ['hero:normalConstraint1']
+        raw=Commands(); commands=MayaCharacterCommands(raw,'hero')
+        for target,expected in (('FaceControlOrient','hero:FaceControlOrient'),
+                                ('model:Face','model:Face'),(':Face',':Face')):
+            commands.normalConstraint(target,'LidOffset_R',aimVector=(0,0,1))
+            self.assertEqual(raw.calls[-1][0],(expected,':hero:LidOffset_R'))
+            self.assertEqual(raw.current,':')
+        before=len(raw.calls)
+        with self.assertRaises(CharacterRegistryError):
+            commands.normalConstraint('FaceControlOrient','other:LidOffset_R')
+        self.assertEqual(len(raw.calls),before)
+
     def test_nested_namespace_addresses_preserve_plugs_and_components(self):
         identity=CharacterIdentity('shot:hero')
         for local,physical in (

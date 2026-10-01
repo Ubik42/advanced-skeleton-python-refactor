@@ -54,11 +54,24 @@ class MayaFaceRestoreControlsMixin:
         for control in controls:
             if not c.objExists(control):
                 continue
-            for shape in c.listRelatives(control, shapes=True) or []:
+            previous_control="prefix_"+self._original_restore_leaf(control)
+            previous_shapes=c.listRelatives(previous_control,shapes=True,
+                fullPath=True,type="nurbsCurve") or [] if c.objExists(previous_control) else []
+            current_shapes=c.listRelatives(control,shapes=True,
+                fullPath=True,type="nurbsCurve") or []
+            for shape in current_shapes:
                 current = self._original_restore_leaf(shape)
-                previous = "prefix_" + current
-                if not c.objExists(previous) or c.nodeType(shape) != "nurbsCurve" or c.nodeType(previous) != "nurbsCurve":
+                matches=[candidate for candidate in previous_shapes
+                    if self._original_restore_leaf(candidate)=="prefix_"+current]
+                # Older Python slider templates had anonymous, unstable Shape
+                # names. Their sole curve is unambiguous under the old control.
+                if not matches and len(previous_shapes)==len(current_shapes)==1:
+                    old_leaf=self._original_restore_leaf(previous_shapes[0])
+                    if re.fullmatch(r"prefix_curveShape\d*",old_leaf):
+                        matches=previous_shapes
+                if len(matches)!=1:
                     continue
+                previous=matches[0]
                 if c.getAttr("prefix_FaceGroup.version") < 5.764 and current.startswith(("Iris_", "Pupil_")):
                     continue
                 # Source skips every shape on this first rebuild after the

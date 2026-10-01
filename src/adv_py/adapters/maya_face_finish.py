@@ -122,8 +122,10 @@ class MayaFaceFinishMixin:
         if not c.objExists("FaceGroup.version"): c.addAttr("FaceGroup",longName="version",attributeType="double")
         c.setAttr("FaceGroup.version",lock=False); c.setAttr("FaceGroup.version",6.925,lock=True)
         if c.objExists(fit+".buildCompleted"): c.setAttr(fit+".buildCompleted",1)
-        old=set(raw.ls(c.sets("allBeforeFaceBuild",query=True) or [],uuid=True) or [])
-        fit_nodes=set(raw.ls(c.listRelatives(fit,allDescendents=True) or [],uuid=True) or [])
+        before=c.sets("allBeforeFaceBuild",query=True) or []
+        old=set(c.ls(before,uuid=True) or []) if before else set()
+        descendants=c.listRelatives(fit,allDescendents=True,fullPath=True) or []
+        fit_nodes=set(c.ls(descendants,uuid=True) or []) if descendants else set()
         all_nodes=[]
         for node in c.ls(objectsOnly=True) or []:
             if c.nodeType(node) in ("objectSet","partition"): continue
@@ -155,7 +157,7 @@ class MayaFaceFinishMixin:
                 # implement any of the ported Face procedures.
                 from maya import mel
                 mel.eval(script)
-        raw.cycleCheck(edit=True,evaluation=True)
+        raw.cycleCheck(evaluation=True)
         c.sets(clear="allBeforeFaceBuild"); c.delete("allBeforeFaceBuild")
         c.select(clear=True)
         self._transaction_changed=True

@@ -167,10 +167,10 @@ class MayaFaceEyeBallMixin:
 
     def _original_eye_multi_matrix(self,joint,side,head):
         c=self._cmds; matrix="EyeJointMM"+side
-        c.setAttr(matrix+".matrixIn[3]",*c.getAttr("FaceJoint_M.worldMatrix")[0],type="matrix")
+        c.setAttr(matrix+".matrixIn[3]",*self.original_face_matrix_values("FaceJoint_M.worldMatrix[0]"),type="matrix")
         c.connectAttr(head+".worldInverseMatrix",matrix+".matrixIn[4]")
-        for _ in range(2): c.setAttr(matrix+".matrixIn[5]",*c.getAttr(head+".worldMatrix")[0],type="matrix")
-        c.setAttr(matrix+".matrixIn[6]",*c.getAttr("FaceJoint_M.inverseMatrix")[0],type="matrix")
+        for _ in range(2): c.setAttr(matrix+".matrixIn[5]",*self.original_face_matrix_values(head+".worldMatrix[0]"),type="matrix")
+        c.setAttr(matrix+".matrixIn[6]",*self.original_face_matrix_values("FaceJoint_M.inverseMatrix"),type="matrix")
 
     def _original_eye_skin(self,source,side,geometry,point):
         c=self._cmds; raw=getattr(c,"raw",c); joint=self.scene_address("EyeJoint"+side)
@@ -245,7 +245,7 @@ class MayaFaceEyeBallMixin:
         c.parent(temp,"SideReverse"+side); c.xform(temp,objectSpace=True,translation=(0,0,0))
         c.setAttr(mm+".matrixIn[1]",*c.xform(temp,query=True,objectSpace=True,matrix=True),type="matrix")
         c.parent(temp,"EyeOffset"+side); c.xform(temp,objectSpace=True,translation=(0,0,0))
-        c.setAttr(mm+".matrixIn[0]",*c.getAttr(temp+".inverseMatrix")[0],type="matrix"); c.delete(temp)
+        c.setAttr(mm+".matrixIn[0]",*self.original_face_matrix_values(temp+".inverseMatrix"),type="matrix"); c.delete(temp)
 
     @contextmanager
     def _original_eye_deformer_sets(self):

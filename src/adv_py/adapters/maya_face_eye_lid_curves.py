@@ -155,11 +155,11 @@ class MayaFaceEyeLidCurvesMixin:
 
     def _original_lid_multi_matrix(self,source,stem,side):
         c=self._cmds; mm=stem+"MM"+side
-        c.setAttr(mm+".matrixIn[3]",*c.getAttr("EyeLidJoints_M.worldMatrix")[0],type="matrix")
+        c.setAttr(mm+".matrixIn[3]",*self.original_face_matrix_values("EyeLidJoints_M.worldMatrix[0]"),type="matrix")
         c.connectAttr(source["head"]+".worldInverseMatrix",mm+".matrixIn[4]")
         temp=c.createNode("transform",name="tempXform",parent="EyeLidJoints_M")
         c.parent(temp,source["head"])
-        c.setAttr(mm+".matrixIn[5]",*c.getAttr(temp+".inverseMatrix")[0],type="matrix"); c.delete(temp)
+        c.setAttr(mm+".matrixIn[5]",*self.original_face_matrix_values(temp+".inverseMatrix"),type="matrix"); c.delete(temp)
 
     def _original_lid_point_out(self,source,arc,side,suffix,index,count):
         c=self._cmds; stem=arc+"LidMain"+str(index)

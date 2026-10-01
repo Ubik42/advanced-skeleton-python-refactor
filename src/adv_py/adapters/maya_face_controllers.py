@@ -3,6 +3,31 @@ from __future__ import annotations
 import re
 
 class MayaFaceControllersMixin:
+    def original_face_matrix_values(self,plug):
+        """Read native matrix attributes independent of array return shape."""
+        values=self._cmds.getAttr(plug)
+        if len(values)==1 and isinstance(values[0],(tuple,list)):
+            values=values[0]
+        if len(values)!=16:
+            raise ValueError("Face 矩阵不是 4×4："+plug)
+        return tuple(float(value) for value in values)
+
+    def next_original_face_bw_input(self,bw):
+        """Append an additive input without replacing an existing driver.
+
+        Maya may report size zero for a connected, unevaluated multi. Include
+        the actual connection plugs as well as materialized logical indices.
+        This preserves asDsSdk's append behavior with sparse native arrays.
+        """
+        c=self._cmds
+        indices=list(c.getAttr(bw+".input",multiIndices=True) or [])
+        pairs=c.listConnections(bw+".input",source=True,destination=False,
+            plugs=True,connections=True) or []
+        for plug in pairs[::2]:
+            match=re.search(r"\.input\[(\d+)\]$",plug)
+            if match: indices.append(int(match.group(1)))
+        return bw+f".input[{max(indices,default=-1)+1}]"
+
     def face_use_offset_parent_matrix(self):
         c=self._cmds
         fit=c.ls("FitSkeleton",long=True,type="transform") or []
@@ -333,7 +358,7 @@ class MayaFaceControllersMixin:
             sources=c.listConnections(curve+".input",source=True,destination=False,plugs=True,skipConversionNodes=True) or []
             if driver in sources: existing=curve; break
         if direct_bw and "[" not in attr:
-            destination=bw+f".input[{int(c.getAttr(bw+'.input',size=True))}]"
+            destination=self.next_original_face_bw_input(bw)
         elif direct_bw:
             destination=driven
         elif existing:
@@ -400,8 +425,8 @@ class MayaFaceControllersMixin:
         c=self._cmds; raw=getattr(c,"raw",c)
         auto=bool(raw.autoKeyframe(query=True,state=True))
         groups={"_RL":[],"_M":[]}
-        for shape in c.listRelatives("OnFacecontrols",allDescendents=True,type="nurbsCurve") or []:
-            parents=c.listRelatives(shape,parent=True) or []
+        for shape in c.listRelatives("OnFacecontrols",allDescendents=True,fullPath=True,type="nurbsCurve") or []:
+            parents=c.listRelatives(shape,parent=True,fullPath=True) or []
             if not parents: continue
             control=parents[0].rsplit("|",1)[-1]
             if control.endswith("_L"): continue

@@ -81,6 +81,9 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
                                             ("ctrlBoxEye_R","ctrlBoxEye_L"))
         self.hide_original_face_controllers(True)
         c.setAttr("ctrlBox.RegionsCtrlVis",False)
+        # asFaceLip finishes EyeWide before the optional lower-face guard.
+        if source is None:
+            return None
         skin=source.skin; head=source.head
         if source.multi_skin_clusters:
             head=self._lip_node("joint","MultiSkinClustersFaceLipJoint_M","FaceJoint_M")

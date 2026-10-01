@@ -65,14 +65,22 @@ class MayaFacePrepSkinMixin:
                                         maximumInfluences=3, dropoffRate=4, removeUnusedInfluence=False,
                                         name=self.scene_address("newSkinClusterSC"))[0]
         raw.select((mesh, duplicate), replace=True)
-        raw.copySkinWeights(noMirror=True, surfaceAssociation="closestPoint", influenceAssociation="closestJoint")
+        raw.copySkinWeights(sourceSkin=skin_path,destinationSkin=temporary,
+                            noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
         raw.delete(skin_path)
+        # A captured layered Face still has its prefixed EyeLid/Lip Skins in
+        # history. Recreate the primary before those layers, rather than asking
+        # Maya to bind an already skinned mesh as if it had no native Skin.
+        remaining=[node for node in raw.listHistory(mesh) or []
+                   if raw.nodeType(node)=="skinCluster"]
+        layered=dict(multi=True,frontOfChain=True) if remaining else {}
         with namespace():
             regenerated = raw.skinCluster([mesh, *influences], toSelectedBones=True,
                                           maximumInfluences=3, dropoffRate=4, removeUnusedInfluence=False,
-                                          name=skin_path)[0]
+                                          name=skin_path,**layered)[0]
         raw.select((duplicate, mesh), replace=True)
-        raw.copySkinWeights(noMirror=True, surfaceAssociation="closestPoint", influenceAssociation="closestJoint")
+        raw.copySkinWeights(sourceSkin=temporary,destinationSkin=regenerated,
+                            noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
         raw.delete(duplicate)
         # Some Maya releases leave the deleted mesh's temporary Skin alive.
         if raw.objExists(temporary):

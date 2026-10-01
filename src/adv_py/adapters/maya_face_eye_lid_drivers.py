@@ -103,7 +103,9 @@ class MayaFaceEyeLidDriversMixin:
                 c.createNode("decomposeMatrix", name=dm)
                 c.setAttr(dm + ".inputRotateOrder", c.getAttr("EyeJoint" + side + ".rotateOrder"))
                 zero = c.createNode("multMatrix", name="EyeJointToZeroMM" + side)
-                matrix = tuple(c.getAttr("EyeJointMM" + side + ".matrixSum")[0])
+                # matrixSum is a scalar matrix attribute, unlike the
+                # worldMatrix array. Maya returns its sixteen values directly.
+                matrix = self.original_face_matrix_values("EyeJointMM" + side + ".matrixSum")
                 c.setAttr(zero + ".matrixIn[0]", *_inverse_matrix(matrix), type="matrix")
                 c.connectAttr("EyeJointMM" + side + ".matrixSum", zero + ".matrixIn[1]")
                 c.connectAttr(zero + ".matrixSum", dm + ".inputMatrix")

@@ -32,6 +32,8 @@ class MayaFaceCageHost(MayaFaceCageGeometryMixin,MayaFaceCageWeightsMixin,MayaFa
         raw.setToolTo("selectSuperContext")
         self.remove_original_face_fit_animations()
         self.hide_original_face_controllers(True)
+        if source is None:
+            return None
         skin=self.add_original_face_multi_skin("Cage",source.geometry) if source.multi_skin_clusters else source.skin
         suggestion=self._cage_suggest_smooth_passes(source)
         smooth=options.smooth_passes if options.smooth_passes is not None else suggestion

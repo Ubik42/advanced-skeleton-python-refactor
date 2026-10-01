@@ -48,9 +48,10 @@ class MayaOriginalFaceBuildHost(MayaFaceWrinkleGraphMixin, MayaFaceWrinkleCurves
             curves = []
             for root in ("OnFacecontrols", "ctrlBox"):
                 if c.objExists(root):
-                    curves.extend(c.listRelatives(root, allDescendents=True, type="nurbsCurve") or [])
+                    curves.extend(c.listRelatives(root, allDescendents=True,
+                        fullPath=True, type="nurbsCurve") or [])
             for shape in curves:
-                control = c.listRelatives(shape, parent=True)[0]
+                control = c.listRelatives(shape, parent=True, fullPath=True)[0]
                 if self._original_restore_leaf(control).startswith("ctrlBox"):
                     continue
                 c.xform(control, objectSpace=True, translation=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1))
@@ -87,9 +88,8 @@ class MayaOriginalFaceBuildHost(MayaFaceWrinkleGraphMixin, MayaFaceWrinkleCurves
             result = method(source)
         elif stage == "Lip":
             source = self.capture_lip_input()
-            if source is not None:
-                result = self.create_lip_rig(source)
-                module = "LipSet"
+            result = self.create_lip_rig(source)
+            module = "LipSet"
         elif stage == "LipFalloff":
             fit = self._fit(required=True)
             c = self._cmds
@@ -103,6 +103,13 @@ class MayaOriginalFaceBuildHost(MayaFaceWrinkleGraphMixin, MayaFaceWrinkleCurves
                 module = "LipFalloffSet"
         elif stage in ("FaceCage", "CageToSkin", "EyeBrow", "SmilePull", "Snarl", "UpMidLo"):
             source = self.capture_face_cage_input()
+            if source is None and stage == "FaceCage":
+                result = self.create_original_face_cage(None, FaceCageOptions(cage_smooth))
+            # These source procedures finish an earlier stage or change
+            # visibility before deciding whether this Face region is included.
+            if source is None and stage in ("SmilePull", "UpMidLo"):
+                method = self.fit_original_face_smile_pull if stage == "SmilePull" else self.create_original_face_up_mid_lo
+                result = method(None)
             if source is not None:
                 if stage == "FaceCage":
                     result = self.create_original_face_cage(source, FaceCageOptions(cage_smooth))

@@ -16,5 +16,11 @@ class FaceBuildRequirementsTests(unittest.TestCase):
     def test_non_symmetric_mode_requires_corresponding_left_fit(self):
         required = required_face_fit_nodes(FaceInclude.EYES_ONLY, True)
         self.assertEqual(required[4:], tuple(name + "Left" for name in
-                         required[:4]))
-        self.assertEqual(len(required_face_fit_nodes(FaceInclude.ALL, True)), 54)
+                         required[1:4]))
+        # MEL 31075 checks the Fit widget's mid flag. FitEyeBall has no
+        # matching widget and center fittings do not require a Left duplicate.
+        complete=required_face_fit_nodes(FaceInclude.ALL, True)
+        self.assertEqual(len(complete),43)
+        for center in ("FaceFitLipMain","FaceFitNose","FaceFitJaw",
+                       "FaceFitEyeBrowCenter","FitEyeBall"):
+            self.assertNotIn(center+"Left",complete)

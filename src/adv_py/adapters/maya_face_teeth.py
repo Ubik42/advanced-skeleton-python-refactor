@@ -6,7 +6,8 @@ class MayaFaceTeethMixin:
         c=self._cmds; raw=getattr(c,"raw",c); fit=self._fit(required=True)
         text=c.getAttr(fit+"."+attribute) if c.objExists(fit+"."+attribute) else ""
         if not text: return ()
-        result=tuple(raw.ls(text.split(),long=True,flatten=True) or [])
+        result=tuple(raw.ls(tuple(self.scene_address(token) for token in text.split()),
+            long=True,flatten=True) or [])
         if not result: raise FitSkeletonValidationError(attribute+" 记录的对象或组件已经不存在")
         return result
 

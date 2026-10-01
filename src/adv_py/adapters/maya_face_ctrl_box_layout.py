@@ -87,6 +87,11 @@ class MayaFaceCtrlBoxMixin(MayaFaceControllersMixin):
         children=c.listRelatives(box,children=True,fullPath=True,type="transform") or []
         if len(children)!=1: raise RuntimeError("ctrlBox 滑块模板子节点不完整")
         control=c.rename(children[0],"ctrl"+name)
+        # The template duplicates carry generic curveShape names. Give the
+        # slider its own stable Shape identity for prefix rebuild restoration.
+        for index,shape in enumerate(c.listRelatives(control,shapes=True,
+                fullPath=True,type="nurbsCurve") or []):
+            c.rename(shape,"ctrl"+name+"Shape"+(str(index) if index else ""))
         c.setAttr(box+".translate",x,y,0)
         for attr in ("minTransXLimitEnable","minTransYLimitEnable","maxTransXLimitEnable","maxTransYLimitEnable"):
             if c.objExists(control+"."+attr): c.connectAttr("ctrlBox.limits",control+"."+attr,force=True)
