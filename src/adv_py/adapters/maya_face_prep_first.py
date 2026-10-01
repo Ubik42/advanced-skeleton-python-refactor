@@ -108,14 +108,17 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
                               divisionsU=0, divisionsV=0, pointsWire=4, pointsShaded=1, polygonObject=1)
         if not c.objExists(fit + ".buildCompleted"):
             c.addAttr(fit, longName="buildCompleted", attributeType="bool", defaultValue=False)
-        completed = bool(c.getAttr(fit + ".buildCompleted"))
-        if c.objExists("FaceAllSet") and not c.objExists("FaceMotionSystem"):
-            completed = False
+        completed = (bool(c.getAttr(fit + ".buildCompleted"))
+                     and c.objExists("FaceMotionSystem"))
         if not completed:
             self._original_face_first_cleanup(source)
         # The source decides first-build versus prefix capture after removing
         # incomplete prior builds, not from the initial preflight snapshot.
         source["rebuild"] = bool(c.objExists("FaceMotionSystem"))
+        # Completion belongs to the finished graph, not the retained Fit.
+        # A stepped build must stay incomplete until Finish sets this again;
+        # native undo restores the old completed state during a rebuild.
+        c.setAttr(fit + ".buildCompleted", False)
         skin = self.scene_address(source["skin"])
         if raw.getAttr(skin + ".maintainMaxInfluences"):
             raw.setAttr(skin + ".maintainMaxInfluences", False)

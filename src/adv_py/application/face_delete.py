@@ -1,4 +1,4 @@
-"""Delete a generated FaceSetup while retaining its Fit and Skin clusters."""
+"""Delete generated Face layers while retaining Fit, models and original Skin."""
 from __future__ import annotations
 
 from contextlib import AbstractContextManager

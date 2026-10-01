@@ -27,11 +27,26 @@
 
 可继续在 Maya 打开的完整绑定场景：`validation/results/face-complete-frozen-rebuild-20261001/face-rebuilt.mb`；多层版本在相应 multi-frozen-rebuild 目录。
 
+## 连续重建与删除后重新绑定修复
+
+`validation/maya_original_face_shell_smoke.py` 用 Maya 安装自带的 `polyConvertToShell` 命令作对照，不运行 ADV MEL 过程。单壳、双壳、多种种子、命名空间和父级路径的结果相同；取点不改变持久选区约束。真正分离的眼睑取点分支也通过撤销重做，临时网格／采样器清理、生产网格和 Skin 身份保持。
+
+当前同一进程的完整构建→初次 Undo/Redo→保存重开→完整重建→Undo/Redo 已通过：
+
+- `validation/results/face-complete-shell-fix-live/face-stages.json`：普通 Complete。
+- `validation/results/face-complete-final-live-multi/face-stages.json`：最终代码的 Multi，Lip 0.37 与 Tongue 附加层 0.31 保留。
+- `validation/results/face-complete-shell-fix-opm16/face-stages.json`：Complete＋16 个嘴唇控件＋OPM。
+- `validation/results/face-shell-native-detached-fixed.json`：原生命令对照与分离眼睑原生撤销重做。
+
+完整入口的检查同时断言 30 步／完成状态，核对 ForeHead Fit 曲线 CV 在 Undo/Redo 前后保持一致，避免仅凭 FaceMotionSystem 存在判断成功。原生 Attach Curve 的撤销警告仍存在，本批不宣称消除全部 Maya 警告。
+
+删除主流程补入：清除 buildCompleted；分步 Prep 将完成标志置为 false；保留 Fit 曲线及其 Shape，删除曲线上临时 Face Skin；按原版删除仅由 Face 关节驱动的专用蒙皮层，保留原始 Head Skin 及全部输入模型。`validation/maya_original_face_delete_smoke.py` 检查删除／Undo／Redo、恢复后的 39 项变形、模型／Fit／Head／HeadSkin UUID 保留，再次执行完整 30 步、单次撤销重做与保存重开。普通与 Multi 均通过，证据为 `validation/results/face-complete-delete-final/face-delete.json` 和 `validation/results/face-complete-delete-final-multi/face-delete.json`。
+
 ## 边界与未完成
 
 - 输入是用于检查图与蒙皮的代理模型；不是原版默认角色的外观等价证明，也不是 UI 排布／图形窗口验收。
 - 运行使用 cage_smooth=1、jaw_smooth=1，降低代理输入的运行量；生产默认值未改。未证明原版所有可选 Fit、NonSym／Cyclops、Face 独立命名空间组合、其他眉毛中点、RigType／BlendShapes／Mixed、Wrinkle 或 ARKit 全部分支。
 - 初期未冻结附件输入在权重暂存时丢失舌头末端权重：原版临时球体复制 outMesh 本地坐标，空间复制依赖模型已冻结。修正输入要求，不添加虚构的替代复制规则。
-- 同进程构建→重开→重建→Undo/Redo 在普通和 Multi 中都留下 prefix 旧图，冻结输入后仍复现；独立进程重建的 Undo/Redo 及保存重开通过。调整删除顺序、扩大或清理撤销队列均未解决，已撤回这些尝试。此差异仍待定位，列为下一项最高优先级；不能将独立进程结果报告为所有连续操作通过。失败证据：`face-complete-frozen-live-rebuild-20261001`、`face-complete-multi-frozen-live-rebuild-20261001`。
+- 此前同进程重建重做中断已定位并修复：原版 `ConvertSelectionToShell` 的整块连通壳选择被错误翻译为 `polySelectConstraint(shell=True, mode=2)`，误入分离眼睑分支；该分支的通用组件 delete 还会中断原生重做。改用拓扑连通壳与明确的 `polyDelFacet`，保留原版范围、最近点和后续绑定逻辑。此前失败目录保留作诊断记录，不再代表当前代码。
 
 全量 Goal 保持活跃；未推送 GitHub。

@@ -2,6 +2,7 @@
 from contextlib import nullcontext
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from .maya_face_topology import original_face_connected_vertices
 
 
 class MayaFaceEyeLidPrepMixin:
@@ -208,10 +209,11 @@ class MayaFaceEyeLidPrepMixin:
     def _original_lid_brow_shell_vertex(self, source, suffix, outer, vertex):
         c = self._cmds
         raw = getattr(c, "raw", c)
-        raw.select(outer, replace=True)
-        raw.polySelectConstraint(shell=True, mode=2, type=1)
-        raw.polySelectConstraint(shell=False, mode=0)
-        shell = self._original_lid_selected_vertices()
+        # MEL calls ConvertSelectionToShell (polyConvertToShell), not a
+        # persistent shell selection constraint. Resolve the same connected
+        # components explicitly and record only the resulting selection.
+        shell = original_face_connected_vertices(self, source["geometry"], outer)
+        raw.select(shell, replace=True)
         full_vertex = (raw.ls(vertex, long=True, flatten=True) or [vertex])[0]
         if full_vertex in shell:
             return vertex
@@ -224,7 +226,10 @@ class MayaFaceEyeLidPrepMixin:
         all_faces = raw.ls(duplicate + ".f[*]", long=True, flatten=True) or []
         remove = [item for item in all_faces if item not in keep]
         if remove:
-            raw.delete(remove)
+            # This temporary duplicate is used only to sample the detached
+            # lid shell. Record polygon deletion explicitly; generic delete
+            # can abort redo after deleting components on a skinned copy.
+            raw.polyDelFacet(remove, constructionHistory=False)
         if c.objExists("closestSampler"):
             c.delete("closestSampler")
         sampler = c.createNode("closestPointOnMesh", name="closestSampler")

@@ -256,8 +256,22 @@ def main(output, full=False, resume=None, rebuild=False, multi=False, opm=False,
                 report['stages'].append(stage)
         assert cmds.getAttr(fit+'.buildCompleted')
         if full:
+            # Retained Fit curves must survive the build's native redo too.
+            # A rig-group existence check alone can miss an aborted chunk or
+            # a broken temporary ForeHead construction history.
+            fit_curves = {node: tuple(cmds.xform(node + '.cv[*]', query=True,
+                worldSpace=True, translation=True)) for node in
+                ('ForeHeadCurve', 'ForeHeadCurveLeft') if cmds.objExists(node)}
             cmds.undo(); assert not cmds.objExists('FaceMotionSystem')
             cmds.redo(); assert cmds.objExists('FaceMotionSystem')
+            assert cmds.getAttr(fit+'.buildCompleted')
+            assert cmds.getAttr(fit+'.buildStep') == len(ORIGINAL_FACE_BUILD_STEPS)
+            for node, points in fit_curves.items():
+                restored = tuple(cmds.xform(node + '.cv[*]', query=True,
+                    worldSpace=True, translation=True))
+                assert len(restored) == len(points), (node, 'Fit topology changed on redo')
+                assert max(abs(a-b) for a,b in zip(points,restored)) < 1e-5, node
+            report['fit_curves_undo_redo'] = list(fit_curves)
             report['single_undo_redo'] = True
         if multi:
             # Author a layer weight before the baseline. A rebuild must keep

@@ -84,8 +84,9 @@ class MayaFaceDeleteMixin:
                     "FaceAllSet 错误包含必须保留的节点：" + protected)
         skin_plans = []
         geometry_paths = set()
-        # Generated lattice/cube Skin belongs to the disposable Face graph.
-        # Production Skin is never registered as module-owned by the builders.
+        # Generated lattice/cube and Fit-curve skins are disposable. Keep
+        # the fitting curves themselves when removing their temporary skin.
+        # Production skins are not registered as module-owned by builders.
         transient_skins = set()
         for skin in c.ls(type="skinCluster") or ():
             skin_path = (c.ls(skin, long=True) or [None])[0]
@@ -95,9 +96,10 @@ class MayaFaceDeleteMixin:
                 geometry = c.skinCluster(skin_path, query=True, geometry=True) or ()
                 paths = tuple((c.ls(shape, long=True) or [None])[0]
                               for shape in geometry)
-                if paths and all(shape is not None and any(
-                        shape == node or shape.startswith(node + "|")
-                        for node in owned) for shape in paths):
+                if paths and all(shape is not None and (
+                        shape.startswith(fit + "|") or any(
+                            shape == node or shape.startswith(node + "|")
+                            for node in owned)) for shape in paths):
                     transient_skins.add(skin_path)
                     continue
             influences = []
@@ -130,10 +132,10 @@ class MayaFaceDeleteMixin:
             skin_plans.append(FaceDeleteSkin(
                 skin_path, self._face_delete_id(skin_path), generated,
                 tuple(self._face_delete_id(path) for path in generated),
-                len(generated) == len(influences), tuple(geometry)))
+                False, tuple(geometry), len(generated) == len(influences)))
         deletable = tuple(path for path in owned
                           if (c.nodeType(path) not in (
-                              "skinCluster", "mesh", "objectSet")
+                              "skinCluster", "mesh", "nurbsCurve", "objectSet")
                               or path in transient_skins)
                           and path not in geometry_paths)
         if any(any(geometry.startswith(path + "|")
@@ -186,6 +188,12 @@ class MayaFaceDeleteMixin:
                                                skin.face_influence_ids)):
                 raise RuntimeError("Face Skin 影响关节在删除前已变化："
                                    + skin.path)
+            if skin.remove_layer:
+                # Pure Face layers disappear with the original Face graph.
+                # Keeping an empty Head-only LipSC/EyeLidSC would collide with
+                # the source names when the user builds again after deletion.
+                c.delete(skin.path)
+                continue
             if skin.add_head_before_removal:
                 c.skinCluster(skin.path, edit=True,
                               addInfluence=plan.head, weight=1.0,
@@ -243,15 +251,21 @@ class MayaFaceDeleteMixin:
                 as_string=True)
         if c.attributeQuery("buildStep", node=plan.fit, exists=True):
             self._face_delete_set_fit_value(plan.fit + ".buildStep", 0)
+        if c.attributeQuery("buildCompleted", node=plan.fit, exists=True):
+            self._face_delete_set_fit_value(plan.fit + ".buildCompleted", False)
         self._face_delete_set_fit_value(plan.fit + ".visibility", True)
         if (c.objExists(plan.motion) or c.objExists(plan.face_set)
                 or self._face_delete_id(plan.fit) != plan.fit_id
                 or self._face_delete_id(plan.head) != plan.head_id
                 or any(not c.objExists(skin.path) or
                        self._face_delete_id(skin.path) != skin.identifier
-                       for skin in plan.skins)):
+                       for skin in plan.skins if not skin.remove_layer)):
             raise RuntimeError("Face 删除后 Fit、Head 或 Skin 未正确保留")
         for skin in plan.skins:
+            if skin.remove_layer:
+                if c.objExists(skin.path):
+                    raise RuntimeError("Face 删除后附加蒙皮层仍存在：" + skin.path)
+                continue
             remaining = {(c.ls(path, long=True, type="joint") or [None])[0]
                          for path in c.skinCluster(skin.path, query=True,
                                                    influence=True) or ()}

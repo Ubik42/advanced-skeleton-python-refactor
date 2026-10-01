@@ -12,6 +12,7 @@ class FaceDeleteSkin:
     face_influence_ids: tuple[str, ...]
     add_head_before_removal: bool
     geometry: tuple[str, ...]
+    remove_layer: bool = False
 
 
 @dataclass(frozen=True, slots=True)
