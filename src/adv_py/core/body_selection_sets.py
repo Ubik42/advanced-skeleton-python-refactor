@@ -21,7 +21,9 @@ class BodySelectionSetsPlan:
     def __post_init__(self) -> None:
         for label, members in (("ControlSet", self.controls),
                                ("DeformSet", self.deform_joints)):
-            if (not members or len(members) != len(set(members))
+            # ADV removes terminal joints even for a one-Root prop. Its
+            # empty DeformSet is valid; the prop binds Root_M explicitly.
+            if ((label == 'ControlSet' and not members) or len(members) != len(set(members))
                     or any(not isinstance(path, str) or not path
                            for path in members)):
                 raise ValueError(label + " 成员为空或重复")

@@ -417,8 +417,9 @@ class MayaBodySelectionSetsMixin:
                               (plan.deform_set, plan.deform_joints)):
             scene_set = self._body_selection_set_address(name)
             c.sets(empty=True, name=scene_set)
-            c.sets(tuple(self.scene_address(path) for path in members),
-                   add=scene_set)
+            if members:
+                c.sets(tuple(self.scene_address(path) for path in members),
+                       add=scene_set)
         for control in plan.controls:
             plug = self.scene_address(control) + ".selectionChildHighlighting"
             if c.objExists(plug):

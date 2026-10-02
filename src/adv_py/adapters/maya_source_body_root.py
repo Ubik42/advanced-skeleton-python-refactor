@@ -33,6 +33,26 @@ def create_controls(host,plan):
 
 
 def connect_fk_root(host,plan):
+    if plan.single_joint:
+        # MEL 80582–80589: no FKRoot exists for a terminal Root. Reuse
+        # asParentConstraint's faithful matrix/parent+scale branches directly.
+        from dataclasses import replace
+        from adv_py.core.body_parent_constraint import plan_body_parent_constraint
+        if plan.use_offset_parent_matrix:
+            # MEL 80571–80580 folds a terminal joint's local matrix into
+            # OPM before the one-joint constraint. It leaves JO intact at
+            # this step; asParentConstraint clears it only after its offset
+            # has been captured. Preserve that exact source ordering.
+            c=host._cmds
+            c.setAttr(plan.body_root+'.offsetParentMatrix',
+                      *_matrix(c.getAttr(plan.body_root+'.matrix')),type='matrix')
+            c.xform(plan.body_root,objectSpace=True,translation=(0.,0.,0.),rotation=(0.,0.,0.))
+        source=host.capture_parent_constraint_input(plan.root_x.control_path,plan.body_root,True)
+        source=replace(source,use_offset_parent_matrix=plan.use_offset_parent_matrix)
+        constraint=plan_body_parent_constraint(source)
+        host.preflight_parent_constraint(constraint)
+        host.create_parent_constraint(constraint)
+        return
     from maya.api import OpenMaya as om
     c=host._cmds
     world=om.MMatrix(c.xform(plan.fk_offset,query=True,worldSpace=True,matrix=True))
@@ -58,6 +78,8 @@ def connect_fk_root(host,plan):
 def connect_outputs(host,plan,body,fk,splines,generated_sources):
     host._require_transaction()
     host._transaction_changed=True
+    if plan.single_joint:
+        return
     from .maya_source_spline_start import create
     current_sources=dict(generated_sources)
     current_sources.update((joint.path,joint.source_joint) for spline in splines for joint in spline.joints)

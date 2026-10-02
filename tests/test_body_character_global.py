@@ -93,10 +93,33 @@ def make_snapshot(plan):
         scale_node_operation=1,
         scale_node_input2=(1.0, 1.0, 1.0),
         scale_node_output=(1.0, 1.0, 1.0),
+        aim_fk_visibility_value=True,
+        reserved_visibility_values=tuple(
+            (name, True) for name in plan.reserved_visibility_attributes),
     )
 
 
 class BodyCharacterGlobalTests(unittest.TestCase):
+    def test_source_single_root_height_includes_ground(self):
+        from adv_py.core.body_character_global import fit_character_height
+        self.assertEqual(fit_character_height(((0., 5., -2.),)), 5.)
+        self.assertEqual(fit_character_height(((0., 0., 0.),)), 0.)
+        self.assertEqual(fit_character_height(((0., -.5, 0.),)), .5)
+
+    def test_matrix_follow_needs_no_duplicate_local_scale_input(self):
+        plan = plan_body_character_global(
+            up_axis=FitUpAxis.Y, body_root='|Group|DeformationSystem|Root_M',
+            driven_roots=('|Group|MotionSystem|FKSystem',),
+            scale_destinations=(), body_root_via_controls=True,
+            root_follow_main_path='|Group|MotionSystem|RootSystem|RootFollowMain',
+            root_follow_use_opm=True, fit_height=0.)
+        self.assertEqual(plan.scale_destinations, ())
+        with self.assertRaises(BodyCharacterGlobalValidationError):
+            plan_body_character_global(
+                up_axis=FitUpAxis.Y, body_root='|Group|DeformationSystem|Root_M',
+                driven_roots=('|Group|MotionSystem|FKSystem',),
+                scale_destinations=(), body_root_via_controls=True)
+
     def test_plan_defines_z_up_control_and_complete_root_set(self):
         plan = make_plan()
 

@@ -6,9 +6,12 @@ import traceback
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def main():
+def main(*, case_name=None, options=None, position=(0, 5, -2), dimensions=(4, 6, 2),
+         extra_mesh=False, quit_on_finish=True):
     from maya import cmds, mel
     output = ROOT / 'validation/results/original-one-joint-prop'
+    if case_name:
+        output = output / case_name
     output.mkdir(parents=True, exist_ok=True)
     report = {'status': 'running', 'source': 'ADV 6.925 asOneJointProp',
               'source_bind_flags': {'maximumInfluences': 3, 'dropoffRate': 4,
@@ -19,11 +22,31 @@ def main():
         cmds.optionVar(intValue=('asDock', 0))
         mel.eval('source "' + (ROOT / 'local/adv_6_925/AdvancedSkeleton.mel').as_posix() + '";')
         mel.eval('AdvancedSkeleton;')
-        mesh = cmds.polyCube(name='PropMesh', width=4, height=6, depth=2)[0]
-        cmds.xform(mesh, worldSpace=True, translation=(0, 5, -2))
+        mesh = cmds.polyCube(name='PropMesh', width=dimensions[0],
+                             height=dimensions[1], depth=dimensions[2])[0]
+        cmds.xform(mesh, worldSpace=True, translation=position)
+        all_text=''
+        if extra_mesh:
+            accessory=cmds.polySphere(name='AccessoryMesh',radius=.4)[0]
+            cmds.xform(accessory,worldSpace=True,translation=(2,5,1))
+            all_text=accessory
+        for key, value in (options or {}).items():
+            cmds.checkBox('asBody' + key + 'CheckBox', edit=True, value=value)
         cmds.textField('asBodySkinTextField', edit=True, text=mesh)
-        cmds.textField('asBodyAllTextField', edit=True, text='')
+        cmds.textField('asBodyAllTextField', edit=True, text=all_text)
         mel.eval('asOneJointProp;')
+        if options:
+            # The native fresh-Fit UI callback can reset Preparation boxes.
+            # Capture requested matrix/extra variants via the untouched native
+            # rebuild entry, with both its Fit values and UI input explicit.
+            attributes={'OffsetParentMatrix':'useOffsetParentMatrix',
+                        'ExtraControllers':'extraControllers',
+                        'SubControllers':'subControllers','GameEngine':'gameEngine'}
+            for key,value in options.items():
+                cmds.setAttr('FitSkeleton.'+attributes[key],value)
+                cmds.checkBox('asBody'+key+'CheckBox',edit=True,value=value)
+            mel.eval('asReBuildAdvancedSkeleton;')
+            report['requested_options_rebuilt']=options
         report['nodes'] = {node: {'type': cmds.nodeType(node),
             'parent': cmds.listRelatives(node, parent=True, fullPath=True) or []}
             for node in cmds.ls(long=True) if not node.startswith(':')}
@@ -42,6 +65,8 @@ def main():
         report['mesh_points'] = cmds.xform(mesh + '.vtx[*]', query=True,
                                            worldSpace=True, translation=True)
         report['control_set'] = cmds.sets('ControlSet', query=True) or []
+        report['deform_set'] = cmds.sets('DeformSet', query=True) or []
+        report['main_height'] = cmds.getAttr('Main.height')
         report['curves'] = {shape: {
             'form': cmds.getAttr(shape + '.form'),
             'degree': cmds.getAttr(shape + '.degree'),
@@ -62,4 +87,22 @@ def main():
         report['traceback'] = traceback.format_exc()
     finally:
         (output / 'reference.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+        if quit_on_finish:
+            cmds.quit(force=True)
+
+
+def batch():
+    from maya import cmds
+    try:
+        for name, options, position, dimensions, extra in (
+            ('opm', {'OffsetParentMatrix': True}, (0,5,-2), (4,6,2), False),
+            ('opm_extra', {'OffsetParentMatrix': True, 'ExtraControllers': True,
+                           'SubControllers': True}, (0,5,-2), (4,6,2), False),
+            ('origin', {'OffsetParentMatrix': False, 'ExtraControllers': False,
+                        'SubControllers': False}, (0,0,0), (2,2,2), True),
+            ('below_ground', {'OffsetParentMatrix': False}, (0,-.5,0), (2,2,2), False),
+        ):
+            main(case_name=name, options=options, position=position,
+                 dimensions=dimensions, extra_mesh=extra, quit_on_finish=False)
+    finally:
         cmds.quit(force=True)

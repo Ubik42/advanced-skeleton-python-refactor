@@ -1417,7 +1417,9 @@ class MayaCharacterRegistryMixin:
         paths.update(control.source_override_path for control in p.fk.controls
                      if control.source_override_path is not None)
         if p.root is not None:
-            paths.update((p.root.leg_lock_path,p.root.hs_path))
+            paths.add(p.root.leg_lock_path)
+            if not p.root.single_joint:
+                paths.add(p.root.hs_path)
             if p.root.spline_fixed_path:
                 paths.add(p.root.spline_fixed_path)
                 paths.add(p.root.spline_output)

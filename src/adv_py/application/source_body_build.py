@@ -596,20 +596,23 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
                     for side in limb.foot.sides if side.side is spec.side)) for spec in limb.ik.limbs)))
         updated_limbs.append(limb)
     limbs=updated_limbs
-    roots = ("|Group|MotionSystem|FKSystem", fk.root_path) + tuple(limb.ik.root_path for limb in limbs)
+    roots = ("|Group|MotionSystem|FKSystem",) + (
+        (fk.root_path,) if fk.controls or fk.followers or fk.endpoints else ())
+    roots += tuple(limb.ik.root_path for limb in limbs)
     roots += tuple(limb.mechanisms.root_path for limb in limbs)
     root_metadata = next(item for item in metadata
                          if item.joint == build.specs[0].source_joint)
-    root_control = next(control for control in fk.controls
-                        if control.driven_joint == body.root)
+    root_control = next((control for control in fk.controls
+                        if control.driven_joint == body.root),None)
     global_control = plan_body_character_global(
         up_axis=FitUpAxis.Y, body_root=body.root, driven_roots=roots,
         fit_height=body.fit_height,
-        scale_destinations=tuple((body.root if options.use_offset_parent_matrix
-                                 else "|Group|DeformationSystem") + ".scale" + axis for axis in "XYZ"),
+        scale_destinations=(() if root.single_joint and options.use_offset_parent_matrix else
+            tuple((body.root if options.use_offset_parent_matrix
+                   else "|Group|DeformationSystem") + ".scale" + axis for axis in "XYZ")),
         radius=scale * 12, body_root_via_controls=True,
         root_fk_scale=(BodyRootFkScaleSpec(body.root, root_control.control_path + ".scale")
-                       if options.use_offset_parent_matrix else None),
+                       if options.use_offset_parent_matrix and root_control is not None else None),
         num_main_extras=root_metadata.num_main_extras or 0,
         root_follow_main_path="|Group|MotionSystem|RootSystem|RootFollowMain",
         root_follow_use_opm=options.use_offset_parent_matrix,
@@ -631,7 +634,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.create_source_body_spline(spline)
         host.connect_source_body_spline_visibility(spline,fk)
     scales = list(plan_body_direct_fk_scales(body, fk.controls))
-    if not options.use_offset_parent_matrix:
+    if not options.use_offset_parent_matrix and root_control is not None:
         # MEL scales DeformationSystem globally and keeps Root's scale local.
         scales.append(BodyDirectFkScaleSpec(body.root,root_control.control_path+'.scale'))
     scales.extend(BodyDirectFkScaleSpec(control.driven_joint,

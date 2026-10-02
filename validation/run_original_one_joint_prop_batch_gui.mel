@@ -1,0 +1,1 @@
+python("import sys; sys.path.insert(0, r'D:/3D/_tools/_DCC/advanced-skeleton-python-refactor/validation'); import maya_original_one_joint_prop_reference as reference; reference.batch()");

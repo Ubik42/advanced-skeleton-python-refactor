@@ -2708,9 +2708,13 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已记录 {role}：{len(objects)} 件模型"
 
         def _build_one_joint_prop(self):
-            result = self.controller.preparation_one_joint_prop(self._namespace())
+            from adv_py.core.body_build_options import BodyBuildOptions
+            options = BodyBuildOptions(**{key: field.isChecked()
+                for key, field in self.body_option_fields.items()})
+            result = self.controller.preparation_one_joint_prop(
+                self._namespace(), build_options=options)
             return (f"单关节道具已构建：{len(result.meshes)} 件模型、"
-                    f"{len(result.skins)} 套 Skin；控制器 Main")
+                    f"{len(result.skins)} 套 Skin；控制器 {result.control.rsplit('|', 1)[-1]}")
 
         def _build_fbx_rig(self):
             from adv_py.application.fbx_rig_import import FBXRigCancelled

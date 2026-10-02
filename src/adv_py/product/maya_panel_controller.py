@@ -417,7 +417,7 @@ class MayaPanelController:
         return ReselectPreparationObjects(MayaPreparationObjectsHost(namespace)).execute(
             PreparationObjectRole(role))
 
-    def preparation_one_joint_prop(self, namespace: str):
+    def preparation_one_joint_prop(self, namespace: str, *, build_options=None):
         from adv_py.adapters.maya_one_joint_prop import MayaOneJointPropHost
         from adv_py.application.one_joint_prop import BuildOneJointProp
 
@@ -425,7 +425,7 @@ class MayaPanelController:
         all_meshes = self.preparation_read_objects(namespace, "All")
         return BuildOneJointProp(MayaOneJointPropHost(
             namespace=None if namespace == ":" else namespace)).apply(
-            skins, all_meshes)
+            skins, all_meshes, build_options=build_options)
 
     def preparation_fbx_rig(self):
         from adv_py.adapters.maya_fbx_rig_source import MayaFBXRigPreparationHost

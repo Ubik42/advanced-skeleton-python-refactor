@@ -17,6 +17,11 @@ def capture_fk_policy(host, registration):
                 and not leaf.endswith("_InbetweenFK")
                 and "|AdvPy_GenericFKControls|" in node.path):
             controls[leaf.removeprefix("AdvPy_")] = node.path
+    if not controls and len(registration.body)==1:
+        # A source terminal Root has no FK feature layout to retain. It uses
+        # the same direct RootX branch on fresh build and staged replacement.
+        return GenericFkFeaturePolicy(source_spline_layouts=(),
+            source_spline_body_root=registration.body_root)
     if "Root_MFK" not in controls:
         raise CharacterRegistryError("来源重建缺少 Root FK 控制身份")
     by_leaf = {}

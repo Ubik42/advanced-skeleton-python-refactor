@@ -157,6 +157,8 @@ def is_source_body_registration(registration):
     """Source Root uses the generic FK identity through save and rebuild."""
     return (any(channel.key.startswith("generic.fk.Root_MFK.")
                 for channel in registration.channels)
+            or (len(registration.body)==1 and any(
+                channel.key.startswith('root.x.') for channel in registration.channels))
             or any(node.path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
                    == "AdvPy_Root_MFK" for node in registration.nodes))
 
@@ -230,7 +232,7 @@ def decode_registration(text):
         for row in data["body"]:
             exact(row,("path","parent","matrix"))
             body.append(CharacterBindJoint(path(row["path"]),path(row["parent"]) if row["parent"] else None,vector(row["matrix"],16)))
-        if not 2 <= len(body) <= 256 or len({j.path for j in body}) != len(body):
+        if not 1 <= len(body) <= 256 or len({j.path for j in body}) != len(body):
             raise CharacterRegistryError("登记身体数量或根节点无效")
         paths = {j.path for j in body}
         roots = [joint for joint in body if joint.path == root]

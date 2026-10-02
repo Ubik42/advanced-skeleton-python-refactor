@@ -171,12 +171,25 @@ class StageBodyCharacterRebuild:
             original.registration.body_root)
         include_dynamic = host.has_body_dynamic_system()
         fit_channels=host.capture_character_rebuild_fit_channels(original.registration.container)
+        fit_values=host.read_fit_skeleton_settings(original.registration.container)
+        fit_curve=host.capture_control_curves((original.registration.container,),strict=True)[0]
         with TemporaryDirectory(prefix='adv-py-rebuild-') as directory:
             fit=Path(directory)/'source.fit.json'
             # Built ADV keeps Fit beneath Group. Export its authored data
             # through the existing nested-Fit contract without detaching it.
             from .external_fit_export import ExportExternalFitSkeleton
-            ExportExternalFitSkeleton(host).apply(fit,original.registration.container)
+            # Portable user exports reject scene paths/scripts. Internal
+            # rebuilding retains the live original Fit and carries these
+            # literal values separately; do not weaken that export contract.
+            from adv_py.core.fit_skeleton_io import FIT_SKELETON_NONPORTABLE_SETTING_FIELDS
+            class PortableRebuildFitHost:
+                def __getattr__(self,name):return getattr(host,name)
+                def read_fit_skeleton_settings(self,container):
+                    settings=host.read_fit_skeleton_settings(container)
+                    return replace(settings,settings=tuple(
+                        replace(item,value='') if item.field in FIT_SKELETON_NONPORTABLE_SETTING_FIELDS
+                        else item for item in settings.settings))
+            ExportExternalFitSkeleton(PortableRebuildFitHost()).apply(fit,original.registration.container)
             with host.character_rebuild_transaction('Stage replacement character'):
                 if CaptureBodyCharacterPreservation(host).execute(extensions=extensions)!=original:
                     raise RuntimeError('重建暂存前原角色发生变化')
@@ -202,6 +215,17 @@ class StageBodyCharacterRebuild:
                 CreateAndImportFitSkeleton(stage).apply(fit)
                 with stage.transaction('Restore original Fit channel state'):
                     stage.restore_character_rebuild_fit_channels(fit_channels)
+                    for setting in fit_values.settings:
+                        if setting.field in FIT_SKELETON_NONPORTABLE_SETTING_FIELDS:
+                            stage.set_fit_skeleton_setting('FitSkeleton',setting)
+                    current_curve=stage.capture_control_curves(('FitSkeleton',),strict=True)[0]
+                    if (len(current_curve.shapes)!=len(fit_curve.shapes) or any(
+                        (source.degree,source.form,len(source.points))!=
+                        (target.degree,target.form,len(target.points))
+                        for source,target in zip(fit_curve.shapes,current_curve.shapes))):
+                        raise CharacterRegistryError('重建 Fit 容器曲线拓扑不一致')
+                    for source,target in zip(fit_curve.shapes,current_curve.shapes):
+                        stage.set_control_curve_points(target.path,source.points)
                 scene_before = stage.capture_body_scene_nodes()
                 keys={channel.key for channel in original.registration.channels}
                 source_build = is_source_body_registration(original.registration)

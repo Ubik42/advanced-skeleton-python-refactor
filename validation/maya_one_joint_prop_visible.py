@@ -65,7 +65,7 @@ def schedule(output_directory: str) -> None:
             button.click()
             data["build_status"] = detail.status.toPlainText()
             data["skin_count"] = len(cmds.ls(type="skinCluster") or [])
-            data["root"] = cmds.objExists("|Group|Rig|Root_M")
+            data["root"] = cmds.objExists("|Group|DeformationSystem|Root_M")
             detail.grab().save(str(output / "one-joint-prop-panel.png"))
             cmds.file(rename=str(rig))
             cmds.file(save=True, type="mayaBinary", force=True)

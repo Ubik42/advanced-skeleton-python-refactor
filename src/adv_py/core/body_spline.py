@@ -379,7 +379,7 @@ class BodySplinePlan:
                          'OutputOrient','OutputScale','OutputReverse'))+tuple(
             f'AdvPy_SplineIKArcAim{i}'
             for i in self.native_keys[:-1])+(
-            f'AdvPy_SplineIKArcEndOrient{self.native_keys[-1]}',)
+            (f'AdvPy_SplineIKArcEndOrient{self.native_keys[-1]}',) if self.native_keys else ())
         if self.source_ik_chain:
             even=('AdvPy_SplineStretchEvenUnit','AdvPy_SplineStretchEvenReverse','AdvPy_SplineStretchEvenWeight',
                   'AdvPy_SplineIKArcEndRotation','AdvPy_SplineIKArcEndPosition','AdvPy_SplineIKArcEndMatrix')+tuple(

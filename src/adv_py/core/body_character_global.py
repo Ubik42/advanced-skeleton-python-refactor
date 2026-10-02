@@ -406,9 +406,10 @@ def fit_character_height(positions: tuple[Vector3, ...]) -> float:
             for point in positions)):
         raise BodyCharacterGlobalValidationError("Fit 关节世界坐标无效")
     ys = [float(point[1]) for point in positions]
-    height = (max(ys) - min(ys) if len(ys) > 1 else max(0.0, ys[0]))
-    if height <= 0.0:
-        raise BodyCharacterGlobalValidationError("Fit 骨架世界 Y 高度须大于零")
+    # MEL 79475 initializes extrema at 0/99 (0/0 for a single Root).
+    # A prop centered on the ground has height zero; a below-ground Root
+    # measures back to ground. Neither is rejected by the original build.
+    height = max(0.0, max(ys)) - min(0.0 if len(ys)==1 else 99.0, min(ys))
     return height
 
 
@@ -508,7 +509,8 @@ def plan_body_character_global(
             body_root in driven_roots
             or not (all(f"{body_root}.scale{axis}" in scale_destinations for axis in "XYZ")
                     or body_root.startswith("|Group|DeformationSystem|")
-                    and all(f"|Group|DeformationSystem.scale{axis}" in scale_destinations for axis in "XYZ"))
+                    and all(f"|Group|DeformationSystem.scale{axis}" in scale_destinations for axis in "XYZ")
+                    or (not scale_destinations and root_follow_use_opm))
         ))
         or len(set(driven_roots)) != len(driven_roots)
         or any(
@@ -529,7 +531,7 @@ def plan_body_character_global(
             for path in driven_roots
         )
         or not isinstance(scale_destinations, tuple)
-        or not scale_destinations
+        or (not scale_destinations and not body_root_via_controls)
         or len(set(scale_destinations)) != len(scale_destinations)
         or any(
             not isinstance(plug, str)
@@ -544,7 +546,7 @@ def plan_body_character_global(
             isinstance(fit_height, bool)
             or not isinstance(fit_height, (int, float))
             or not isfinite(float(fit_height))
-            or float(fit_height) <= 0.0))
+            or float(fit_height) < 0.0))
     ):
         raise BodyCharacterGlobalValidationError(
             "角色总控的宿主轴、根节点、缩放目标或半径无效"

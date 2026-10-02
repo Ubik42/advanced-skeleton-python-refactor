@@ -56,25 +56,25 @@ def main() -> None:
         cmds.undoInfo(state=True)
         result = MayaPanelController().preparation_one_joint_prop(":")
         assert len(result.meshes) == len(result.skins) == 2, result
-        assert cmds.objExists("|FitSkeleton|Root")
+        assert cmds.objExists("|Group|FitSkeleton|Root")
         assert cmds.getAttr("FitSkeleton.objectsSkin") == "model:BodyMesh"
         assert cmds.getAttr("FitSkeleton.objectsAll") == (
             "model:BodyMesh model:AccessoryMesh")
         assert tuple(round(value) for value in cmds.getAttr(
             "Root.jointOrient")[0]) == (90, 0, 90)
-        assert cmds.objExists("|Group|Rig|Root_M")
-        assert cmds.objExists("|Group|Main")
+        assert cmds.objExists("|Group|DeformationSystem|Root_M")
+        assert cmds.objExists(result.control)
         assert len(cmds.ls(type="skinCluster") or []) == 2
         assert cmds.referenceQuery("model:BodyMesh", isNodeReferenced=True)
         points = tuple(cmds.pointPosition(mesh + ".vtx[0]", world=True)
                        for mesh in ("model:BodyMesh", "model:AccessoryMesh"))
         cmds.undoInfo(stateWithoutFlush=False)
-        cmds.setAttr("Main.translateX", 2)
+        cmds.setAttr(result.control + ".translateX", 2)
         moved = tuple(cmds.pointPosition(mesh + ".vtx[0]", world=True)
                       for mesh in ("model:BodyMesh", "model:AccessoryMesh"))
         assert all(abs(b[0] - a[0] - 2) < 1e-5
                    for a, b in zip(points, moved)), (points, moved)
-        cmds.setAttr("Main.translateX", 0)
+        cmds.setAttr(result.control + ".translateX", 0)
         cmds.undoInfo(stateWithoutFlush=True)
         cmds.undo()
         assert not cmds.objExists("Root_M")

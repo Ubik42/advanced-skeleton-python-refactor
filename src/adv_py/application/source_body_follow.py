@@ -43,8 +43,10 @@ def source_fk_body_controls(body, fk, limbs, spline):
 
 def build_source_body_follow(host, metadata, body, fk, limbs, spline, global_control,*,root_control_path=None):
     controls = source_fk_body_controls(body, fk, limbs, spline)
-    root = next(control for control in controls if control.driven_joint==body.root)
-    root_path=root_control_path or root.control_path
+    root = next((control for control in controls if control.driven_joint==body.root),None)
+    root_path=root_control_path or (root.control_path if root else None)
+    if root_path is None:
+        raise ValueError('来源 Follow 缺少 Root 控制路径')
     driver_sources = tuple((joint.path,joint.source_joint) for limb in limbs
         for joint in limb.mechanisms.joints if joint.role is BodyLimbMechanismRole.IK)
     ik_controls = tuple(spec for limb in limbs for spec in limb.ik.limbs)

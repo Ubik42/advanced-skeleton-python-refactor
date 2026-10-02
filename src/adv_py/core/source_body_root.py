@@ -11,10 +11,10 @@ class SourceBodyRootPlan:
     body_root: str
     root_x: BodyRootControlSpec
     cogs: tuple[BodyRootControlSpec,...]
-    fk_control: str
-    fk_offset: str
-    fk_receiver: str
-    fk_orient: str
+    fk_control: str | None
+    fk_offset: str | None
+    fk_receiver: str | None
+    fk_orient: str | None
     position: tuple
     axes: tuple
     rotation_order: int
@@ -30,6 +30,7 @@ class SourceBodyRootPlan:
     branch_offsets: tuple[str,...] = ()
     hip_swing_no_parts: bool = False
     leg_lock_opm: bool = False
+    single_joint: bool = False
 
     @property
     def leg_lock_path(self):
@@ -66,7 +67,8 @@ class SourceBodyRootPlan:
 def plan_source_body_root(body,fk,metadata,instances,options,*,base_radius=1.5):
     root=next(joint for joint in body.joints if joint.path==body.root)
     control=next((control for control in fk.controls if control.driven_joint==body.root),None)
-    if control is None:
+    single_joint = control is None and len(body.joints) == 1
+    if control is None and not single_joint:
         raise FitSkeletonValidationError('来源 Advanced Root 缺少 Root FK 控制')
     root_meta=next(item for item in metadata
         if item.joint.rsplit('|',1)[-1].rsplit(':',1)[-1]=='Root')
@@ -86,15 +88,20 @@ def plan_source_body_root(body,fk,metadata,instances,options,*,base_radius=1.5):
     offset=parent+'|AdvPy_RootOffsetX_M'
     extra=offset+'|AdvPy_RootExtraX_M'
     root_x=BodyRootControlSpec(offset,extra,extra+'|AdvPy_RootX_M',
-                             root.world_position,control.radius*.23)
-    return SourceBodyRootPlan(body.root,root_x,tuple(cogs),control.control_path,
-        control.offset_path,control.source_override_path or control.sub_control_path or control.control_path,
-        control.constraint_name,root.world_position,root.world_axes,root.rotation_order,
-        options.use_offset_parent_matrix,root_meta.leg_lock is not False,
-        root_meta.center_between_feet is True,leg_lock_opm=options.use_offset_parent_matrix)
+                             root.world_position,(control.radius if control else
+                                body_fk_curve_radius(body,root,1.5))*.23)
+    return SourceBodyRootPlan(body.root,root_x,tuple(cogs),control.control_path if control else None,
+        control.offset_path if control else None,
+        (control.source_override_path or control.sub_control_path or control.control_path) if control else None,
+        control.constraint_name if control else None,root.world_position,root.world_axes,root.rotation_order,
+        options.use_offset_parent_matrix,not single_joint and root_meta.leg_lock is not False,
+        root_meta.center_between_feet is True,leg_lock_opm=options.use_offset_parent_matrix,
+        single_joint=single_joint)
 
 
 def finalize_source_body_root(plan,fk,splines,inbetween_segments):
+    if plan.single_joint:
+        return plan
     control=next(control for control in fk.controls if control.control_path==plan.fk_control)
     receiver=control.source_override_path or control.sub_control_path or control.control_path
     relative=None
