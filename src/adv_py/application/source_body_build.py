@@ -71,6 +71,7 @@ class SourceBodyLimbPlan:
     ik: BodyArmIkPlan
     blend: BodyLimbBlendPlan
     foot: object | None = None
+    root_frames: tuple = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +407,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         mechanism_names=source_foot_joint_names(names,foot_roles)
         mechanisms = plan_body_limb_mechanisms(
             body, limb_label=label, joint_names=mechanism_names, allow_part_parents=True,sides=sides)
+        from adv_py.core.source_limb_root_frame import configure as configure_root_frames
+        mechanisms,root_frames=(configure_root_frames(mechanisms,body) if options.use_offset_parent_matrix else (mechanisms,()))
         ik = plan_body_arm_ik(body, mechanisms, joint_names=names,
             limb_label=label, radius=scale * 1.5,
             sub_controllers=options.sub_controllers,
@@ -420,7 +423,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         limb=SourceBodyLimbPlan(label,names,mechanisms,ik,blend)
         foot=plan_source_body_foot(body,limb,foot_roles,metadata,base_radius=scale*1.5,
                                   instances=build.symmetry.instances)
-        limbs.append(replace(limb,foot=foot))
+        limbs.append(replace(limb,foot=foot,root_frames=root_frames))
     driver_by_body = {joint.source_joint: joint.path for limb in limbs
                       for joint in limb.mechanisms.joints
                       if joint.role is BodyLimbMechanismRole.FK}
@@ -501,7 +504,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     fk, splines = plan_source_body_splines(body, build.symmetry.source.hierarchy,
         labels, fk, options, metadata,instances=build.symmetry.instances,
         saved_layouts=generic_fk_policy.source_spline_layouts if generic_fk_policy else None,
-        control_counts=generic_fk_policy.source_spline_counts if generic_fk_policy else ())
+        control_counts=generic_fk_policy.source_spline_counts if generic_fk_policy else (),parts=build.fit_parts)
     root = plan_source_body_root(body,fk,metadata,build.symmetry.instances,options,
                                  base_radius=scale*1.5)
     if generic_fk_policy is not None and generic_fk_policy.source_leg_lock_opm is False:
@@ -533,9 +536,12 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     for limb in limbs:
         if host.create_body_arm_mechanism_root(limb.mechanisms.root_name) != limb.mechanisms.root_path:
             raise RuntimeError("来源机制链根路径漂移")
+        for frame in limb.root_frames:
+            host.create_source_limb_root_frame(frame)
         for joint in limb.mechanisms.joints:
             if host.create_body_arm_mechanism_joint(joint) != joint.path:
                 raise RuntimeError("来源机制关节路径漂移：" + joint.name)
+        if limb.root_frames:host.finalize_source_limb_root_frames(limb.root_frames)
     host.create_body_generic_fk(fk, root_prepared=bool(splines))
     host.connect_source_body_root_fk(root)
     updated_limbs=[]
@@ -546,7 +552,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             host.create_body_arm_ik(spec)
         host.create_body_arm_blend(limb.blend)
         host.connect_source_body_limb_follow(body, limb.mechanisms,
-                                            root_follow_path=root.leg_lock_path)
+                                            root_follow_path=root.leg_lock_path,root_frames=limb.root_frames)
         host.connect_source_body_limb_visibility(limb, fk)
         host.connect_source_body_limb_scales(limb,
             use_offset_parent_matrix=options.use_offset_parent_matrix,
@@ -713,6 +719,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     if options.use_offset_parent_matrix:
         host.create_source_inbetween_fk_matrices(fk,inbetween_segments,global_control,metadata,build.symmetry.instances)
         host.create_source_spline_part_matrices(body,splines,inbetween_segments)
+        host.create_source_fk_part_matrices(inbetween_segments)
     # MEL selects initial IK by the actual end label containing Foot;
     # a Hip/Leg system ending in Toes alone keeps its default FK mode.
     initial_ik = tuple(limb for limb in limbs

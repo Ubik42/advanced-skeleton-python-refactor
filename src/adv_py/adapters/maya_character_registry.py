@@ -1571,6 +1571,8 @@ class MayaCharacterRegistryMixin:
         audit_source_rp(self,plan)
         from .maya_source_rp_follow import audit as audit_source_rp_follow
         audit_source_rp_follow(self,plan)
+        from .maya_source_limb_root_frame import audit_registered as audit_ik_frames
+        audit_ik_frames(self,plan)
         from .maya_source_inbetween_matrix import audit_registered as audit_source_inbetween
         audit_source_inbetween(self,plan)
         from .maya_source_body_matrix import audit_fk

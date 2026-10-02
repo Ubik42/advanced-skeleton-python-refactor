@@ -44,13 +44,26 @@ def rp_cases():
         ('nonuniform_wrist',(('FKWrist_R.scaleY','AdvPy_Wrist_RFK.scaleY',1.2),('FKWrist_R.scaleZ','AdvPy_Wrist_RFK.scaleZ',.7))))
 
 
-def main(native,python_scene,reference,output,*,extended=False):
+def matrix_cases():
+    main=tuple(('Main.scale'+axis,'AdvPy_Global.scale'+axis,value) for axis,value in zip('XYZ',(1.2,.85,1.1)))
+    mode=('FKIKSpine_M.FKIKBlend','FKIKSpine_M.FKIKBlend',10.)
+    return (
+        ('arm_ik_main_nonuniform',main+(('FKIKArm_R.FKIKBlend','AdvPy_ArmSettings.armIkFk_R',10.,1.),)),
+        ('spine_ik_main_nonuniform',main+(mode,)),
+        ('spine_ik_mid_translation',(mode,('IKSpine2_M.translateZ','AdvPy_SplineIK1.translateZ',.4))),
+        ('spine_ik_mid_scale',(mode,('IKSpine2_M.scaleY','AdvPy_SplineIK1.scaleY',1.2))),
+        ('neck_fk_nonuniform',(('FKNeck_M.scaleY','AdvPy_Neck_MFK.scaleY',1.3),('FKNeck_M.scaleZ','AdvPy_Neck_MFK.scaleZ',.8))),
+        ('neck_part_fk',(('FKNeckPart1_M.rotateX','AdvPy_NeckPart1_M_InbetweenFK.rotateX',15.),)),
+        ('neck_part_nonuniform',(('FKNeckPart1_M.scaleY','AdvPy_NeckPart1_M_InbetweenFK.scaleY',1.2),)))
+
+
+def main(native,python_scene,reference,output,*,extended=False,source_matrices=False):
     import maya.standalone
     maya.standalone.initialize(name='python')
     from maya import cmds
     names=tuple(json.loads(reference.read_text())['neutral_body'])
     matrices={}
-    cases=CASES+(rp_cases() if extended else ())
+    cases=CASES+(rp_cases() if extended else ())+(matrix_cases() if source_matrices else ())
     for index,(label,scene) in enumerate((('native',native),('python',python_scene))):
         matrices[label]={}
         for name,edits in cases:
@@ -72,4 +85,4 @@ def main(native,python_scene,reference,output,*,extended=False):
     print([(row['case'],row['maximum_error'],row['largest'][:2]) for row in rows])
     if not passed:raise AssertionError('Whole Body pose comparison failed')
 
-if __name__=='__main__':main(*(Path(arg) for arg in sys.argv[1:5]),extended='--extended' in sys.argv[5:])
+if __name__=='__main__':main(*(Path(arg) for arg in sys.argv[1:5]),extended='--extended' in sys.argv[5:],source_matrices='--source-matrices' in sys.argv[5:])

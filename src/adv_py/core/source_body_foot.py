@@ -64,7 +64,7 @@ def plan_source_body_foot(body,limb,roles,metadata,*,base_radius,instances=()):
     for side in roles:
         start=next(joint for joint in limb.mechanisms.joints
                    if joint.side is side and joint.role is BodyLimbMechanismRole.IK
-                   and joint.parent_path==limb.mechanisms.root_path)
+                   and joint.path==next(spec.chain[0] for spec in limb.ik.limbs if spec.side is side))
         role_aliases[start.source_joint]='Hip_'+side.value
     reserved=set(role_aliases.values())
     view=replace(body,joints=tuple(replace(joint,name=role_aliases.get(joint.path,

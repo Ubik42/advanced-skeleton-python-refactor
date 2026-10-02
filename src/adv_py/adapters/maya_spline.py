@@ -264,7 +264,7 @@ def create(host,plan):
         c.createNode('decomposeMatrix',name=decompose,skipSelect=True)
         c.createNode('multiplyDivide',name=volume,skipSelect=True)
         c.connectAttr(plan.scale_reference+'.worldMatrix[0]',blend+'.inputMatrix')
-        for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
+        for index,weight in enumerate(spline_ik_scale_weights(*plan.scale_sample(i),len(plan.targets))):
             if weight:
                 c.connectAttr(plan.driver_targets[index]+f'|AdvPy_SplineIKLocalOrient{index}.worldMatrix[0]',blend+f'.target[{index}].targetMatrix')
                 c.setAttr(blend+f'.target[{index}].weight',weight)
@@ -277,7 +277,8 @@ def create(host,plan):
             addition=f'AdvPy_SplineIKScaleAdd{i}'
             c.createNode('multiplyDivide',name=weight,skipSelect=True)
             c.createNode('addDoubleLinear',name=addition,skipSelect=True)
-            fraction=2.0*(i+1)/(n+1)
+            sample_index,sample_count=plan.scale_sample(i)
+            fraction=2.0*(sample_index+1)/(sample_count+1)
             c.setAttr(weight+'.input2X',min(fraction,2.0-fraction))
             c.connectAttr('AdvPy_SplineVolumeDelta.output',weight+'.input1X')
             c.connectAttr(weight+'.outputX',addition+'.input1')
@@ -553,7 +554,7 @@ def audit(host,plan,*,source_visibility_ready=True):
                        'AdvPy_BendySourceScale'+plan.body_joints[i].rsplit('|',1)[-1]+'.color1'+component
                        if i in plan.source_bendy_matrix_indices else joint.path+'.scale'+axis)
                       for axis,component in zip('XYZ','RGB')]
-            for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
+            for index,weight in enumerate(spline_ik_scale_weights(*plan.scale_sample(i),len(plan.targets))):
                 if weight:
                     orientation=(f'|AdvPy_SplineIKLocalOrient{index}'
                                  if oriented_scaling else '')
@@ -653,11 +654,12 @@ def audit(host,plan,*,source_visibility_ready=True):
             blend=f'AdvPy_SplineIKScaleBlend{i}'
             volume=f'AdvPy_SplineIKScaleVolume{i}'
             constants[volume+'.operation']=1
-            for index,weight in enumerate(spline_ik_scale_weights(i,n,len(plan.targets))):
+            for index,weight in enumerate(spline_ik_scale_weights(*plan.scale_sample(i),len(plan.targets))):
                 if weight:
                     constants[blend+f'.target[{index}].weight']=weight
             if i and not (terminal_without_volume and i==n-1):
-                fraction=2.0*(i+1)/(n+1)
+                sample_index,sample_count=plan.scale_sample(i)
+                fraction=2.0*(sample_index+1)/(sample_count+1)
                 constants[f'AdvPy_SplineIKScaleWeight{i}.input2X']=min(fraction,2.0-fraction)
                 constants[f'AdvPy_SplineIKScaleAdd{i}.input2']=1.
             else:

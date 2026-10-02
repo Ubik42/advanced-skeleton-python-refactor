@@ -44,6 +44,22 @@ def _main(host,stem,main,control):
     return pick,reverse
 
 
+def _remove_replaced_follow(host,target,old):
+    """Drop only the replaced receiver's own, now unused PM/MM pair."""
+    c=host._cmds;leaf=target.rsplit('|',1)[-1];stem,separator,side=leaf.rpartition('_')
+    if separator and side in ('R','L','M'):
+        pick=stem+'PM_'+side;matrix=stem+'MM_'+side
+    else:pick=leaf+'PM';matrix=leaf+'MM'
+    if old!=pick+'.outputMatrix' or not c.objExists(pick) or c.nodeType(pick)!='pickMatrix':return
+    if c.connectionInfo(pick+'.inputMatrix',sourceFromDestination=True)!=matrix+'.matrixSum':return
+    if not c.objExists(matrix) or c.nodeType(matrix)!='multMatrix':return
+    # A shared consumer keeps its original graph. Never delete by prefix.
+    for name in (pick,matrix):
+        if not c.objExists(name):continue # Maya may remove unused input history with PM.
+        if c.listConnections(name,source=False,destination=True,plugs=True):break
+        c.delete(name)
+
+
 def configure_fk(host,fk,segments,global_control,metadata,instances):
     host._require_transaction();c=host._cmds
     from maya.api import OpenMaya as om
@@ -93,6 +109,7 @@ def configure_fk(host,fk,segments,global_control,metadata,instances):
         c.disconnectAttr(old,target+'.offsetParentMatrix');c.setAttr(target+'.inheritsTransform',False)
         c.connectAttr(matrix+'.matrixSum',target+'.offsetParentMatrix')
         _save(host,target,(world,pick,main,reverse,matrix))
+        _remove_replaced_follow(host,target,old)
     host._transaction_changed=True
 
 

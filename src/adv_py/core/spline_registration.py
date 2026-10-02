@@ -43,6 +43,8 @@ def decode_spline(raw, body):
         raw={**raw,'source_mode':None}
     if isinstance(raw,dict) and 'source_fit_control_count' not in raw:
         raw={**raw,'source_fit_control_count':None}
+    if isinstance(raw,dict) and 'source_scale_indices' not in raw:
+        raw={**raw,'source_scale_indices':[]}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     fit_count=raw['source_fit_control_count']
     if fit_count is not None and (type(fit_count) is not int or fit_count<2
@@ -84,6 +86,12 @@ def decode_spline(raw, body):
         raise CharacterRegistryError('来源 Spline 固定朝向命名标记无效')
     body_paths = tuple(path(p) for p in raw['body_joints'])
     count = len(body_paths)
+    scale_indices=raw['source_scale_indices']
+    if (not isinstance(scale_indices,(list,tuple)) or scale_indices and (
+            not raw['source_curve_points'] or len(scale_indices)!=count
+            or any(type(index) is not int or index<0 for index in scale_indices)
+            or scale_indices[0]!=0 or tuple(sorted(set(scale_indices)))!=tuple(scale_indices))):
+        raise CharacterRegistryError('来源 Spline 扩展缩放索引无效')
     if count<2 or (not raw['source_curve_points'] and count>64) or len(set(body_paths)) != count:
         raise CharacterRegistryError('曲线脊柱关节数量或身份无效')
     if source_mode is not None:
@@ -230,7 +238,7 @@ def decode_spline(raw, body):
                           source_fixed_orient_unique=raw['source_fixed_orient_unique'],
                           source_first_translate=raw['source_first_translate'],
                           source_world_controls=raw['source_world_controls'],source_mode=source_mode,
-                          source_fit_control_count=fit_count)
+                          source_fit_control_count=fit_count,source_scale_indices=tuple(scale_indices))
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

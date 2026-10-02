@@ -252,7 +252,10 @@ def recover_body_limb_mechanisms(
                 "机制关节身份或来源不一致：" + spec.name)
         key = (spec.role, spec.side)
         previous = previous_by_chain.get(key)
-        expected_parent = previous.path if previous else plan.root_path
+        expected_parent = previous.path if previous else (
+            spec.parent_path if spec.role is BodyLimbMechanismRole.IK else plan.root_path)
+        if previous is None and not (expected_parent==plan.root_path or expected_parent.startswith(plan.root_path+'|')):
+            raise BodyLimbMechanismValidationError('机制起点父级不属于本系统：'+spec.name)
         if spec.role is BodyLimbMechanismRole.FK:
             if state.path != spec.path or state.parent_path != expected_parent:
                 raise BodyLimbMechanismValidationError(

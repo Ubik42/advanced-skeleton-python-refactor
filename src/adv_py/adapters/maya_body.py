@@ -10205,6 +10205,18 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_internal_ik_local import create
         create(self,spec)
 
+    def create_source_limb_root_frame(self,spec):
+        from .maya_source_limb_root_frame import create
+        create(self,spec)
+
+    def finalize_source_limb_root_frames(self,specs):
+        from .maya_source_limb_root_frame import finalize
+        finalize(self,specs)
+
+    def create_source_fk_part_matrices(self,segments):
+        from .maya_source_fk_part_matrix import configure
+        configure(self,segments)
+
     def create_source_spline_part_matrices(self,body,splines,segments):
         from .maya_source_spline_part_matrix import configure
         configure(self,body,splines,segments)
@@ -10250,11 +10262,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_limb_aim import create
         return create(self,body,fk,limbs,root,splines,global_control,policy,instances,use_offset_parent_matrix)
 
-    def connect_source_body_limb_follow(self, body, mechanisms, *,root_follow_path=None) -> None:
+    def connect_source_body_limb_follow(self, body, mechanisms, *,root_follow_path=None,root_frames=()) -> None:
         """Follow the real parent of an imported IK start, outside its blend."""
         from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole
         self._require_transaction()
         c = self._cmds
+        from .maya_source_limb_root_frame import connect as connect_frame
+        for frame in root_frames:
+            connect_frame(self,frame,body.root,root_follow_path)
         by_path = {joint.path: joint for joint in body.joints}
         for joint in mechanisms.joints:
             if (joint.role is not BodyLimbMechanismRole.IK

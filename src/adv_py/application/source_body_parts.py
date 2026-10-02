@@ -24,6 +24,11 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
     independent = {}
     constraints = {}
     blended = {}
+    # MEL's Body BM and Bend parent matrices consume FKX directly. A
+    # parent-constrained FK mechanism joint loses shear under Main scale.
+    fk_receivers = {control.driven_joint: (control.source_override_path
+        or control.sub_control_path or control.control_path)+'.worldMatrix[0]'
+        for control in fk.controls}
     body_paths = {path for _, path in paths.body_paths}
     for control in fk.controls:
         if control.driven_joint in body_paths:
@@ -35,7 +40,7 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
         for side in limb.blend.sides:
             for joint in side.joints:
                 blended[joint.body_joint] = (
-                    joint.fk_driver + ".worldMatrix[0]",
+                    fk_receivers.get(joint.fk_driver,joint.fk_driver + ".worldMatrix[0]"),
                     joint.ik_driver + ".worldMatrix[0]",
                     limb.blend.settings_path + "." + side.attribute,
                     joint.constraint_name)
@@ -43,7 +48,7 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
         count = len(spline.body_joints)
         for index in range(1, count):
             blended[spline.body_joints[index]] = (
-                spline.joints[index].path + ".worldMatrix[0]",
+                fk_receivers.get(spline.joints[index].path,spline.joints[index].path + ".worldMatrix[0]"),
                 spline.ik_outputs[index] + ".worldMatrix[0]",
                 spline.mode_weight,
                 spline.node_name(f"AdvPy_SplineOrient{index}"))

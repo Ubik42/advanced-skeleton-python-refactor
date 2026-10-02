@@ -85,6 +85,14 @@ class BodySplinePlan:
     # Last authored Fit-label count. It distinguishes a later Mid-label edit
     # from an explicit count override saved with this generated layout.
     source_fit_control_count: int | None = None
+    # Original asGetIKJoints includes Part entries. These are the positions
+    # of the base joints in that expanded chain, including its final joint.
+    source_scale_indices: tuple[int,...] = ()
+
+    def scale_sample(self,index):
+        if self.source_scale_indices:
+            return self.source_scale_indices[index],self.source_scale_indices[-1]+1
+        return index,len(self.body_joints)
 
     @property
     def mode_control(self):

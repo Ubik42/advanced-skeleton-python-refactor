@@ -11,7 +11,7 @@ from .fit_settings import FitSkeletonValidationError
 from .joint_labels import JointLabel
 
 
-def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=(),saved_layouts=None,control_counts=()):
+def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=(),saved_layouts=None,control_counts=(),parts=()):
     label_by_name = dict(labels)
     fit_labels = {node.path: (JointLabel.parse(label_by_name[name])
                              if name in label_by_name else None)
@@ -77,7 +77,11 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
             source_mode_icon_scale(hierarchy),sum(spline.lengths),
             build_name(info.start),build_name(info.middle),build_name(info.end),
             source_fit_side_sign(source[0].name,instances))
-        spline=replace(spline,source_mode=mode)
+        indices=[];expanded=0
+        for index,joint in enumerate(source):
+            indices.append(expanded)
+            expanded+=1+sum(part.kind=="inbetween" and part.start_body_name==joint.name for part in parts) if index<len(source)-1 else 1
+        spline=replace(spline,source_mode=mode,source_scale_indices=tuple(indices))
         plans.append(retain_source_spline_layout(spline,saved,
             change_count=system in counts))
     if saved_layouts is not None and len(plans)!=len(saved_layouts):

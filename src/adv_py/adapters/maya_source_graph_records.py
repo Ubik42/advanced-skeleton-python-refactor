@@ -1,7 +1,7 @@
 """Keep closed source graph records aligned with final native converter names."""
 from adv_py.core.character_registry import canonical, CharacterRegistryError
 
-RECORDS=('advPySourceRpDynamics','advPySourceFkMatrix',
+RECORDS=('advPySourceIkRootFrame','advPySourceRpDynamics','advPySourceFkMatrix',
          'advPySourceBendyMatrix','advPySourceTwistReference','advPySourceInbetweenMatrix','advPySourceBendyMicroMatrix')
 
 

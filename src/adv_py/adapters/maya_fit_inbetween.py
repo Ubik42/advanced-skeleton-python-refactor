@@ -623,6 +623,12 @@ class MayaFitInbetweenMixin:
                     .rsplit(":", 1)[-1]
                     == plan.start_fkx_name)
         if plan.use_offset_parent_matrix:
+            if (plan.downstream_fk_offset_path is not None
+                    and c.objExists(plan.downstream_fk_offset_path+'.advPySourceInbetweenMatrix')):
+                from .maya_source_inbetween_matrix import audit_target
+                audit_target(self,plan.downstream_fk_offset_path)
+                return (len(orient_targets)==1
+                        and orient_targets[0].rsplit('|',1)[-1].rsplit(':',1)[-1]==plan.start_fkx_name)
             matrix_plan = self._inbetween_follow_matrix_plan(plan)
             return (len(orient_targets) == 1
                     and orient_targets[0].rsplit("|", 1)[-1]
