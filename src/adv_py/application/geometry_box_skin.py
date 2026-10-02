@@ -43,6 +43,10 @@ class CreateBoxSkin:
                 self.host.create(generated)
                 if not self.host.capture_created(generated):
                     raise RuntimeError("临时 PolyBoxes 创建不完整")
+                # Native transfer traverses the actual copied holder children,
+                # including its order for coincident vertices.
+                pairs = plan_box_skin(self.host.all_box_names())
+                self.host.preflight_box_skin(pairs)
             self.host.delete_box_skin()
             count = self.host.create_box_skin(pairs)
             if not self.host.capture_box_skin(pairs, count):

@@ -2,13 +2,13 @@
 
 将已授权 AdvancedSkeleton 安装中的绑定行为，逐步整理为分层 Python 工程。
 
-当前开发顺序是 **Maya-first、Blender-second**：先在 Maya 中完成行为重建、事务边界和宿主验证，再把已经稳定的业务合同迁移到 Blender。仓库不包含 AdvancedSkeleton 原始 MEL、模板、图标、场景或文档。
+当前开发顺序是 **Maya 忠实复刻 → 行为不变的性能/架构优化 → Blender 迁移**：先在 Maya 中完成原版逻辑、事务边界和宿主验证，冻结绑定行为后优化查询、计算与资源管理，再迁移完整 Body/Face 框架。优化不得改变绑定参数、权重规则或动画语义。仓库不包含 AdvancedSkeleton 原始 MEL、模板、图标、场景或文档。
 
 ![AdvancedSkeleton Python 重构的分层架构与当前阶段](docs/media/readme-overview.svg)
 
 > 包版本：`v0.96.0` · Windows · Maya 2024 standalone · Python 3.10 / 3.14
 >
-> Blender 5.2 的早期可行性代码已从当前产品包移除；第二阶段尚未开始。
+> Blender 5.2 的早期可行性代码已从当前产品包移除；正式迁移属于第三阶段，尚未开始。
 
 ## 当前版本
 
@@ -157,7 +157,7 @@ docs/                   架构、路线、调研与阶段说明
 - 生产资产的广泛拓扑兼容、外部目标网格版本管理与完整旧流程替代审计；
 - 面部自动解剖标记定位、复杂表面的语义对应与自动配准、骨骼与曲线混合求解；
 - 动捕与 FBX 在更广外部曲线条件下的兼容性，以及任意子帧连续误差验收；
-- Blender 第二阶段的正式功能迁移。
+- Maya 复刻确认后的行为不变优化，以及第三阶段的完整 Blender Body/Face 迁移。
 
 ## 文档
 

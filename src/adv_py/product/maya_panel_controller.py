@@ -1782,6 +1782,13 @@ class MayaPanelController:
 
         DeleteMuscular(MayaMuscularHost(namespace)).execute()
 
+    def fit_geometry_update(self, namespace: str, *, visible=True,
+                            geometry_type='boxes', gap=None) -> int:
+        from adv_py.adapters.maya_fit_geometry import MayaFitGeometryHost
+        from adv_py.application.fit_geometry import UpdateFitGeometry
+        return UpdateFitGeometry(MayaFitGeometryHost(namespace)).execute(
+            visible=visible,geometry_type=geometry_type,gap=gap)
+
     def geometry_poly_boxes_create(self, namespace: str) -> int:
         from adv_py.adapters.maya_geometry_poly_boxes import MayaPolyBoxesHost
         from adv_py.application.geometry_poly_boxes import CreatePolyBoxes

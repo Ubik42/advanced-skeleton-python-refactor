@@ -782,6 +782,21 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("重采样 Fit 关节链", self._resample_fit))
             form.addRow(self._button("创建／移除非对称 Fit 关节",
                                       self._body_toggle_fit_non_symmetry))
+            self.fit_geometry_visible=QtWidgets.QCheckBox('显示几何')
+            self.fit_geometry_visible.setChecked(False)
+            self.fit_geometry_type=QtWidgets.QComboBox()
+            for label,value in (('圆柱','cylinders'),('盒体','boxes'),('球体','spheres'),('骨形','bones')):
+                self.fit_geometry_type.addItem(label,value)
+            self.fit_geometry_gap=QtWidgets.QDoubleSpinBox()
+            self.fit_geometry_gap.setRange(.01,1.)
+            self.fit_geometry_gap.setSingleStep(.05)
+            self.fit_geometry_gap.setValue(.75)
+            geometry_row=QtWidgets.QHBoxLayout()
+            geometry_row.addWidget(self.fit_geometry_visible)
+            geometry_row.addWidget(self.fit_geometry_type)
+            geometry_row.addWidget(self.fit_geometry_gap)
+            geometry_row.addWidget(self._button('更新显示',self._fit_geometry_update))
+            form.addRow('几何显示／间距',geometry_row)
             stack.addWidget(group)
 
             self.spine_segments = QtWidgets.QSpinBox()
@@ -2923,6 +2938,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.fit_metadata_value.text(),
                 remove=self.fit_metadata_remove.isChecked())
             return f"已更新 {count} 项 Fit 元数据"
+
+        def _fit_geometry_update(self):
+            count=self.controller.fit_geometry_update(self._namespace(),
+                visible=self.fit_geometry_visible.isChecked(),
+                geometry_type=self.fit_geometry_type.currentData(),
+                gap=self.fit_geometry_gap.value())
+            return f'Fit 几何显示已更新：{count} 个骨段'
 
         def _orient_fit(self):
             selections = []

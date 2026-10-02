@@ -117,7 +117,7 @@ class MayaCharacterCommands:
         self.raw=commands
         if commands.namespace(query=True,relativeNames=True):
             raise CharacterRegistryError('角色适配要求 Maya relativeNames 关闭')
-        if namespace and not commands.namespace(exists=namespace):
+        if namespace and not commands.namespace(exists=':'+namespace):
             raise CharacterRegistryError('角色命名空间不存在：'+namespace)
 
     def _map(self,value,fn):

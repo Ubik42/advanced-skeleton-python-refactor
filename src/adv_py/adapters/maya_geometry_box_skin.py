@@ -34,64 +34,77 @@ class MayaBoxSkinHost(MayaPolyBoxesHost):
             raise ValueError("BoxSkin 临时采样节点名称已占用")
 
     def create_box_skin(self, pairs: tuple[BoxSkinPair, ...]) -> int:
-        c = self.cmds
-        layer = c.createDisplayLayer(name=self._name("BoxSkin"), empty=True)
-        c.setAttr(layer + ".color", 3)
-        c.setAttr(layer + ".displayType", 2)
-        group = c.createNode("transform", name=self._name("BoxSkinGeometry"),
-                             parent=self._name("Geometry"))
-        boxes_layer = self._name("PolyBoxes")
-        if c.objExists(boxes_layer):
-            c.setAttr(boxes_layer + ".visibility", 0)
-        copies = []
-        samples = []
-        for index, pair in enumerate(pairs):
-            source = self._name(pair.box)
-            if not c.objExists(source):
-                raise ValueError("BoxSkin 来源盒体已丢失：" + pair.box)
-            world = c.xform(source, query=True, worldSpace=True, matrix=True)
-            copy = c.duplicate(source, name=self._name(
-                f"AdvPy_BoxSkinPiece{index}"), returnRootsOnly=True)[0]
-            c.xform(copy, worldSpace=True, matrix=world)
-            copy = c.parent(copy, group)[0]
-            c.scale(0.95, 1, 1, copy, relative=True)
+        c=self.cmds
+        layer=c.createDisplayLayer(name=self._name('BoxSkin'),empty=True)
+        c.setAttr(layer+'.color',3);c.setAttr(layer+'.displayType',2)
+        group=c.createNode('transform',name=self._name('BoxSkinGeometry'),parent=self._name('Geometry'))
+        boxes_layer=self._name('PolyBoxes')
+        c.setAttr(boxes_layer+'.visibility',0)
+        # Source traverses every mesh Shape, including intermediate originals.
+        # A box with two Shapes is intentionally scaled twice, not once per
+        # transform; retaining this detail also preserves vertex sampling.
+        scale_sources=tuple(c.listRelatives(shape,parent=True,fullPath=True)[0]
+            for shape in c.listRelatives(self._name('BoxesGeometry'),
+                allDescendents=True,type='mesh',fullPath=True) or [])
+        for box in scale_sources:
+            try:c.scale(.95,1,1,box,relative=True)
+            except RuntimeError:pass  # native catchQuiet on authored scales
+        copies=[]
+        for pair in pairs:
+            box=self._name(pair.box)
+            copy=c.duplicate(box,name=self._name(pair.box+'BoxSkin'),returnRootsOnly=True)[0]
+            for attr in ('translate','rotate','scale'):
+                for axis in 'XYZ':c.setAttr(copy+'.'+attr+axis,lock=False,keyable=True)
+            c.setAttr(copy+'.visibility',lock=False)
+            copy=c.parent(copy,group)[0]
+            c.editDisplayLayerMembers(layer,copy,noRecurse=True)
+            bind_shape=c.listRelatives(copy,shapes=True,noIntermediate=True,type='mesh',fullPath=True)[0]
+            c.skinCluster(self._name(pair.joint),bind_shape,toSelectedBones=True,
+                maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False,
+                name=self._name(pair.box+'SkinCluster'))
+            c.refresh()
             copies.append(copy)
-            for vertex in c.ls(copy + ".vtx[*]", flatten=True) or ():
-                samples.append((pair.joint, tuple(c.xform(
-                    vertex, query=True, worldSpace=True, translation=True))))
-        mesh = c.polyUnite(*copies, constructionHistory=False,
-                           mergeUVSets=False,
-                           name=self._name("BoxSkinMesh"))[0]
-        c.delete(copies)
-        mesh = c.parent(mesh, group)[0]
-        c.editDisplayLayerMembers(layer, mesh, noRecurse=True)
-        deform = self._name("DeformSet")
-        influences = tuple(sorted(self._name(self._leaf(node)) for node in
-                           c.sets(deform, query=True) or ()
-                           if c.objExists(node) and c.nodeType(node) == "joint"))
-        skin = c.skinCluster(influences, mesh, toSelectedBones=True,
-                             maximumInfluences=3, dropoffRate=4,
-                             removeUnusedInfluence=False,
-                             name=self._name("BoxSkinMeshSkinCluster"))[0]
-        shape = (c.listRelatives(mesh, shapes=True,
-                                 noIntermediate=True, type="mesh") or [])[0]
-        sampler = c.createNode("closestPointOnMesh", name=self._name(
-            "AdvPy_BoxSkinClosestSampler"))
+        # Source duplicates the already-bound individual meshes before
+        # uniting them. The resulting mesh stays at world until sampling.
+        c.select(c.listRelatives(group,children=True),replace=True)
+        snapshots=c.duplicate()
+        mesh=c.polyUnite(constructionHistory=False,mergeUVSets=False,
+                         name=self._name('BoxSkinMesh'))[0]
+        c.delete(snapshots)
+        c.editDisplayLayerMembers(layer,mesh,noRecurse=True)
+        deform=self._name('DeformSet')
+        c.select(mesh,replace=True);c.select(deform,add=True)
+        influences=tuple(c.ls(selection=True,type='joint'))
+        bind_shape=c.listRelatives(mesh,shapes=True,noIntermediate=True,type='mesh',fullPath=True)[0]
+        skin=c.skinCluster(influences,bind_shape,toSelectedBones=True,
+            maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False,
+            name=self._name('BoxSkinMeshSkinCluster'))[0]
+        shape=c.listRelatives(mesh,shapes=True,noIntermediate=True,type='mesh')[0]
+        sampler=c.createNode('closestPointOnMesh',name=self._name('AdvPy_BoxSkinClosestSampler'))
+        expected={}
         try:
-            c.connectAttr(shape + ".worldMesh[0]", sampler + ".inMesh")
-            expected = {}
-            for joint, position in samples:
-                c.setAttr(sampler + ".inPosition", *position,
-                          type="double3")
-                vertex = int(c.getAttr(sampler + ".closestVertexIndex"))
-                c.skinPercent(skin, f"{mesh}.vtx[{vertex}]",
-                              transformValue=(self._name(joint), 1.0),
-                              normalize=True)
-                expected[vertex] = joint
-            self._expected_weights = expected
+            c.connectAttr(shape+'.outMesh',sampler+'.inMesh')
+            for pair in pairs:
+                source=self._name(pair.box)
+                for index in range(int(c.polyEvaluate(source,vertex=True))):
+                    position=c.xform(source+f'.vtx[{index}]',query=True,worldSpace=True,translation=True)
+                    c.setAttr(sampler+'.inPosition',*position,type='double3')
+                    vertex=int(c.getAttr(sampler+'.closestVertexIndex'))
+                    c.skinPercent(skin,mesh+f'.vtx[{vertex}]',
+                                  transformValue=(self._name(pair.joint),1.))
+                    expected[vertex]=pair.joint
+            self._expected_weights=expected
         finally:
             c.delete(sampler)
-        return int(c.polyEvaluate(mesh, vertex=True))
+        c.delete(copies)
+        c.parent(mesh,group)
+        # Do not replace the source's rounded reciprocal with 1/.95: its
+        # small resulting scale drift is part of the original operation.
+        for box in scale_sources:
+            try:c.scale(1.052632,1,1,box,relative=True)
+            except RuntimeError:pass
+        c.select(clear=True)
+        return int(c.polyEvaluate(mesh,vertex=True))
 
     def capture_box_skin(self, pairs: tuple[BoxSkinPair, ...],
                          vertex_count: int) -> bool:

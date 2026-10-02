@@ -23,6 +23,7 @@ class PolyBoxSource:
     parts: int
     floor_foot: bool = False
     heel: Vec3 | None = None
+    existing_part_joints: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,17 +41,14 @@ class PolyBoxSpec:
 
 
 def plan_poly_boxes(sources: tuple[PolyBoxSource, ...]) -> tuple[PolyBoxSpec, ...]:
-    if not sources:
-        raise ValueError("当前 Body 没有可生成 PolyBoxes 的 Fit 骨段")
     boxes = []
     for source in sources:
         if (source.side not in ("_M", "_R", "_L")
-                or not source.stem or source.parts < 1
-                or dist(source.start, source.end) < 1e-5):
+                or not source.stem or source.parts < 1):
             raise ValueError("PolyBoxes Fit 骨段无效：" + source.stem)
         widths = (source.start_front, source.start_width,
                   source.end_front, source.end_width)
-        if any(not isfinite(value) or value <= 0 for value in widths):
+        if any(not isfinite(value) or value < 0 for value in widths):
             raise ValueError("PolyBoxes Fit 体积参数无效：" + source.stem)
         for index in range(source.parts):
             a = index / source.parts
@@ -64,9 +62,12 @@ def plan_poly_boxes(sources: tuple[PolyBoxSource, ...]) -> tuple[PolyBoxSpec, ..
             width_a = source.start_width * (1 - a) + source.end_width * a
             width_b = source.start_width * (1 - b) + source.end_width * b
             stem = source.stem + ("Part" + str(index) if index else "")
+            driver = stem + source.side if index else source.start_joint
+            if source.existing_part_joints is not None and driver not in source.existing_part_joints:
+                continue
             boxes.append(PolyBoxSpec(
                 stem + "Box" + source.side,
-                (stem + source.side if index else source.start_joint),
+                driver,
                 start, end, front_a, width_a, front_b, width_b,
                 source.floor_foot and index == 0,
                 source.heel if index == 0 else None))
