@@ -81,6 +81,25 @@ class MayaPreparationObjectsHost:
     def read_objects(self, role: PreparationObjectRole) -> tuple[str, ...]:
         return tuple(self._resolve_name(name) for name in self._stored_names(role))
 
+    def existing_objects(self, role: PreparationObjectRole) -> tuple[str, ...]:
+        """Surviving model records for finishing an already active guide edit.
+
+        Starting a new operation still uses strict read_objects. The original
+        guide finish catches missing visibility targets, and does not read the
+        eye fields at all. A deleted optional model must not trap the user in
+        AutoPlacing or prevent restoring the Fit joints.
+        """
+        existing = []
+        for name in self._stored_names(role):
+            matches = tuple(self.cmds.ls(name, long=True) or ())
+            if not matches:
+                continue
+            if len(matches) != 1:
+                raise ValueError("准备模型名称不唯一：" + name)
+            if self.cmds.objExists(matches[0]):
+                existing.append(matches[0])
+        return tuple(existing)
+
     def write_objects(self, role: PreparationObjectRole,
                       objects: tuple[str, ...]) -> None:
         cmds = self.cmds

@@ -1,5 +1,4 @@
 """ADV 6.925 AutoPlace phase orchestration, MEL 51771–52973."""
-from types import SimpleNamespace
 from adv_py.core.fit_auto_place import FIT_AUTO_PLACE_AXES,FIT_AUTO_PLACE_GROUPS,FitAutoPlaceResult
 from adv_py.core.fit_auto_scale import plan_fit_auto_scale
 from .maya_fit_auto_scale import capture,apply
@@ -11,6 +10,7 @@ from .maya_fit_auto_place_thumb import detect_thumb
 from .maya_fit_auto_place_loft import build_loft
 from .maya_fit_auto_place_positions import from_scan_curves,set_fat
 from .maya_fit_auto_place_guides import finish
+from .maya_fit_auto_place_state import FitAutoPlaceScanState
 
 
 def run(host,container,skin,all_objects,right_eye):
@@ -32,6 +32,7 @@ def _run(host,container,skin,all_objects,right_eye):
     before=capture(host,container,skin,all_objects,right_eye);plan=plan_fit_auto_scale(before)
     host._transaction_changed=True
     c.createNode('transform',name='AutoPlacing',skipSelect=True)
+    c.currentTime(1)
     for name in FIT_AUTO_PLACE_GROUPS:c.createNode('transform',name=name,parent='AutoPlacing',skipSelect=True)
     c.createNode('transform',name='asFitPivotsFingers',parent='asFitPivots',skipSelect=True)
     c.createNode('transform',name='asFitAnchors',parent='asFitPivots',skipSelect=True)
@@ -67,14 +68,8 @@ def _run(host,container,skin,all_objects,right_eye):
     shape=c.rename(shape,'asFitScanCurveShape')
     c.setAttr(shape+'.overrideEnabled',True);c.setAttr(shape+'.overrideColor',14)
     c.parent(scan,'asFitScanCurves',absolute=True)
-    s=SimpleNamespace(host=host,c=c,axis='',index=0,minimum_y=minimum[1],minimum_x=minimum[0],
-        minimum_z=minimum[2],maximum_z=maximum[2],maximum_y=maximum[1],template=template,
-        orbit_step=.2,hits=0,previous_hits=0,width=0.,previous_width=0.,max_width=0.,
-        max_z_width=0.,y_at_max_z=0.,hit_crotch=False,crotch_index=0,crotch_width=0.,
-        hit_armpit=False,armpit_width=0.,hit_neck=False,hit_head=False,hit_ankle=False,
-        hit_arm_tip=False,hit_shoulder=False,arm_straight=False,first_split_x=0.,
-        four_fingers=False,finger_grow_failed=False,max_finger_width=0.,has_ncloth=False,
-        hit_thumb=False,nucleus='',stop=False,break_axis=False,step_y=0.,step_z=0.,direction=(0,0,1))
+    s=FitAutoPlaceScanState(host=host,c=c,minimum_y=minimum[1],minimum_x=minimum[0],
+        minimum_z=minimum[2],maximum_z=maximum[2],maximum_y=maximum[1],template=template)
     def orbit_camera():
         if raw.getModifiers()!=4:return
         c.rotate(0,s.orbit_step,0,'asFitOrbitA',relative=True)
@@ -109,8 +104,9 @@ def _run(host,container,skin,all_objects,right_eye):
                 scale=.5 if s.index==99 else 1.
                 c.move(0,s.step_y*scale,s.step_z*scale,scan,relative=True,objectSpace=True,worldSpaceDistance=True)
                 s.project_on='CombinedSkinUpper_R' if axis in ('y','yElbowStraight') and c.objExists('CombinedSkinUpper_R') else 'CombinedSkin'
-                s.previous_hits=s.hits;project(s,s.project_on);c.refresh()
+                s.previous_hits=s.hits;project(s,s.project_on,refresh=True)
                 center=projected_curve(host,'asFitScanPolyProjectionCurves','center')
+                s.center_curve=center
                 s.previous_width=s.width
                 s.bound_min=list(c.getAttr(center+'.boundingBoxMin')[0]);s.bound_max=list(c.getAttr(center+'.boundingBoxMax')[0])
                 s.width=s.bound_max[0]-s.bound_min[0] if axis.startswith('z') else s.bound_max[2]-s.bound_min[2]

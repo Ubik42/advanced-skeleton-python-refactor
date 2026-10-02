@@ -43,7 +43,9 @@ def detect_thumb(s):
     point=tuple((x+y)/2. for x,y in zip(a,b))
     c.xform(base,worldSpace=True,translation=point);c.xform(root,worldSpace=True,translation=point)
     c.aimConstraint(tip,root,offset=(0,0,0),weight=1.,aimVector=(1,0,0),upVector=(0,1,0),worldUpType='vector',worldUpVector=(0,1,0))
-    maximum_x=0.
+    # Source posB still holds the branch bbox sample until a positive local
+    # X vertex wins. Preserve that fallback, rather than the averaged base.
+    maximum_x=0.;point=b
     for vertex in selected:
         p=c.xform(vertex,query=True,worldSpace=True,translation=True)
         c.xform(sampler,worldSpace=True,translation=p);local=c.getAttr(sampler+'.translate')[0]

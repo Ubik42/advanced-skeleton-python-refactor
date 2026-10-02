@@ -684,8 +684,8 @@ class MayaPanelController:
         if cmds.objExists(host.scene_address('AutoPlacing')):
             from adv_py.application.fit_auto_place import FinishFitAutoPlace
             return FinishFitAutoPlace(host).apply(container,
-                skin=records.read_objects(PreparationObjectRole.SKIN),
-                all_objects=records.read_objects(PreparationObjectRole.ALL))
+                skin=records.existing_objects(PreparationObjectRole.SKIN),
+                all_objects=records.existing_objects(PreparationObjectRole.ALL))
         selected=cmds.ls(selection=True,long=True) or []
         try:
             # Original asFitAutoPlace checks every Skin independently before
@@ -710,17 +710,21 @@ class MayaPanelController:
         from adv_py.adapters.maya_preparation_objects import MayaPreparationObjectsHost
         from adv_py.core.preparation_objects import PreparationObjectRole
         records=MayaPreparationObjectsHost(namespace);host=self._host(namespace)
+        if cmds.objExists(host.scene_address('AutoPlacing')):
+            from adv_py.application.fit_auto_place import FinishFitAutoPlace
+            return FinishFitAutoPlace(host).apply(container,
+                skin=records.existing_objects(PreparationObjectRole.SKIN),
+                all_objects=records.existing_objects(PreparationObjectRole.ALL))
         skin=records.read_objects(PreparationObjectRole.SKIN)
         all_objects=records.read_objects(PreparationObjectRole.ALL)
         eye=records.read_objects(PreparationObjectRole.RIGHT_EYE)
-        if not cmds.objExists(host.scene_address('AutoPlacing')):
-            selected=cmds.ls(selection=True,long=True) or []
-            try:
-                for mesh in skin:
-                    cmds.select(mesh,replace=True)
-                    self.model_check(interactive=interactive,skip_symmetry=True)
-            finally:
-                cmds.select(selected,replace=True) if selected else cmds.select(clear=True)
+        selected=cmds.ls(selection=True,long=True) or []
+        try:
+            for mesh in skin:
+                cmds.select(mesh,replace=True)
+                self.model_check(interactive=interactive,skip_symmetry=True)
+        finally:
+            cmds.select(selected,replace=True) if selected else cmds.select(clear=True)
         identity=getattr(host._cmds,'identity',None)
         def local(nodes):return tuple(identity.to_local(node) for node in nodes) if identity else nodes
         return AutoPlaceFit(host).apply(container,skin=local(skin),all_objects=local(all_objects),right_eye=local(eye))

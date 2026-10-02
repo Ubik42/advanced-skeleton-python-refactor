@@ -8,8 +8,19 @@ def cast(components,destination):
 
 def faces(c,contained=False):
     selected=c.ls(selection=True) or []
-    result=c.polyListComponentConversion(selected,toFace=True,internal=contained) or []
-    c.select(result,replace=True) if result else c.select(clear=True)
+    result=c.polyListComponentConversion(selected,fromVertex=True,fromEdge=True,
+        fromUV=True,fromVertexFace=True,toFace=True,internal=contained) or []
+    # PolySelectConvert, called by the two stock conversion commands, changes
+    # the component mask before replacing the selection. Retain that order:
+    # Maya's active component buffers also govern subsequent topology growth.
+    if result:
+        raw=getattr(c,'raw',c)
+        object_mode=raw.selectMode(query=True,object=True)
+        if raw.selectPref(query=True,selectTypeChangeAffectsActive=True):
+            flags={'objectComponent':True} if object_mode else {}
+            raw.selectType(polymeshFace=True,**flags)
+        if object_mode:raw.hilite()
+        c.select(result,replace=True)
     return c.ls(selection=True) or []
 
 

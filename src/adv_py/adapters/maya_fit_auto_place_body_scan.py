@@ -8,7 +8,11 @@ def body_scan(s):
     def value(plug):return c.getAttr(plug)
     def set_y(value):c.setAttr('asFitScanCurve.translateY',value)
     if axis=='z' and not s.hit_crotch and abs(s.center_x)<.001*s.maximum_y and s.bound_max[0]>.001:
-        save('Crotch');s.crotch_width=s.bound_max[0]-s.bound_min[0]
+        save('Crotch')
+        # Source re-reads the chosen center curve here. The overlap-expanded
+        # width above is solely for armpit detection, not this root offset.
+        s.crotch_width=(c.getAttr(s.center_curve+'.boundingBoxMaxX')-
+                        c.getAttr(s.center_curve+'.boundingBoxMinX'))
         c.move(0,s.crotch_width/4.,0,'asFitScanCurve',relative=True,objectSpace=True,worldSpaceDistance=True)
         save('Root','CombinedSkinLower_M',keep=True)
         c.move(0,-s.crotch_width/8.,0,'asFitScanCurve',relative=True,objectSpace=True,worldSpaceDistance=True)

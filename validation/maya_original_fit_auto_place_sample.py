@@ -39,6 +39,7 @@ def main():
         try:mel.eval('asFitAutoPlace;');report['native_returned']=True
         except Exception:report['native_returned']=False;report['native_error']=traceback.format_exc()
         report['native']=snapshot()
+        c.file(rename=str(OUTPUT/'native-checkpoint.mb'));c.file(save=True,type='mayaBinary',force=True)
         (OUTPUT/'parity.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
         skin=fixture()
         try:

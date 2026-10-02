@@ -6,15 +6,19 @@ from .maya_fit_auto_place_mesh import faces,invert,cast
 from .maya_fit_auto_place_guides import stock_wrap
 
 
-def project(s,skin,automatic=False):
+def project(s,skin,automatic=False,*,refresh=False,read_hits=True):
     c=s.c
     if c.objExists('asFitScanPolyProjectionCurves'):c.delete('asFitScanPolyProjectionCurves')
     result=c.polyProjectCurve('asFitScanCurve',skin,constructionHistory=True,direction=s.direction,
                              pointsOnEdges=False,curveSamples=50,automatic=automatic)
     c.rename(result[0],'asFitScanPolyProjectionCurves')
     c.parent('asFitScanPolyProjectionCurves','asFitScanCurves',absolute=True)
-    s.projected=c.listRelatives('asFitScanPolyProjectionCurves',children=True,type='transform') or []
-    s.hits=len(c.listRelatives(s.projected,children=True) or []) if s.projected else 0
+    # Source main loop refreshes before querying the generated children.
+    # A history projection can change its output count during evaluation.
+    if refresh:c.refresh()
+    if read_hits:
+        s.projected=c.listRelatives('asFitScanPolyProjectionCurves',children=True,type='transform') or []
+        s.hits=len(c.listRelatives(s.projected,children=True) or []) if s.projected else 0
 
 
 def detect_fingers(s):
@@ -30,7 +34,9 @@ def detect_fingers(s):
         hits=len(c.listRelatives(projection,children=True) or [])
         c.delete(agent,projection)
         if hits!=4:break
-    project(s,'CombinedSkinUpper_M',True)
+    # The source automatic re-projection does not overwrite numHits / the
+    # projectedCurves array used by the next outer iteration.
+    project(s,'CombinedSkinUpper_M',True,read_hits=False)
     for index,finger in enumerate(FIT_AUTO_PLACE_FINGERS):
         # Failed growth can retry on another scan slice. Keep one editable
         # curve / pair of pivots per finger, rather than letting Maya create
@@ -66,19 +72,19 @@ def detect_fingers(s):
         point=c.xform(query=True,worldSpace=True,translation=True)[:3]
         tip=c.createNode('transform',name='asFitPivot'+finger+'Finger4',parent='asFitPivotsFingers',skipSelect=True)
         c.xform(tip,worldSpace=True,translation=point);c.select(selected,replace=True)
-        points=[];average_diameter=0.;previous_box=(0,)*6
+        points=[]
         for index in range(199):
             before=c.ls(selection=True,flatten=True) or [];c.polySelectConstraint(pp=1,type=1)
             grown=c.ls(selection=True,flatten=True) or [];c.select(before,deselect=True)
             if not c.ls(selection=True):s.finger_grow_failed=True;break
             box=c.xform(query=True,worldSpace=True,boundingBox=True);diameter=(box[5]-box[2])/2.
-            if index==4:average_diameter=diameter
-            knuckle=index>3 and diameter>average_diameter*2.
+            if index==4:s.average_finger_diameter=diameter
+            knuckle=index>3 and diameter>s.average_finger_diameter*2.
             if knuckle:
                 node=c.createNode('transform',name='asFitPivot'+finger+'Finger1',parent='asFitPivotsFingers',skipSelect=True)
-                c.xform(node,worldSpace=True,translation=tuple((previous_box[i]+previous_box[i+3])/2. for i in range(3)))
+                c.xform(node,worldSpace=True,translation=tuple((s.previous_finger_box[i]+s.previous_finger_box[i+3])/2. for i in range(3)))
             else:points.append(tuple((box[i]+box[i+3])/2. for i in range(3)))
-            previous_box=box;c.select(grown,replace=True)
+            s.previous_finger_box=box;c.select(grown,replace=True)
             if knuckle:break
         curve=c.curve(degree=1,name='FingerCurve'+finger,point=points)
         c.parent(curve,'asFitPivotsFingers',absolute=True)
@@ -95,6 +101,13 @@ def stock_selected(host,command):
 
 def straighten_fingers(s):
     if not s.four_fingers or s.has_ncloth:return
+    from .maya_fit_auto_place_nucleus import temporary_nucleus
+    with temporary_nucleus(s.host) as nucleus:
+        s.nucleus=nucleus
+        _straighten_fingers(s)
+
+
+def _straighten_fingers(s):
     c=s.c;host=s.host;raw=getattr(c,'raw',c)
     def pos(node):return c.xform(node,query=True,worldSpace=True,translation=True)
     converge=c.createNode('transform',name='fingersConverge',parent='asFitPivots',skipSelect=True)
