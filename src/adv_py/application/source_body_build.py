@@ -634,6 +634,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     if generic_fk_policy is not None and generic_fk_policy.compensated_controls is not None:
         compensation = tuple(spec for spec in compensation
                              if spec.control_path in generic_fk_policy.compensated_controls)
+    if options.use_offset_parent_matrix:
+        compensation=tuple(replace(spec,independent_parent=True,
+            main_scale_source_path=global_control.control_path) for spec in compensation)
     BuildBodyFkScaleCompensation(host).apply(compensation)
     fk, limbs, inbetween_segments, solver_mapping = build_source_body_inbetween(
         host, build, part_result, fk, limbs, splines,
@@ -707,6 +710,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.create_source_fk_body_matrices(body,fk,excluded=excluded|frozenset(
             joint for spline in splines for joint in spline.body_joints),
             include_root=generic_fk_policy is None or generic_fk_policy.source_root_body_matrix is not False)
+    if options.use_offset_parent_matrix:
+        host.create_source_inbetween_fk_matrices(fk,inbetween_segments,global_control,metadata,build.symmetry.instances)
+        host.create_source_spline_part_matrices(body,splines,inbetween_segments)
     # MEL selects initial IK by the actual end label containing Foot;
     # a Hip/Leg system ending in Toes alone keeps its default FK mode.
     initial_ik = tuple(limb for limb in limbs

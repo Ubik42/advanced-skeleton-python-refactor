@@ -77,6 +77,29 @@ def create(host,spec):
         outputs=((matrix+'.matrixSum',joint+'.offsetParentMatrix'),)
         graph.connect(*outputs[0])
         graph.connect(scale+'.output',offset+'.scale')
+        # MEL 83936 uses the complete parent-relative matrix, drops scale
+        # and preserves shear. A parentConstraint discards that shear.
+        follow=guide+'MicroFollow'
+        if not c.objExists(follow) or c.nodeType(follow)!='parentConstraint':
+            raise CharacterRegistryError('来源 Bendy MicroOffset 原跟随缺失')
+        c.delete(follow)
+        receiver=host._resolve_connected_node(offset)
+        micro_parent=(c.listRelatives(receiver,parent=True,fullPath=True) or [None])[0]
+        micro_matrix=matrix+'MicroMM';micro_pick=matrix+'MicroPM'
+        micro_nodes=(SourceRpNode(micro_matrix,'multMatrix',connections=((guide+'.worldMatrix[0]','matrixIn[0]'),
+            (micro_parent+'.worldInverseMatrix[0]','matrixIn[1]'))),
+            SourceRpNode(micro_pick,'pickMatrix',(('useScale',0.),('useShear',1.)),((micro_matrix+'.matrixSum','inputMatrix'),)))
+        for node in micro_nodes:
+            c.createNode(node.kind,name=node.name,skipSelect=True)
+            for attr,value in node.values:c.setAttr(node.name+'.'+attr,value)
+        for node in micro_nodes:
+            for incoming,attr in node.connections:c.connectAttr(incoming,node.name+'.'+attr)
+        for attr in ('translate','rotate'):c.setAttr(receiver+'.'+attr,0.,0.,0.,type='double3')
+        micro_outputs=((micro_pick+'.outputMatrix',receiver+'.offsetParentMatrix'),)
+        c.connectAttr(*micro_outputs[0])
+        micro_plan=SourceBodyMatrixPlan(receiver,micro_nodes,micro_outputs)
+        c.addAttr(receiver,longName='advPySourceBendyMicroMatrix',dataType='string')
+        c.setAttr(receiver+'.advPySourceBendyMicroMatrix',canonical(asdict(micro_plan)),type='string',lock=True)
         # MEL retains ScaleBlend on Part local scale after replacing its OPM
         # with MicroX. Start Body local scale is reset. Both layers are needed.
         local_scale=()
@@ -157,5 +180,22 @@ def audit(host,spec):
 
 def audit_registered(host,registration):
     for node in registration.nodes:
+        if host._cmds.objExists(node.path+'.advPySourceBendyMicroMatrix') and not audit_micro(host,node.path):
+            raise CharacterRegistryError('来源 Bendy MicroOffset 原生矩阵变化')
         if node.node_type=='joint' and host._cmds.objExists(node.path+'.advPySourceBendyMatrix'):
             audit_joint(host,node.path)
+
+
+def audit_micro(host,offset):
+    c=host._cmds;plug=offset+'.advPySourceBendyMicroMatrix'
+    if not c.objExists(plug) or not c.getAttr(plug,lock=True):
+        return False
+    plan=decode_source_body_matrix(c.getAttr(plug))
+    if plan.body!=host._resolve_connected_node(offset):return False
+    for node in plan.nodes:
+        if not c.objExists(node.name) or c.nodeType(node.name)!=node.kind:return False
+        for attr,value in node.values:
+            if abs(float(c.getAttr(node.name+'.'+attr))-value)>1e-8:return False
+        for incoming,attr in node.connections:
+            if not c.isConnected(incoming,node.name+'.'+attr):return False
+    return all(c.isConnected(incoming,target) for incoming,target in plan.outputs)

@@ -2089,6 +2089,13 @@ class MayaFitBendyMixin:
                               offset + ".scale")
         self._transaction_changed = True
 
+    def _capture_source_micro_follow(self,offset,guide):
+        if self._cmds.objExists(offset+".advPySourceBendyMicroMatrix"):
+            from .maya_source_bendy_body_matrix import audit_micro
+            return audit_micro(self,offset)
+        return (self._cmds.objExists(guide+"MicroFollow")
+                and self._cmds.nodeType(guide+"MicroFollow")=="parentConstraint")
+
     def _capture_fit_bendy_micro_aim(
             self, spec: FitBendyChainSpec, index: int,
             guide: str, up_matrix: str) -> bool:
@@ -2233,9 +2240,7 @@ class MayaFitBendyMixin:
                         and not c.isConnected(scale_add + ".output3D", offset + ".scale", ignoreUnitConversion=True))
                     or not self._capture_fit_bendy_micro_aim(
                         spec, index, guide, third)
-                    or not c.objExists(guide + "MicroFollow")
-                    or c.nodeType(guide + "MicroFollow")
-                    != "parentConstraint"
+                    or not self._capture_source_micro_follow(offset,guide)
                     or not c.isConnected(master + ".microVis", offset + ".visibility", ignoreUnitConversion=True)):
                 return False
             if spec.micro_yz_scale_only:

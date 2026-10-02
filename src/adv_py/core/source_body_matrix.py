@@ -95,7 +95,7 @@ def decode_source_body_matrix(text):
         raise CharacterRegistryError('来源 Body 矩阵图规模无效')
     for row in raw['nodes']:
         exact(row,('name','kind','values','connections'))
-        if row['kind'] not in ('multMatrix','composeMatrix','unitConversion','blendMatrix','blendColors','multiplyDivide'):
+        if row['kind'] not in ('multMatrix','composeMatrix','unitConversion','blendMatrix','blendColors','multiplyDivide','pickMatrix','reverse','decomposeMatrix','addDoubleLinear'):
             raise CharacterRegistryError('来源 FK Body 矩阵节点类型无效')
         values=tuple((attribute(attr),finite(value)) for attr,value in row['values'])
         edges=tuple((plug(source),attribute(attr)) for source,attr in row['connections'])

@@ -22,7 +22,7 @@
 
 v0.96.0 加入躯干 / 颈头 FK、独立脊柱 IK/FK、双向姿态匹配、头部 / 手脚空间切换，以及不同脊柱段数角色的受控替换。调用方式见 [核心绑定架构](docs/核心绑定架构.md)，完整 Fit → Body → 控制 → 显式蒙皮入口见 [全身示例](examples/README.md)。当前仍是阶段版本，尚未完成 AdvancedSkeleton 全量复刻；主链未验收部分和剩余工作见[开发计划与当前缺口](docs/开发计划.md)。
 
-来源骨架构建的当前应用层编排已改为纯数据计划与宿主接口，输入形态与阶段边界见[来源骨架构建合同](docs/来源骨架构建合同.md)。当前来源 biped 主链已在 Maya 2024 验证 Skin、保存重开、FBX 和原位重建；最新 90 关节、30 组原版动态对照为 27 组通过，仍有三组差异。实际范围见 [RP 主图运行记录](docs/verification/source-rp-default-follow-current-maya.md)，下述早期数字保留为历史基线。
+来源骨架构建的当前应用层编排已改为纯数据计划与宿主接口，输入形态与阶段边界见[来源骨架构建合同](docs/来源骨架构建合同.md)。当前来源 biped 主链已在 Maya 2024 验证 Skin、保存重开、FBX 和原位重建；最新 90 关节、30 组原版动态对照为 28 组通过，仍有 Main 非均匀缩放与左臂 IK 两组差异。实际范围见 [来源矩阵补齐记录](docs/verification/source-inbetween-matrix-current-maya.md)，下述早期数字保留为历史基线。
 
 Maya 图形入口 `adv_py.product.maya_panel.show_panel()` 现按原版 AdvancedSkeleton 6.925 的顶层和子栏目顺序提供左侧折叠导航；已迁移操作从对应入口打开中文参数窗，其他栏目标明尚未实现。界面层级及真实 Maya 操作验收见 [Maya 可见界面验收](docs/Maya可见界面验收.md)。
 

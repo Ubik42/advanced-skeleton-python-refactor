@@ -10205,6 +10205,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_internal_ik_local import create
         create(self,spec)
 
+    def create_source_spline_part_matrices(self,body,splines,segments):
+        from .maya_source_spline_part_matrix import configure
+        configure(self,body,splines,segments)
+
+    def create_source_inbetween_fk_matrices(self,fk,segments,global_control,metadata,instances):
+        from .maya_source_inbetween_matrix import configure_fk
+        configure_fk(self,fk,segments,global_control,metadata,instances)
+
     def create_source_rp_follows(self,body,limbs,global_control,root,*,leg_aim=()):
         from .maya_source_rp_follow import create
         return create(self,body,limbs,global_control,root,leg_aim=leg_aim)

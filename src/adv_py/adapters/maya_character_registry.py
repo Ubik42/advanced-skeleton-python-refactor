@@ -1571,6 +1571,8 @@ class MayaCharacterRegistryMixin:
         audit_source_rp(self,plan)
         from .maya_source_rp_follow import audit as audit_source_rp_follow
         audit_source_rp_follow(self,plan)
+        from .maya_source_inbetween_matrix import audit_registered as audit_source_inbetween
+        audit_source_inbetween(self,plan)
         from .maya_source_body_matrix import audit_fk
         audit_fk(self,plan)
         from .maya_source_part_reference import audit_registered as audit_twist_references

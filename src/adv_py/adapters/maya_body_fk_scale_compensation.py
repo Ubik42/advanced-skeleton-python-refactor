@@ -132,7 +132,7 @@ class MayaBodyFkScaleCompensationMixin:
                 spec.scale_source_path + ".worldMatrix[0]")))
             local = tuple(bind_world * source_world.inverse())
         rotation_offset=None
-        if spec.use_offset_parent_matrix and not spec.independent_parent:
+        if spec.use_offset_parent_matrix:
             # MEL separates NoShear translation from FKMM bind rotation.
             # Applying bind rotation before removing shear changes the axes
             # under non-uniform parent scale (Cup/fingers and Spine).
@@ -175,10 +175,11 @@ class MayaBodyFkScaleCompensationMixin:
                           reverse + ".inputX")
             c.connectAttr(reverse + ".outputX",
                           main_scale + ".useScale")
+            c.setAttr(relative+".matrixIn[0]",*rotation_offset,type="matrix")
             c.connectAttr(main_scale + ".outputMatrix",
-                          relative + ".matrixIn[0]")
-            c.connectAttr(pick + ".outputMatrix",
                           relative + ".matrixIn[1]")
+            c.connectAttr(pick + ".outputMatrix",
+                          relative + ".matrixIn[2]")
             c.setAttr(offset + ".inheritsTransform", False)
         else:
             index=1 if rotation_offset is not None else 0
@@ -267,8 +268,8 @@ class MayaBodyFkScaleCompensationMixin:
                 (spec.inherit_scale_reverse_name + ".outputX",
                  spec.main_scale_pick_name + ".useScale"),
                 (spec.main_scale_pick_name + ".outputMatrix",
-                 relative + ".matrixIn[0]"),
-                (pick + ".outputMatrix", relative + ".matrixIn[1]"),
+                 relative + ".matrixIn[1]"),
+                (pick + ".outputMatrix", relative + ".matrixIn[2]"),
             )
         else:
             index=1 if spec.use_offset_parent_matrix else 0
