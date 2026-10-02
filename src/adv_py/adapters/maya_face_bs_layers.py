@@ -89,7 +89,7 @@ class MayaFaceBSLayersMixin:
         c.duplicate("TemplateLayer", name=layer + "Layer")
         result = []
         lookup = {self._original_bs_geo_tag(mesh, first_colon=True): mesh for mesh in source["all_head"]}
-        for child in c.listRelatives(layer + "Layer", children=True, type="transform") or []:
+        for child in c.listRelatives(layer + "Layer", children=True, type="transform", fullPath=True) or []:
             tag = self._original_restore_leaf(child).replace("TemplateLayer_", "", 1)
             renamed = c.rename(child, layer + "Layer_" + tag)
             shape = c.listRelatives("FaceJointsLayer_" + tag, shapes=True)[0]

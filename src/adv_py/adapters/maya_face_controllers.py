@@ -162,6 +162,15 @@ class MayaFaceControllersMixin:
         plan=plan_body_parent_constraint(replace(source,force_mult_matrix=True,
             use_offset_parent_matrix=self.face_use_offset_parent_matrix()))
         self.preflight_parent_constraint(plan); self.create_parent_constraint(plan)
+        # asParentConstraint splits at the last underscore even when the
+        # suffix is RTGXform/LTGXform/MTGXform rather than a bare side.
+        # Mixed later reconnects these exact original matrix node names.
+        # The shared Body planner only recognizes bare R/L/M suffixes.
+        stem, separator, suffix = control.rpartition("_")
+        if separator and plan.mult_matrix:
+            source_matrix = stem + "MM_" + suffix + "TGXform"
+            if plan.mult_matrix != source_matrix:
+                c.rename(plan.mult_matrix, source_matrix)
         c.connectAttr(transform+(".offsetParentMatrix" if self.face_use_offset_parent_matrix() else ".matrix"),
                       geometry+".transform",force=True)
         c.setAttr(geometry+".invertTransform",True)

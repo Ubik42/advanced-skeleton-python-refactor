@@ -93,21 +93,20 @@ class MayaFaceCageWeightsMixin:
         return tuple(sorted(result))
 
     def _cage_smooth_layer(self,joints,passes):
+        from .maya_face_jaw_weights import (original_skin_paint_context,
+            select_original_skin_paint_influence,original_skin_paint_flood)
         c=self._cmds; raw=getattr(c,"raw",c)
         c.setAttr("CageLayer.visibility",True)
         c.select("CageLayer",replace=True)
-        context="artAttrSkinContext"
         try:
-            if not raw.artAttrSkinPaintCtx(context,exists=True): raw.artAttrSkinPaintCtx(context)
-            raw.setToolTo(context)
-            raw.artAttrSkinPaintCtx(context,edit=True,whichTool="skin",
-                attrSelected="skinCluster."+self.scene_address("CageLayerSC").lstrip(":")+".weights",
-                selectedattroper="smooth")
+            original_skin_paint_context(raw)
             for _ in range(passes):
                 for joint in joints:
-                    if joint.rsplit("|",1)[-1].startswith("EyeBrow"): continue
-                    raw.artAttrSkinPaintCtx(context,edit=True,influence=self.scene_address(joint))
-                    raw.artAttrSkinPaintCtx(context,edit=True,clear=True)
+                    if joint.rsplit("|",1)[-1].rsplit(":",1)[-1].startswith("EyeBrow"): continue
+                    select_original_skin_paint_influence(raw,self.scene_address(joint))
+                    raw.refresh()
+                    original_skin_paint_flood()
+                    raw.refresh()
         finally:
             raw.setToolTo("selectSuperContext")
             c.setAttr("CageLayer.visibility",False)

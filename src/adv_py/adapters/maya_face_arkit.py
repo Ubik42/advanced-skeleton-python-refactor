@@ -45,7 +45,12 @@ class MayaFaceARKitMixin:
         quick = not create and not connect
         if quick and not c.objExists("ARKitQuickConnecting"):
             c.createNode("transform", name="ARKitQuickConnecting")
-        c.currentTime(0)
+        # The source requests frame zero. Avoid journaling a no-op time change:
+        # Maya 2024 can crash undoing that command after Quick Connect tears
+        # down/reconnects the existing animation graph. The requested time and
+        # every driven value remain identical when already at frame zero.
+        if c.currentTime(query=True) != 0:
+            c.currentTime(0)
         auto = bool(raw.autoKeyframe(query=True, state=True))
         if auto:
             raw.autoKeyframe(state=False)

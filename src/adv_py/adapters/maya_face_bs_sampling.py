@@ -32,7 +32,12 @@ class MayaFaceBSSamplingMixin:
                        target=(self.scene_address(geometry), index, self.scene_address(target), 1))
         # Maya may include a model namespace in an automatic target alias.
         # Source procedures subsequently address the original logical name.
-        self._cmds.aliasAttr(self._original_restore_leaf(target), node + ".weight[" + str(index) + "]")
+        plug = node + ".weight[" + str(index) + "]"
+        alias = self._original_restore_leaf(target)
+        # Maya already creates this alias for unnamespaced targets. Reapplying
+        # it raises "attribute already exists" instead of acting as a no-op.
+        if self._cmds.aliasAttr(plug, query=True) != alias:
+            self._cmds.aliasAttr(alias, plug)
         return index
 
     def sample_original_face_bs_targets(self, source, options):

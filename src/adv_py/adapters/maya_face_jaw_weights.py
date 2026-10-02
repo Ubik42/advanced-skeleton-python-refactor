@@ -2,6 +2,36 @@
 from math import dist
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
+
+def original_skin_paint_context(cmds, influence=None):
+    """Initialize Maya's real Skin tool, as the source paint procedures do.
+
+    Creating an artAttrSkinPaintCtx alone does not register the Skin painting
+    callbacks. Only stock Maya tool commands run here, never ADV procedures.
+    """
+    from maya import mel
+    mel.eval('ArtPaintSkinWeightsTool; source artAttrSkinJointMenu;')
+    context = 'artAttrSkinContext'
+    cmds.artAttrSkinPaintCtx(context, edit=True, selectedattroper='smooth')
+    if influence:
+        select_original_skin_paint_influence(cmds, influence)
+    return context
+
+
+def select_original_skin_paint_influence(cmds, influence):
+    from maya import mel
+    # Maya joint identities cannot contain quotation marks; JSON supplies a
+    # literal MEL string for DAG paths and namespaces without interpolation.
+    import json
+    cmds.artAttrSkinPaintCtx('artAttrSkinContext', edit=True, influence=influence)
+    mel.eval('artSkinInflListChanging ' + json.dumps(influence) + ' 1;')
+    mel.eval('artSkinInflListChanged artAttrSkinPaintCtx;')
+
+
+def original_skin_paint_flood():
+    from maya import mel
+    mel.eval('artFloodSurfaces;')
+
 class MayaFaceJawWeightsMixin:
     def _jaw_set_members(self,name):
         raw=getattr(self._cmds,"raw",self._cmds)
@@ -69,19 +99,18 @@ class MayaFaceJawWeightsMixin:
         c=self._cmds; raw=getattr(c,"raw",c)
         skin_path=self.scene_address(skin)
         influences=raw.skinCluster(skin_path,query=True,influence=True) or []
-        a=self.scene_address(influence_a); b=self.scene_address(influence_b)
-        ids=set(raw.ls((a,b),uuid=True) or [])
-        for joint in influences:
-            raw.setAttr(joint+".lockInfluenceWeights",not bool(ids & set(raw.ls(joint,uuid=True) or [])))
+        a=self.scene_address(influence_a)
+        # Source locks other influences only when infB is nonempty. Empty B
+        # deliberately smooths against every currently unlocked influence.
+        if influence_b:
+            b=self.scene_address(influence_b)
+            ids=set(raw.ls((a,b),uuid=True) or [])
+            for joint in influences:
+                raw.setAttr(joint+".lockInfluenceWeights",not bool(ids & set(raw.ls(joint,uuid=True) or [])))
         raw.select(tuple(self.scene_address(v) for v in vertices),replace=True)
-        context="artAttrSkinContext"
         try:
-            if not raw.artAttrSkinPaintCtx(context,exists=True): raw.artAttrSkinPaintCtx(context)
-            raw.setToolTo(context)
-            raw.artAttrSkinPaintCtx(context,edit=True,whichTool="skin",
-                attrSelected="skinCluster."+skin_path.lstrip(":")+".weights",
-                selectedattroper="smooth",influence=a)
-            for _ in range(iterations): raw.artAttrSkinPaintCtx(context,edit=True,clear=True)
+            original_skin_paint_context(raw,a)
+            for _ in range(iterations): original_skin_paint_flood()
         finally:
             for joint in influences: raw.setAttr(joint+".lockInfluenceWeights",False)
             raw.setToolTo("selectSuperContext")

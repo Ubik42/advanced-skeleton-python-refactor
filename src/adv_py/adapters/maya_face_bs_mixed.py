@@ -81,7 +81,7 @@ class MayaFaceBSMixedMixin:
                 if scaled:
                     c.createNode("transform", name="tempXform")
                     c.setAttr("tempXform.s", *(source["ctrl_scale"],) * 3, type="float3")
-                    inverse = c.getAttr("tempXform.inverseMatrix")
+                    inverse = self.original_face_matrix_values("tempXform.inverseMatrix")
                     c.delete("tempXform")
                     c.setAttr(matrix + ".matrixIn[0]", *inverse, type="matrix")
         self._original_bs_delete_existing(("LipFollowHead_parentConstraint1", "LipFollowHead_scaleConstraint1", "LipFollowHeadMM_LipFollowHead"))

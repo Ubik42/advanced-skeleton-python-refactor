@@ -44,6 +44,11 @@ class MayaFaceEyeLoopFitMixin:
         curve=c.curve(name=section+"Curve"+suffix,degree=1,point=points)
         c.parent(curve,"FaceFit"+section+"Curve"+suffix)
         shape=c.listRelatives(curve,shapes=True,fullPath=True)[0]
+        # MEL creates faceLoopCurve1 then renames its transform. Maya renames
+        # the matching Shape as well. Python curve(name=...) leaves curveShapeN,
+        # which becomes ambiguous after the source Prep duplicates both sides.
+        shape=c.rename(shape,section+"Curve"+suffix+"Shape")
+        shape=c.listRelatives(curve,shapes=True,fullPath=True)[0]
         c.setAttr(shape+".overrideEnabled",True); c.setAttr(shape+".overrideColor",17)
         profile=c.circle(name=section+"Profile"+suffix,normal=(0,1,0),radius=scale/400,degree=3,sections=8,constructionHistory=False)[0]
         tube=c.extrude(profile,curve,name=section+"Cylinder"+suffix,constructionHistory=False,extrudeType=2,
