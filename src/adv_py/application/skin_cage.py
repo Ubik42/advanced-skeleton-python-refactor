@@ -9,9 +9,9 @@ from adv_py.core.skin_cage import (
     SkinCageCurveDeletePlan,
     SkinCageGroinAdjustment, SkinCageGroinLocators,
     SkinCageProfileShape,
-    SkinCageWidthInput, SkinCageWidthSpec,
+    SkinCageWidthSpec,
     plan_groin_adjustment, plan_groin_locators, plan_skin_cage_build,
-    plan_skin_cage_copy, plan_skin_cage_mirror, plan_skin_cage_width,
+    plan_skin_cage_copy, plan_skin_cage_mirror,
     plan_skin_cage_curve_delete, plan_skin_cage_profile_restore,
 )
 
@@ -29,7 +29,7 @@ class SkinCageHost(Protocol):
     def capture_restored_profiles(
         self, profiles: tuple[SkinCageProfileShape, ...]) -> bool: ...
     def capture_curve_delete_input(self) -> tuple[str, ...]: ...
-    def preflight_curve_delete(self, plan: SkinCageCurveDeletePlan) -> None: ...
+    def preflight_curve_delete(self, plan: SkinCageCurveDeletePlan) -> bool: ...
     def delete_curves(self, plan: SkinCageCurveDeletePlan) -> None: ...
     def capture_curves_deleted(self,
                                plan: SkinCageCurveDeletePlan) -> bool: ...
@@ -43,15 +43,14 @@ class SkinCageHost(Protocol):
     def mirror_profiles(self, pair: SkinCageMirrorPair) -> None: ...
     def sync_mirrored_sliders(self, pair: SkinCageMirrorPair) -> None: ...
     def capture_mirror(self, pair: SkinCageMirrorPair) -> bool: ...
-    def capture_width_input(self) -> tuple[SkinCageWidthInput, ...]: ...
-    def preflight_width(self, specs: tuple[SkinCageWidthSpec, ...]) -> None: ...
-    def set_width(self, spec: SkinCageWidthSpec) -> None: ...
+    def set_source_width(self) -> tuple[SkinCageWidthSpec, ...]: ...
     def capture_width(self, spec: SkinCageWidthSpec) -> bool: ...
     def capture_groin_locator_input(self): ...
     def create_groin_locators(self, plan: SkinCageGroinLocators) -> None: ...
     def capture_groin_locators(self, plan: SkinCageGroinLocators) -> bool: ...
     def capture_groin_adjustment_input(self): ...
-    def preflight_groin_adjustment(self) -> None: ...
+    def preflight_groin_adjustment(self) -> bool: ...
+    def finish_groin_adjustment(self, *, skipped: bool = False) -> None: ...
     def adjust_groin(self, plan: SkinCageGroinAdjustment) -> None: ...
     def capture_groin_adjustment(self) -> bool: ...
     def preflight_groin_joint(self) -> None: ...
@@ -131,15 +130,12 @@ class SetSkinCageDeformationWidth:
         self._host = host
 
     def execute(self) -> int:
-        specs = plan_skin_cage_width(self._host.capture_width_input())
-        self._host.preflight_width(specs)
         with self._host.transaction("调整 SkinCage DeformationWidth"):
-            for spec in specs:
-                self._host.set_width(spec)
-            for spec in specs:
+            specs = self._host.set_source_width()
+            final_specs = {spec.source.point_constraint: spec for spec in specs}
+            for spec in final_specs.values():
                 if not self._host.capture_width(spec):
-                    raise RuntimeError("SkinCage 宽度权重写入后读回不一致：" +
-                                       spec.source.profile)
+                    raise RuntimeError("SkinCage 宽度权重写入后读回不一致：" + spec.source.profile)
         return len(specs)
 
 
@@ -162,14 +158,19 @@ class AdjustSkinCageGroin:
     def execute(self) -> int:
         plan = plan_groin_adjustment(
             *self._host.capture_groin_adjustment_input())
-        self._host.preflight_groin_adjustment()
+        applicable = self._host.preflight_groin_adjustment()
         with self._host.transaction("调整 SkinCage 腹股沟"):
+            if not applicable:
+                self._host.finish_groin_adjustment(skipped=True)
+                return 0
             self._host.adjust_groin(plan)
             pairs = plan_skin_cage_mirror(
                 self._host.capture_mirror_input(), "R")
             self._host.preflight_mirror(pairs)
             for pair in pairs:
                 self._host.mirror_profiles(pair)
+                self._host.sync_mirrored_sliders(pair)
+            self._host.finish_groin_adjustment()
             if not self._host.capture_groin_adjustment() or any(
                     not self._host.capture_mirror(pair) for pair in pairs):
                 raise RuntimeError("腹股沟调整或对侧镜像后状态不一致")
@@ -204,7 +205,8 @@ class DeleteSkinCageCurves:
     def execute(self) -> int:
         plan = plan_skin_cage_curve_delete(
             self._host.capture_curve_delete_input())
-        self._host.preflight_curve_delete(plan)
+        if not self._host.preflight_curve_delete(plan):
+            return 0
         with self._host.transaction("删除 SkinCage 编辑曲线"):
             self._host.delete_curves(plan)
             if not self._host.capture_curves_deleted(plan):

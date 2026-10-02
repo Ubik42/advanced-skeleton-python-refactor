@@ -35,7 +35,7 @@ def _run(host,container,skin,all_objects,right_eye):
     c.currentTime(1)
     for name in FIT_AUTO_PLACE_GROUPS:c.createNode('transform',name=name,parent='AutoPlacing',skipSelect=True)
     c.createNode('transform',name='asFitPivotsFingers',parent='asFitPivots',skipSelect=True)
-    c.createNode('transform',name='asFitAnchors',parent='asFitPivots',skipSelect=True)
+    c.createNode('transform',name='asFitAnchors',parent='AutoPlacing',skipSelect=True)
     orbit=c.createNode('transform',name='asFitOrbitB',parent='asFitOrbitA',skipSelect=True)
     camera=raw.xform('persp',query=True,worldSpace=True,matrix=True)
     c.xform(orbit,worldSpace=True,matrix=camera)

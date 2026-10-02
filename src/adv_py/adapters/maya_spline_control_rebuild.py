@@ -64,7 +64,7 @@ def control_states(staged):
                  if change.node_destination(row.node) is not None)
 
 
-def plan_properties(host,stage,original,registration,change):
+def plan_properties(host,stage,original,registration,change,*,derived_plugs=frozenset()):
     rows=[]
     channels={row.node+'.'+row.attribute for row in original.registration.channels}
     generated_nodes={row.path for row in original.registration.nodes}
@@ -104,7 +104,9 @@ def plan_properties(host,stage,original,registration,change):
             rows.append(replace(row,path=node,attributes=tuple(attributes),
                                 connections=tuple(sorted(links))))
     remapped=replace(original,properties=tuple(rows),registration=registration)
-    return plan_property_transfer(host,remapped,stage.namespace)
+    remapped_derived=frozenset(mapped for plug in derived_plugs
+                             if (mapped:=change.destination(plug)) is not None)
+    return plan_property_transfer(host,remapped,stage.namespace,derived_plugs=remapped_derived)
 
 
 def validate_removed_node(host,node,owned,original):

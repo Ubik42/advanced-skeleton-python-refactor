@@ -22,35 +22,19 @@ class BuildOneJointProp:
 
     def apply(self, skin_meshes: tuple[str, ...], all_meshes: tuple[str, ...],
               *, build_options=None, on_stage=None) -> OneJointPropResult:
-        if not skin_meshes or len(set(skin_meshes)) != len(skin_meshes):
-            raise FitSkeletonValidationError("One Joint Prop 需要不重复的 Skin 模型")
+        if not skin_meshes:
+            raise FitSkeletonValidationError('No object defined as "Skin"')
         if build_options is not None and not isinstance(build_options, BodyBuildOptions):
             raise FitSkeletonValidationError('One Joint Prop Body 构建选项无效')
         meshes = tuple(dict.fromkeys((*skin_meshes, *all_meshes)))
-        source_states = tuple(self._host.capture_body_mesh_bind_source(mesh)
-                              for mesh in meshes)
-        names = ("FitSkeleton", "Root", "Group", "Root_M", "Main")
-        for name in names:
-            if self._host.find_name_collisions(name):
-                raise FitSkeletonValidationError("One Joint Prop 名称已被占用：" + name)
-        skin_names = tuple("AdvPy_PropSkin" if index == 0 else
-                           f"AdvPy_PropSkin_{index + 1}"
-                           for index in range(len(meshes)))
-        for name in skin_names:
-            if self._host.find_name_collisions(name):
-                raise FitSkeletonValidationError("One Joint Prop Skin 名称已被占用：" + name)
+        self._host.preflight_one_joint_prop(skin_meshes, all_meshes)
         with self._host.transaction("从 Preparation 构建单关节道具"):
             fit, joint, control = self._host.create_one_joint_prop_rig(
                 skin_meshes[0], skin_meshes=skin_meshes,
                 all_meshes=all_meshes, build_options=build_options)
-            for mesh, original in zip(meshes, source_states):
-                if not original.matches(
-                        self._host.capture_body_mesh_bind_source(mesh)):
-                    raise FitSkeletonValidationError(
-                        "单关节道具构建改变了待绑定网格：" + mesh)
             if on_stage:
                 on_stage("rig-built")
-            skins = self._host.bind_one_joint_prop_meshes(meshes, joint, skin_names)
+            skins = self._host.bind_one_joint_prop_meshes(meshes, joint)
             if on_stage:
                 on_stage("skins-bound")
             meshes = self._host.finalize_one_joint_prop_geometry(meshes, skin_meshes[0])

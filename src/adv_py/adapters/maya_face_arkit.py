@@ -40,7 +40,7 @@ class MayaFaceARKitMixin:
         if create:
             for name in names:
                 c.addAttr(source, longName=name, attributeType="double", keyable=True,
-                          softMinValue=0, softMaxValue=10)
+                          softMinValue=0, hasSoftMinValue=True, softMaxValue=10, hasSoftMaxValue=True)
                 self.original_face_output_bw(source + "." + name)
         quick = not create and not connect
         if quick and not c.objExists("ARKitQuickConnecting"):

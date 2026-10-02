@@ -1,5 +1,6 @@
 """ADV 6.925 Teeth controls and asSkinTeeth, 38004–38051 / 42481–42625."""
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from .maya_original_skin_history import bind_original_skin
 
 class MayaFaceTeethMixin:
     def read_original_face_parts(self,attribute):
@@ -73,8 +74,10 @@ class MayaFaceTeethMixin:
         c=self._cmds; raw=getattr(c,"raw",c); result=[]
         production=self.scene_address(source.skin)
         geometry=self.scene_address(source.geometry)
-        lower_components=bool(source.lower_teeth and any("." in value for value in source.lower_teeth)
-            and all(value.split(".",1)[0]==geometry for value in source.lower_teeth))
+        # asSkinTeeth matches the complete LowerTeeth text by its prefix and
+        # presence of any component token, even while weighting upper teeth.
+        lower_text=" ".join(source.lower_teeth)
+        lower_components=bool(lower_text.startswith(geometry) and "." in lower_text)
         for arc,parts in (("upper",source.upper_teeth),("lower",source.lower_teeth)):
             vertices=self._face_part_vertices(parts)
             if not vertices: continue
@@ -83,17 +86,21 @@ class MayaFaceTeethMixin:
             for mesh in objects:
                 skin=self._original_face_skin_history(mesh)
                 if skin is None:
-                    skin=raw.skinCluster(joint,mesh,toSelectedBones=True,maximumInfluences=3,
-                        dropoffRate=4,removeUnusedInfluence=False,name=self.scene_address(arc+"TeethSC"))[0]
+                    skin=bind_original_skin(raw,(joint,mesh),
+                        self.scene_address(arc+"TeethSC"),namespace=self.namespace)
                 else:
                     # Preserve the MEL condition: both branches consult the
                     # original LowerTeeth text, even while weighting upper teeth.
                     target=production if lower_components else skin
                     influences=raw.skinCluster(target,query=True,influence=True) or []
                     joint_ids=set(raw.ls(joint,uuid=True) or [])
-                    if not any(joint_ids & set(raw.ls(inf,uuid=True) or []) for inf in influences):
+                    if lower_components or not any(joint_ids & set(raw.ls(inf,uuid=True) or []) for inf in influences):
                         raw.skinCluster(target,edit=True,addInfluence=joint,lockWeights=False,weight=0)
-                    raw.skinPercent(target,vertices,transformValue=[(joint,1)])
+                    if lower_components:
+                        raw.skinPercent(target,vertices,transformValue=[(joint,1)])
+                    else:
+                        try:raw.skinPercent(target,vertices,transformValue=[(joint,1)])
+                        except RuntimeError:pass  # Source catchQuiet on this branch only.
                 result.append(skin)
         if source.tongue and not any("." in value for value in source.tongue):
             vertices=self._face_part_vertices(source.tongue)
@@ -101,8 +108,8 @@ class MayaFaceTeethMixin:
                 mesh=vertices[0].split(".",1)[0]; jaw=self.scene_address("JawJoint_M")
                 skin=self._original_face_skin_history(mesh)
                 if skin is None:
-                    skin=raw.skinCluster(jaw,mesh,toSelectedBones=True,maximumInfluences=3,
-                        dropoffRate=4,removeUnusedInfluence=False,name=self.scene_address("TongueSC"))[0]
+                    skin=bind_original_skin(raw,(jaw,mesh),
+                        self.scene_address("TongueSC"),namespace=self.namespace)
                 else:
                     influences=raw.skinCluster(skin,query=True,influence=True) or []
                     joint_ids=set(raw.ls(jaw,uuid=True) or [])
@@ -110,5 +117,7 @@ class MayaFaceTeethMixin:
                         raw.skinCluster(skin,edit=True,addInfluence=jaw,lockWeights=False,weight=0)
                     raw.skinPercent(skin,vertices,transformValue=[(jaw,1)])
                 result.append(skin)
+        from maya import mel
+        raw.setToolTo(mel.eval('$advPySelectTool = $gSelect;'))
         self._transaction_changed=True
         return tuple(dict.fromkeys(result))

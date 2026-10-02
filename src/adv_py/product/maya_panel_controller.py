@@ -19,11 +19,6 @@ from adv_py.application import (ApplyBodyCharacterAnimation,
     SwitchBodyCharacterSpace,
     AutoScaleControlCurves, ColorControlCurves, MirrorControlCurves,
     ScaleControlCurves, SwapControlCurves,
-    SetControlOrientationAxis,
-    SetControlOrientationWorld,
-    SetControlOrientationWorldAxisMatch,
-    SetControlOrientationWorldMatch,
-    DetachCustomControlOrientations, AttachCustomControlOrientations,
     CreateAndImportFitSkeleton, EditFitJointMetadata,
     EditAndOrientFitJointPositions,
     ExportFitSkeleton, ExportExternalFitSkeleton, ExportSkinWeights,
@@ -1256,60 +1251,51 @@ class MayaPanelController:
                             primary: str, secondary: str,
                             curve_unaffected: bool = False,
                             mirror: bool = False,
-                            mirrored_behavior: bool = False) -> int:
+                            mirrored_behavior: bool = False,
+                            mirrored_translate: bool = False) -> int:
+        from adv_py.core.original_control_orientation import OriginalControlOrientOptions
+        return self._original_control_orient(namespace, controls,
+            OriginalControlOrientOptions(primary, secondary,
+                curve_unaffected=curve_unaffected, mirror=mirror,
+                mirrored_behaviour=mirrored_behavior, mirrored_translate=mirrored_translate))
+
+    def _original_control_orient(self, namespace, controls, options):
+        from adv_py.application.original_control_orientation import SetOriginalControlOrientations
         host, resolved = self._control_orient_targets(
-            namespace, controls, mirror)
-        result = SetControlOrientationAxis(host).apply(
-            resolved, primary, secondary,
-            curve_unaffected, mirror, mirrored_behavior)
-        return len(result.verified)
+            namespace, controls, False)
+        return len(SetOriginalControlOrientations(host).apply(resolved, options))
 
     def control_orient_world(self, namespace: str, controls: tuple[str, ...],
                              curve_unaffected: bool = False,
-                             mirror: bool = False) -> int:
-        host, resolved = self._control_orient_targets(
-            namespace, controls, mirror)
-        result = SetControlOrientationWorld(host).apply(
-            resolved, curve_unaffected, mirror)
-        return len(result.verified)
+                             mirror: bool = False,
+                             mirrored_behavior: bool = False,
+                             mirrored_translate: bool = False,
+                             primary: str = 'X', secondary: str = 'Y') -> int:
+        from adv_py.core.original_control_orientation import OriginalControlOrientOptions
+        return self._original_control_orient(namespace, controls,
+            OriginalControlOrientOptions(primary, secondary, world_orient=True,
+                curve_unaffected=curve_unaffected, mirror=mirror,
+                mirrored_behaviour=mirrored_behavior, mirrored_translate=mirrored_translate))
 
     def control_orient_world_axis_match(
             self, namespace: str, controls: tuple[str, ...],
             curve_unaffected: bool = False,
-            mirror: bool = False) -> int:
-        host, resolved = self._control_orient_targets(
-            namespace, controls, mirror)
-        result = SetControlOrientationWorldAxisMatch(host).apply(
-            resolved, curve_unaffected, mirror)
-        return len(result.verified)
-
-    def control_orient_world_match(self, namespace: str,
-                                   controls: tuple[str, ...], primary: str,
-                                   secondary: str, world_up: str,
-                                   curve_unaffected: bool = False,
-                                   mirror: bool = False,
-                                   child_selections: tuple[tuple[str, str], ...]
-                                   = ()) -> int:
-        host, resolved = self._control_orient_targets(
-            namespace, controls, mirror)
-        mapped = []
-        for requested, child in child_selections:
-            matches = tuple(path for path in resolved
-                            if path == requested
-                            or path.rsplit("|", 1)[-1] == requested)
-            if len(matches) != 1:
-                raise ValueError(
-                    f"World Match 子关节指定的控制器未登记或名称不唯一：{requested}")
-            mapped.append((matches[0], child))
-        result = SetControlOrientationWorldMatch(host).apply(
-            resolved, primary, secondary, world_up,
-            curve_unaffected, mirror, tuple(mapped))
-        return len(result.verified)
+            mirror: bool = False,
+            mirrored_behavior: bool = False,
+            mirrored_translate: bool = False,
+            primary: str = 'X', secondary: str = 'Y') -> int:
+        from adv_py.core.original_control_orientation import OriginalControlOrientOptions
+        return self._original_control_orient(namespace, controls,
+            OriginalControlOrientOptions(primary, secondary, world_match=True,
+                curve_unaffected=curve_unaffected, mirror=mirror,
+                mirrored_behaviour=mirrored_behavior, mirrored_translate=mirrored_translate))
 
     def _control_orient_targets(self, namespace, controls, mirror):
-        if not controls:
-            raise ValueError("请指定至少一个已登记控制器")
         host = self._host(namespace)
+        if not controls:
+            controls = tuple(host._cmds.ls(selection=True, long=True) or [])
+        if not controls:
+            raise ValueError("请先选择控制器")
         resolver = ResolveBodyCharacter(host)
         names = resolver.discover()
         if len(names) != 1:
@@ -1337,21 +1323,32 @@ class MayaPanelController:
         return host, tuple(dict.fromkeys(resolved))
 
     def control_orient_custom_detach(self, namespace: str) -> tuple[str, ...]:
+        from adv_py.application.original_control_orientation import DetachOriginalControlOrientations
         host = self._host(namespace)
         resolver = ResolveBodyCharacter(host)
         names = resolver.discover()
         if len(names) != 1:
             raise ValueError("当前命名空间必须恰好包含一个已登记角色")
-        registration = resolver.execute(names[0])
-        controls = tuple(dict.fromkeys(
-            channel.node for channel in registration.channels))
-        controls = tuple(state.control for state in
-            host.capture_control_curves(controls, strict=False))
-        return DetachCustomControlOrientations(host).apply(controls)
+        resolver.execute(names[0])
+        return DetachOriginalControlOrientations(host).apply()
 
-    def control_orient_custom_attach(self, namespace: str) -> int:
+    def control_orient_custom_attach(self, namespace: str, mirror: bool = True) -> int:
+        from adv_py.application.original_control_orientation import AttachOriginalControlOrientations
         host = self._host(namespace)
-        return AttachCustomControlOrientations(host).apply()
+        return AttachOriginalControlOrientations(host).apply(mirror=mirror)
+
+    def custom_orient_joints(self, namespace: str, action: str,
+                            primary: str = 'X', secondary: str = 'Y'):
+        from adv_py.adapters import maya_original_game_skeleton as source
+        operations = {'create': source.create, 'delete': source.delete,
+                      'show_axis': source.show_axis, 'connect': source.connect,
+                      'disconnect': source.disconnect, 'transfer_skin': source.transfer_skin}
+        if action not in operations:
+            raise ValueError('Custom Orient Joints 操作无效')
+        host = self._host(namespace)
+        with host.transaction('Original Custom Orient Joints ' + action):
+            return (source.create(host, primary, secondary) if action == 'create'
+                    else operations[action](host))
 
     def custom_softmod_create(self, namespace: str, deformer: str,
                               base_name: str, parent_joint: str = "",
@@ -1551,7 +1548,7 @@ class MayaPanelController:
             namespace=None if namespace == ":" else namespace)
         return RemoveUnusedSkinInfluences(host).apply()
 
-    def prune_small_skin_weights(self, namespace: str) -> tuple[int, int]:
+    def prune_small_skin_weights(self, namespace: str) -> int:
         from adv_py.adapters.maya_skin_optimize import MayaSkinOptimizeHost
         from adv_py.application.skin_optimize import PruneSmallSkinWeights
 
@@ -1645,11 +1642,25 @@ class MayaPanelController:
 
         set_smooth_bind_options()
 
-    def skin_cage_create(self, namespace: str) -> int:
+    def skin_copy_for_selected_vertices(self) -> int:
+        from adv_py.adapters.maya_original_skin_operations import copy_skin_for_selected_vertices
+        return copy_skin_for_selected_vertices()
+
+    def detach_motion_system(self, namespace: str = "") -> int:
+        from adv_py.adapters.maya_original_skin_operations import detach_motion_system
+        return detach_motion_system(namespace)
+
+    def attach_motion_system(self, namespace: str = "") -> int:
+        from adv_py.adapters.maya_original_skin_operations import attach_motion_system
+        return attach_motion_system(namespace)
+
+    def skin_cage_create(self, namespace: str, *,
+                         include_controller: bool = False) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
         from adv_py.application.skin_cage import CreateSkinCage
 
-        return CreateSkinCage(MayaSkinCageHost(namespace)).execute()
+        return CreateSkinCage(MayaSkinCageHost(
+            namespace, slider_include_controller=include_controller)).execute()
 
     def skin_cage_delete(self, namespace: str) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
@@ -1664,11 +1675,12 @@ class MayaPanelController:
         return CopySkinCageWeights(MayaSkinCageHost(namespace)).execute()
 
     def skin_cage_mirror(self, namespace: str,
-                         source_side: str) -> int:
+                         source_side: str, *, include_controller: bool = False) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
         from adv_py.application.skin_cage import MirrorSkinCage
 
-        return MirrorSkinCage(MayaSkinCageHost(namespace)).execute(
+        return MirrorSkinCage(MayaSkinCageHost(
+            namespace, slider_include_controller=include_controller)).execute(
             source_side)
 
     def skin_cage_deformation_width(self, namespace: str) -> int:
@@ -1684,11 +1696,13 @@ class MayaPanelController:
 
         CreateSkinCageGroinLocators(MayaSkinCageHost(namespace)).execute()
 
-    def skin_cage_adjust_groin(self, namespace: str) -> int:
+    def skin_cage_adjust_groin(self, namespace: str, *,
+                               include_controller: bool = False) -> int:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
         from adv_py.application.skin_cage import AdjustSkinCageGroin
 
-        return AdjustSkinCageGroin(MayaSkinCageHost(namespace)).execute()
+        return AdjustSkinCageGroin(MayaSkinCageHost(
+            namespace, slider_include_controller=include_controller)).execute()
 
     def skin_cage_groin_joint(self, namespace: str) -> None:
         from adv_py.adapters.maya_skin_cage import MayaSkinCageHost
@@ -2143,9 +2157,18 @@ class MayaPanelController:
             return tuple((row.label,row.side) for row in registration.source_limbs)
         return tuple((label,side) for label in ('arm','leg') for side in ('R','L'))
 
+    @staticmethod
+    def _original_highlighted_time_range():
+        from maya import cmds, mel
+        slider=mel.eval('global string $gPlayBackSlider; $gPlayBackSlider;')
+        if not slider:return None
+        values=cmds.timeControl(slider,query=True,rangeArray=True)
+        return tuple(float(value) for value in values) if values and values[1]-values[0]>1. else None
+
     def animation_match_source_limb(self,namespace: str,limb: str,side: str,mode: str):
         from adv_py.application.character_limb_animation import MatchSourceBodyLimbMode
-        return MatchSourceBodyLimbMode(self._host(namespace)).execute(limb,side,mode)
+        return MatchSourceBodyLimbMode(self._host(namespace)).execute(limb,side,mode,
+            time_range=self._original_highlighted_time_range())
 
     def animation_bake_spine(self, namespace: str, start: int, end: int,
                              mode: str, step: int = 1) -> int:
@@ -2165,7 +2188,8 @@ class MayaPanelController:
 
     def animation_match_source_spline(self,namespace: str,mode: str,system=None,*,align_only=False):
         from adv_py.application.character_spine_animation import MatchSourceBodySplineMode
-        return MatchSourceBodySplineMode(self._host(namespace)).execute(mode,system,align_only=align_only)
+        return MatchSourceBodySplineMode(self._host(namespace)).execute(mode,system,
+            align_only=align_only,time_range=None if align_only else self._original_highlighted_time_range())
 
     def animation_switch_space(self, namespace: str, key: str,
                                mode: str, frame: int) -> str:
@@ -2341,6 +2365,7 @@ class MayaPanelController:
     def face_original_restore(self, namespace: str, *, keep=None):
         from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
         host = MayaOriginalFaceBuildHost(namespace=None if namespace == ":" else namespace)
+        host.prepare_original_face_restore_dependencies(keep)
         with host.transaction("恢复原版 Face 重建"):
             result = host.restore_original_face(keep)
             if result is not None:

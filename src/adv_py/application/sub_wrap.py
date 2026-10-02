@@ -15,6 +15,7 @@ class SubWrapHost(Protocol):
     def selected_meshes(self) -> tuple[str, ...]: ...
     def preflight_wrap(self, meshes: tuple[str, ...]) -> None: ...
     def wrap_mesh(self, mesh: str) -> None: ...
+    def wrap_meshes(self, meshes: tuple[str, ...]) -> None: ...
     def mesh_wrapped(self, mesh: str) -> bool: ...
     def detached_meshes(self) -> tuple[str, ...]: ...
     def detach_all(self) -> tuple[str, ...]: ...
@@ -45,8 +46,7 @@ class SubWrapOperations:
         meshes = plan_wrap_targets(self.host.selected_meshes())
         self.host.preflight_wrap(meshes)
         with self.host.transaction("SubWrap 包裹所选网格"):
-            for mesh in meshes:
-                self.host.wrap_mesh(mesh)
+            self.host.wrap_meshes(meshes)
             if any(not self.host.mesh_wrapped(mesh) for mesh in meshes):
                 raise RuntimeError("SubWrap 变形器创建后未连接全部网格")
         return len(meshes)
@@ -59,7 +59,9 @@ class SubWrapOperations:
         return len(meshes)
 
     def attach(self) -> int:
-        meshes = plan_wrap_targets(self.host.detached_meshes())
+        meshes = self.host.detached_meshes()
+        if not meshes:
+            return 0
         self.host.preflight_wrap(meshes)
         with self.host.transaction("恢复 SubWrap 包裹"):
             for mesh in meshes:

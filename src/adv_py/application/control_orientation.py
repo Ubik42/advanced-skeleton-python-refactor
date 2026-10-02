@@ -46,7 +46,7 @@ class ControlOrientationHost(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ControlOrientationResult:
-    plan: ControlOrientationPlan
+    plan: ControlOrientationPlan | None
     verified: tuple[ControlOrientationState, ...]
 
 
@@ -59,11 +59,25 @@ class SetControlOrientationAxis:
               curve_unaffected: bool = False,
               mirror: bool = False,
               mirrored_behavior: bool = False) -> ControlOrientationResult:
+        if hasattr(self._host, 'set_original_control_orientation'):
+            from adv_py.core.original_control_orientation import OriginalControlOrientOptions
+            return self._apply_native(controls, OriginalControlOrientOptions(
+                str(getattr(primary, 'value', primary)), str(getattr(secondary, 'value', secondary)),
+                curve_unaffected=curve_unaffected, mirror=mirror,
+                mirrored_behaviour=mirrored_behavior))
         plan = plan_control_orientation_axis(
             self._host.capture_control_orientations(controls),
             primary, secondary, curve_unaffected, mirror,
             mirrored_behavior)
         return self._apply_plan(plan, controls)
+
+    def _apply_native(self, controls, options):
+        from .original_control_orientation import SetOriginalControlOrientations
+        changed = SetOriginalControlOrientations(self._host).apply(controls, options)
+        actual = self._host.capture_control_orientations(changed) if changed else ()
+        # Maya's native constraint computes the source frame. Do not present
+        # the superseded rotateAxis matrix planner as a prediction of it.
+        return ControlOrientationResult(None, actual)
 
     def _apply_plan(self, plan, controls):
         points = (self._host.capture_control_curve_world_points(controls)
@@ -109,6 +123,10 @@ class SetControlOrientationWorld(SetControlOrientationAxis):
     def apply(self, controls: tuple[str, ...],
               curve_unaffected: bool = False,
               mirror: bool = False) -> ControlOrientationResult:
+        if hasattr(self._host, 'set_original_control_orientation'):
+            from adv_py.core.original_control_orientation import OriginalControlOrientOptions
+            return self._apply_native(controls, OriginalControlOrientOptions(
+                world_orient=True, curve_unaffected=curve_unaffected, mirror=mirror))
         plan = plan_control_orientation_world(
             self._host.capture_control_orientations(controls),
             curve_unaffected, mirror)
@@ -119,6 +137,10 @@ class SetControlOrientationWorldAxisMatch(SetControlOrientationAxis):
     def apply(self, controls: tuple[str, ...],
               curve_unaffected: bool = False,
               mirror: bool = False) -> ControlOrientationResult:
+        if hasattr(self._host, 'set_original_control_orientation'):
+            from adv_py.core.original_control_orientation import OriginalControlOrientOptions
+            return self._apply_native(controls, OriginalControlOrientOptions(
+                world_match=True, curve_unaffected=curve_unaffected, mirror=mirror))
         states = self._host.capture_control_orientations(controls)
         axes = self._host.capture_control_orientation_source_axes(controls)
         plan = plan_control_orientation_world_axis_match(
@@ -133,6 +155,8 @@ class SetControlOrientationWorldMatch(SetControlOrientationAxis):
               mirror: bool = False,
               child_selections: tuple[tuple[str, str], ...] = ()
               ) -> ControlOrientationResult:
+        if hasattr(self._host, 'set_original_control_orientation'):
+            raise ValueError('请使用原版 World Match 入口；扩展子关节和参考轴入口已移除')
         states = self._host.capture_control_orientations(controls)
         children = self._host.capture_control_orientation_child_targets(
             controls, child_selections)
@@ -147,6 +171,9 @@ class DetachCustomControlOrientations:
         self._host = host
 
     def apply(self, controls: tuple[str, ...]) -> tuple[str, ...]:
+        if hasattr(self._host, 'detach_original_control_orientation'):
+            from .original_control_orientation import DetachOriginalControlOrientations
+            return DetachOriginalControlOrientations(self._host).apply()
         states = self._host.capture_control_orientations(controls)
         if len(states) != len(controls) or not states:
             raise ValueError("手工方向需要当前角色的全部控制器")
@@ -167,6 +194,9 @@ class AttachCustomControlOrientations:
         self._host = host
 
     def apply(self) -> int:
+        if hasattr(self._host, 'attach_original_control_orientation'):
+            from .original_control_orientation import AttachOriginalControlOrientations
+            return AttachOriginalControlOrientations(self._host).apply()
         previews = self._host.capture_custom_control_orientation_previews()
         states = self._host.capture_control_orientations(
             tuple(preview.control for preview in previews))

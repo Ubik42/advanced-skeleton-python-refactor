@@ -40,12 +40,12 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                                  fullPath=True, type="mesh") or ()
         if len(shapes) != 1:
             raise FitSkeletonValidationError("Face 网格 Shape 缺失或不唯一：" + mesh)
-        history = c.listHistory(shapes[0], pruneDagObjects=True) or ()
-        skins = c.ls(history, type="skinCluster") or ()
-        if len(skins) != 1:
+        from .maya_original_skin_history import original_skin_cluster
+        skin = original_skin_cluster(c, mesh)
+        if not skin:
             raise FitSkeletonValidationError(
-                "Face 网格需要唯一 SkinCluster：" + mesh)
-        return skins[0]
+                "Face 网格缺少原版 SkinCluster：" + mesh)
+        return skin
 
     def _all_head_skins(self) -> tuple[str, ...]:
         c = self._maya
@@ -94,19 +94,28 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
         box = self._name("ctrlBox")
         if not c.objExists(box):
             raise FitSkeletonValidationError("Face ctrlBox 不存在")
-        rows = []
+        groups = []
         for attribute, shader in (("ACtrlVis", "asFaceGreenSG"),
                                   ("BCtrlVis", "asFaceRedSG"),
                                   ("CCtrlVis", "asFaceBlueSG")):
             if not c.attributeQuery(attribute, node=box, exists=True):
                 raise FitSkeletonValidationError(
                     "Face ctrlBox 缺少可见性属性：" + attribute)
-            connected = c.listConnections(box + "." + attribute,
-                                          source=False, destination=True) or ()
+            connected = c.listConnections(box + "." + attribute) or ()
+            group = []
             for node in connected:
                 found = c.ls(node, long=True, type="transform") or ()
-                if len(found) == 1 and found[0] not in {row[0] for row in rows}:
-                    rows.append((found[0], self._name(shader)))
+                if len(found) == 1:
+                    group.append(found[0])
+            groups.append((group, self._name(shader)))
+        # MEL concatenates A, B and C without deduplication. A control present
+        # in several groups receives each material in order; C wins over B/A.
+        rows = []
+        for group, _ in groups:
+            for control in group:
+                material = next(shader for members, shader in reversed(groups)
+                                if control in members)
+                rows.append((control, material))
         return tuple(rows)
 
     def swap_face_controls_to_spheres(self, *, keep_offset: bool = False
@@ -132,11 +141,9 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                     leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
                     if leaf.startswith("SmilePull_"):
                         continue
-                    curves = c.listRelatives(control, shapes=True,
-                                             noIntermediate=True,
-                                             fullPath=True,
-                                             type="nurbsCurve") or ()
-                    if len(curves) != 1:
+                    shapes = c.listRelatives(control, shapes=True,
+                                             fullPath=True) or ()
+                    if not shapes or c.nodeType(shapes[0]) != "nurbsCurve":
                         continue
                     pos_a = c.xform(control + ".cv[1]", query=True,
                                     worldSpace=True, translation=True)
@@ -149,7 +156,8 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                     self._transaction_changed = True
                     sphere = c.sphere(name=self._name(leaf + "Sphere"),
                                       pivot=(0, 0, 0), axis=(0, 1, 0),
-                                      radius=radius, degree=3, sections=8,
+                                      startSweep=0, endSweep=360, useTolerance=False,
+                                      tolerance=.01, radius=radius, degree=3, sections=8,
                                       spans=4, constructionHistory=False)[0]
                     shapes = c.listRelatives(sphere, shapes=True,
                                               fullPath=True,
@@ -160,7 +168,9 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                                         shape=True, relative=True)
                     if len(attached) != 1:
                         raise RuntimeError("Face 球形 Shape 挂接失败")
-                    c.delete(curves[0])
+                    # Source deletes the conventional Shape name, retaining
+                    # any extra shapes belonging to the same controller.
+                    c.delete(self._name(leaf + "Shape"))
                     final_shape = c.rename(attached[0], leaf + "Shape")
                     c.delete(sphere)
                     c.sets(final_shape, edit=True,
@@ -195,34 +205,85 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
         if len(set(leaves)) != len(leaves):
             raise FitSkeletonValidationError(
                 "FaceControlSet 控制器短名不唯一，不能执行镜像或 Attach")
-        return tuple(sorted(members))
+        return tuple(members)
 
     def _mirror_face_control_values(self, controls: tuple[str, ...]) -> None:
-        """The Face branch of asMirror copies keyable R values to L."""
+        """asMirror's Face R→L branch, including world-space custom controls."""
         c = self._maya
         by_leaf = {path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]: path
                    for path in controls}
+        pending = []
+        # Source creates the Main-aligned reflection frame even when ordinary
+        # Face controls use copied local channels. All pose writes are deferred
+        # until the temporary reflection graph has been removed.
+        flip_group = c.createNode("transform", name=self._name("flipGroup"))
+        main = self._name("Main")
+        if c.objExists(main):
+            flip_group = c.parent(flip_group, main)[0]
+        c.xform(flip_group, objectSpace=True, translation=(0, 0, 0), rotation=(0, 0, 0))
+        if c.objExists(main):
+            flip_group = c.parent(flip_group, world=True)[0]
         for leaf, source in sorted(by_leaf.items()):
-            if not leaf.endswith("_R") or leaf.startswith("Aim"):
+            if leaf.endswith(("_L", "_M")) or leaf == "Main" or leaf.startswith("Aim"):
                 continue
-            target_leaf = leaf[:-2] + "_L"
+            target_leaf = leaf.replace("_R", "_L", 1)
             targets = c.ls(self._name(target_leaf), long=True,
                            type="transform") or ()
             if len(targets) != 1:
                 continue
             destination = targets[0]
-            for attribute in c.listAttr(source, keyable=True) or ():
-                if attribute == "visibility":
+            scale = c.xform(destination, query=True, worldSpace=True, scale=True)
+            custom = "CustomSystem|" in source
+            local = custom and c.objExists(source + ".localOrient") and bool(c.getAttr(source + ".localOrient"))
+            world = (scale[2] > 0 and
+                     (leaf.startswith(("IK", "Pole", "Roll", "Pivot", "RootX_M")) or custom and not local) and
+                     not leaf.startswith(("IKLocal", "IKhybrid")) and not c.objExists(source + ".ikLocal"))
+            for attribute in c.listAttr(source, keyable=True, multi=True, shortNames=True) or ():
+                if attribute == "v":
                     continue
-                target_attribute = attribute.replace("_R", "_L")
+                # Source checks the original spelling before swapping the
+                # first side token, and evaluates all reads before writes.
+                if not c.attributeQuery(attribute, node=destination, exists=True):
+                    continue
+                target_attribute = (attribute.replace("_R", "_L", 1) if "_R" in attribute
+                                    else attribute.replace("_L", "_R", 1))
                 target_plug = destination + "." + target_attribute
+                if world and target_attribute in ("tx", "ty", "tz", "rx", "ry", "rz"):
+                    continue
                 if (not c.attributeQuery(target_attribute,
                                          node=destination, exists=True)
                         or not c.getAttr(target_plug, settable=True)):
                     continue
                 value = c.getAttr(source + "." + attribute)
                 if type(value) in (bool, int, float):
-                    c.setAttr(target_plug, value)
+                    pending.append(("attribute", target_plug, value))
+            if world:
+                loc1 = c.spaceLocator()[0]
+                loc2 = c.spaceLocator()[0]
+                loc2 = c.parent(loc2, loc1)[0]
+                loc1 = c.parent(loc1, source)[0]
+                loc2 = c.listRelatives(loc1, children=True, type="transform", fullPath=True)[0]
+                c.xform(loc1, objectSpace=True, translation=(0, 0, 0), rotation=(0, 0, 0))
+                order = c.getAttr(source + ".rotateOrder")
+                c.setAttr(loc1 + ".rotateOrder", order)
+                c.setAttr(loc2 + ".rotateOrder", order)
+                c.setAttr(flip_group + ".scaleX", 1)
+                loc1 = c.parent(loc1, flip_group)[0]
+                c.setAttr(flip_group + ".scaleX", -1)
+                c.setAttr(loc1 + ".scaleX", -1)
+                # Re-resolve the locator after its ancestor was reparented.
+                loc2 = (c.listRelatives(loc1, children=True, type="transform", fullPath=True) or [loc2])[0]
+                position = c.xform(loc2, query=True, worldSpace=True, translation=True)
+                rotation = c.xform(loc2, query=True, worldSpace=True, rotation=True)
+                pending.append(("world", destination, (position, rotation)))
+            if c.objExists(source + ".mirror"):
+                c.setAttr(source + ".mirror", 0)
+        c.delete(flip_group)
+        for kind, target, value in pending:
+            if kind == "attribute":
+                c.setAttr(target, value)
+            else:
+                c.xform(target, worldSpace=True, translation=value[0], rotation=value[1])
 
     def _resolve_face_control(self, leaf: str) -> str:
         paths = self._maya.ls(self._name(leaf), long=True,
@@ -244,14 +305,13 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                        if translate_keyable else (0.0, 0.0, 0.0))
         rotation = (c.getAttr(control + ".rotate")[0]
                     if rotate_keyable else (0.0, 0.0, 0.0))
-        if not any(abs(float(value)) > 1e-9
+        if not any(float(value) != 0
                    for value in (*translation, *rotation)):
             return False
-        name, separator, side = leaf.rpartition("_")
-        if not separator or side not in ("R", "L", "M"):
-            raise FitSkeletonValidationError(
-                "Face 控制器名称缺少侧别：" + leaf)
-        suffix = "_" + side
+        # Source tokenize uses the first two fields, including custom controls.
+        tokens = leaf.split("_")
+        name = tokens[0]
+        suffix = "_" + (tokens[1] if len(tokens) > 1 else "")
         custom_name = name + "CustomOrient" + suffix
         custom = self._name(custom_name)
         if not c.objExists(custom):
@@ -301,10 +361,9 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
             second = self._name(name + "CustomOrient2" + suffix)
             offset = self._name(name + "Offset" + suffix)
             subtract = self._name(name + "Subtract" + suffix)
-            if (c.objExists(second) or not c.objExists(offset)
-                    or not c.objExists(subtract)):
+            if not c.objExists(offset) or not c.objExists(subtract):
                 raise FitSkeletonValidationError(
-                    "Face Mixed-Mode 朝向层不完整或重复：" + leaf)
+                    "Face Mixed-Mode 朝向层不完整：" + leaf)
             c.createNode("transform", name=second, parent=custom)
             c.parent(second, offset, absolute=True)
             c.parent(subtract, second, relative=True)
@@ -342,9 +401,9 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                 if c.objExists(face_layer) and c.objExists(face_bs):
                     for child in c.listRelatives(face_layer, children=True,
                                                  fullPath=True) or ():
-                        history = c.listHistory(child,
-                                                pruneDagObjects=True) or ()
-                        for skin in c.ls(history, type="skinCluster") or ():
+                        from .maya_original_skin_history import original_skin_cluster
+                        skin = original_skin_cluster(c, child)
+                        if skin:
                             freeze_native_skin_cluster(skin)
                 c.dgdirty(allPlugs=True)
             finally:

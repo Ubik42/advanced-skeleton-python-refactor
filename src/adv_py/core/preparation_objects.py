@@ -16,11 +16,8 @@ def validate_preparation_objects(
 ) -> tuple[str, ...]:
     if not isinstance(role, PreparationObjectRole):
         raise ValueError("未知的准备模型分类")
-    if not objects:
-        raise ValueError(f"请先选择 {role.value} 模型")
-    if len(objects) != len(set(objects)) or any(not name for name in objects):
-        raise ValueError("所选模型包含重复或空路径")
-    if role in (PreparationObjectRole.RIGHT_EYE,
-                PreparationObjectRole.LEFT_EYE) and len(objects) != 1:
-        raise ValueError(f"{role.value} 只接受一个眼球模型")
+    # The source writes object/component lists for all four fields, including
+    # an empty list to clear a previously recorded field.
+    if any(not name for name in objects):
+        raise ValueError("所选模型包含空路径")
     return objects

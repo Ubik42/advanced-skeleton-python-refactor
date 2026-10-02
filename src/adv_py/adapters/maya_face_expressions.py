@@ -29,7 +29,7 @@ class MayaFaceExpressionHost(MayaOriginalDriverAttributesMixin,MayaFaceBSConvers
         simpler=bool(c.objExists(fit+".SimplerEyeLid") and c.getAttr(fit+".SimplerEyeLid"))
         cyclops=bool(c.objExists(fit+".Cyclops") and c.getAttr(fit+".Cyclops"))
         for side in ("_R","_L"):
-            c.addAttr("ctrlEye"+side,longName="squint",attributeType="double",softMaxValue=10,
+            c.addAttr("ctrlEye"+side,longName="squint",attributeType="double",softMaxValue=10,hasSoftMaxValue=True,
                       softMinValue=0,hasMinValue=True,minValue=0,defaultValue=0,keyable=True)
             self.original_face_output_bw("ctrlEye"+side+".squint")
             multiply=self._lip_node("multiplyDivide","eyeLidBlinkSquintMPD"+side)

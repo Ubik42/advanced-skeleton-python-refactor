@@ -112,7 +112,11 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,
         # computes a different point under Main's nonuniform scale.
         start=c.createNode('transform',name=start_name,parent=start_parent,skipSelect=True)
         if frame is not None:
-            c.xform(start,worldSpace=True,matrix=c.xform(frame.offset,query=True,worldSpace=True,matrix=True))
+            from .maya_original_transform_channels import align_original_transform
+            # The source asAlign copies T/R/order, preserving the sampler's
+            # scale. IKXOffset retains the pre-solver bind orientation; the
+            # live IKX rotation may already have changed after pole creation.
+            align_original_transform(c,start,frame.offset,True,True,False,True)
             from .maya_source_limb_root_frame import attach_measurement
             attach_measurement(host,frame,start)
         else:

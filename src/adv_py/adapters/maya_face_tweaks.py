@@ -39,27 +39,19 @@ class MayaFaceTweaksHost(MayaFacePreHost):
 
     def smooth_selected_skin_weights(self, iterations: int = 5) -> str:
         """Use the same skinCluster smoothWeights branch as asWeightHammerVerts."""
-        if type(iterations) is not int or not 1 <= iterations <= 100:
-            raise ValueError("Face 权重平滑迭代数必须在 1 到 100 之间")
+        if type(iterations) is not int:
+            raise ValueError("Face 权重平滑迭代数必须为整数")
         c = self._maya
-        selected = c.ls(selection=True, long=True, flatten=True) or ()
+        selected = c.ls(selection=True, long=True) or ()
         if not selected:
-            raise FitSkeletonValidationError("请先选择 Face 网格顶点")
-        meshes = {item.split(".", 1)[0] for item in selected}
-        if len(meshes) != 1 or any(".vtx[" not in item for item in selected):
-            raise FitSkeletonValidationError("Face 权重平滑只接受同一网格的顶点")
-        mesh = next(iter(meshes))
-        shapes = c.listRelatives(mesh, shapes=True,
-                                 noIntermediate=True, fullPath=True,
-                                 type="mesh") or ()
-        if len(shapes) != 1:
-            raise FitSkeletonValidationError("Face 权重网格 Shape 缺失或不唯一")
-        history = c.listHistory(shapes[0], pruneDagObjects=True) or ()
-        skins = (c.ls(history, type="skinCluster") or ()) \
-            if history else ()
-        if len(skins) != 1:
-            raise FitSkeletonValidationError("Face 网格需要唯一 SkinCluster")
-        skin = skins[0]
+            return ""
+        # asWeightHammerVerts uses the first selected object's related Skin;
+        # it accepts Maya selection state directly (not vertices-only input).
+        from .maya_original_skin_history import related_skin_cluster
+        mesh = selected[0].split(".", 1)[0]
+        skin = related_skin_cluster(mesh)
+        if not skin:
+            return ""
         if c.referenceQuery(skin, isNodeReferenced=True):
             raise FitSkeletonValidationError("不能平滑引用 SkinCluster 的权重")
         fit = self._name("FaceFitSkeleton")
@@ -92,16 +84,6 @@ class MayaFaceTweaksHost(MayaFacePreHost):
         if len(meshes) != 1:
             raise FitSkeletonValidationError("Face / Pre 须记录唯一 Face 网格")
         mesh = self.scene_address(meshes[0])
-        shape = c.listRelatives(mesh, shapes=True,
-                                noIntermediate=True, fullPath=True,
-                                type="mesh") or ()
-        if len(shape) != 1:
-            raise FitSkeletonValidationError("Face 网格 Shape 缺失或不唯一")
-        history = c.listHistory(shape[0], pruneDagObjects=True) or ()
-        skin = (c.ls(history, type="skinCluster") or ()) \
-            if history else ()
-        if len(skin) != 1:
-            raise FitSkeletonValidationError("Face 网格需要唯一 SkinCluster")
         fit = self._name("FaceFitSkeleton")
         if (not c.objExists(fit)
                 or not c.attributeQuery("HeadJoint", node=fit, exists=True)):
@@ -113,26 +95,20 @@ class MayaFaceTweaksHost(MayaFacePreHost):
         selection = c.ls(selection=True, long=True) or ()
         if selection:
             leaf = selection[0].rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-            name, separator, side = leaf.partition("_")
-            if separator and side in ("R", "L", "M"):
+            tokens = leaf.split("_")
+            name, side = tokens[0], tokens[1] if len(tokens) > 1 else ""
+            if side:
                 candidate = self._name(name + "Joint_" + side)
                 if c.objExists(candidate):
                     joint = candidate
-        influences = c.ls(c.skinCluster(skin[0], query=True,
-                                        influence=True) or (),
-                          long=True, type="joint") or ()
-        resolved = c.ls(joint, long=True, type="joint") or ()
-        if len(resolved) != 1 or resolved[0] not in influences:
-            raise FitSkeletonValidationError(
-                "Face 目标 Skin 不包含待绘制关节：" + joint)
         c.select(mesh, replace=True)
         layer = self._name("FaceJointsLayer")
         if c.objExists(layer) and not c.getAttr(layer + ".visibility"):
             self._show_face_joints_layer(mesh)
         if c.objExists(layer):
             c.select(layer, replace=True)
-        open_native_face_skin_paint(resolved[0], cmds=c)
-        return resolved[0]
+        open_native_face_skin_paint(joint, cmds=c)
+        return joint
 
     def _show_face_joints_layer(self, face_mesh: str) -> None:
         """Mirror asShowLayer FaceJoints when Skin Layers are present."""

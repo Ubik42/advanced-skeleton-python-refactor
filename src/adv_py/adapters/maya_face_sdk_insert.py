@@ -4,22 +4,10 @@ The source still determines the driven plug, keys, curve type and blend. This
 only journals the nodes that Maya 2024's implicit SDK insertion leaves behind.
 """
 from contextlib import nullcontext
+from .maya_face_blend_weighted import MayaFaceBlendWeightedMixin
 
 
-class MayaFaceSDKInsertMixin:
-    def original_face_sdk_attribute(self, node, attribute):
-        """Keep alias drivers while expanding real short attribute names."""
-        c = self._cmds
-        root, bracket, index = attribute.partition('[')
-        aliases = c.aliasAttr(node, query=True) or []
-        if attribute in aliases[::2]:
-            return attribute
-        if c.attributeQuery(root, node=node, exists=True):
-            return c.attributeQuery(root, node=node, longName=True) + (bracket + index if bracket else '')
-        # BlendShape target aliases are valid plugs, but attributeQuery only
-        # recognizes the underlying weight array. asCtrlToBw keeps aliases.
-        return c.attributeQuery(root, node=node, longName=True) + (bracket + index if bracket else '')
-
+class MayaFaceSDKInsertMixin(MayaFaceBlendWeightedMixin):
     def set_original_face_sdk_keys(self, driver, driven, keys):
         c = self._cmds
         incoming = c.listConnections(driven, source=True, destination=False,

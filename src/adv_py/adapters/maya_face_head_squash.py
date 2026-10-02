@@ -119,7 +119,7 @@ class MayaFaceHeadSquashHost(MayaFaceEyeLidRigHost):
                 c.parent(parent,"squashBase_M",absolute=True)
             controls[name]=name
         c.addAttr("squashTop_M",longName="volume",attributeType="double",softMinValue=0,
-                  softMaxValue=10,defaultValue=10,keyable=True)
+                  hasSoftMinValue=True,softMaxValue=10,hasSoftMaxValue=True,defaultValue=10,keyable=True)
         volume=c.createNode("unitConversion",name="squashTopVolumeUC")
         c.setAttr(volume+".conversionFactor",.1)
         c.connectAttr("squashTop_M.volume",volume+".input")
@@ -164,8 +164,8 @@ class MayaFaceHeadSquashHost(MayaFaceEyeLidRigHost):
             deformer,cluster_handle=c.cluster(curve+f".cv[{index}]",envelope=1,
                                               name=f"squashIKCluster{index}")
             c.rename(cluster_handle,f"squashIKClusterHandle{index}")
-        skin=c.skinCluster((*joints,lattice),toSelectedBones=True,maximumInfluences=3,
-                           dropoffRate=4,removeUnusedInfluence=False,name="squashIKSC")[0]
+        from .maya_original_skin_history import bind_original_skin
+        skin=bind_original_skin(c,(*joints,lattice),"squashIKSC",namespace=self.namespace)
         for index,component in ((0,".pt[0:1][0:1][0:1]"),
                                  *((i,f".pt[0:1][{i}][0:1]") for i in range(2,9)),
                                  (9,".pt[0:1][9:10][0:1]")):

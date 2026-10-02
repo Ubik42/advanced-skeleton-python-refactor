@@ -81,8 +81,6 @@ class SkinCageCurveDeletePlan:
 
 def plan_skin_cage_curve_delete(
         existing: tuple[str, ...]) -> SkinCageCurveDeletePlan:
-    if "MeshCurves" not in existing or "MeshGeometry" not in existing:
-        raise ValueError("SkinCage 编辑曲线或管体组不存在")
     allowed = ("SkinCurves1", "SkinCurves2", "MeshGeometry",
                "MeshCurves", "NurbsGeometry")
     return SkinCageCurveDeletePlan(tuple(node for node in allowed
@@ -92,11 +90,9 @@ def plan_skin_cage_curve_delete(
 def plan_skin_cage_profile_restore(
         profiles: tuple[SkinCageProfileShape, ...],
         ) -> tuple[SkinCageProfileShape, ...]:
-    if not profiles:
-        raise ValueError("已有 SkinCage 缺少可恢复的截面曲线")
     names = set()
     for profile in profiles:
-        if profile.name in names or not profile.name.endswith("Profile"):
+        if profile.name in names or "ProfileShape" not in profile.name.rsplit("|", 1)[-1]:
             raise ValueError("SkinCage 截面名称重复或无效：" + profile.name)
         names.add(profile.name)
         if len(profile.points) < 4 or any(
@@ -118,14 +114,8 @@ def plan_groin_adjustment(start: tuple[float, float, float],
 
 def plan_skin_cage_width(rows: tuple[SkinCageWidthInput, ...]
                          ) -> tuple[SkinCageWidthSpec, ...]:
-    if not rows:
-        raise ValueError("没有可调整宽度的 SkinCage 起始或末端截面")
     result = []
-    seen = set()
     for row in rows:
-        if row.profile in seen:
-            raise ValueError("SkinCage 宽度截面重复：" + row.profile)
-        seen.add(row.profile)
         values = (row.edge_a, row.edge_b, row.target_distance)
         if any(not isfinite(value) or value <= 0 for value in values):
             raise ValueError("SkinCage 截面尺寸或关节距离无效：" + row.profile)
@@ -143,15 +133,15 @@ def plan_skin_cage_mirror(profiles: tuple[str, ...],
         raise ValueError("SkinCage 镜像来源侧必须是 L 或 R")
     source_marker = "_" + source_side + "_"
     target_marker = "_" + ("R" if source_side == "L" else "L") + "_"
-    available = set(profiles)
+    available = {profile.rsplit("|", 1)[-1]: profile for profile in profiles}
     pairs = []
     for profile in profiles:
         leaf = profile.rsplit("|", 1)[-1]
         if source_marker not in leaf:
             continue
         target_leaf = leaf.replace(source_marker, target_marker, 1)
-        target = profile[:-len(leaf)] + target_leaf
-        if target in available:
+        target = available.get(target_leaf)
+        if target:
             pairs.append(SkinCageMirrorPair(profile, target))
     if not pairs:
         raise ValueError("SkinCage 曲线集合没有可镜像的左右截面")
@@ -193,12 +183,11 @@ def special_skin_cage_branch(parent: str,
     """Original 6.925 facet connectivity for its three named branch cases.
 
     Curve tokens omit Profile and use ``Joint_side_start`` notation. The
-    repeated Chest CV in the MEL source is collapsed to one vertex.
+    repeated Chest CV in the MEL source remains a repeated input point.
     """
     raw: tuple[str, ...]
     reversed_faces: tuple[int, ...] = ()
-    if parent == "Root_M" and {
-            "RootPart1_M", "Hip_R", "Hip_L"}.issubset(children):
+    if parent == "Root_M" and children == ("RootPart1_M", "Hip_R", "Hip_L"):
         raw = (
             "Hip_R_start:3 Hip_R_start:2 Hip_L_start:0 Hip_L_start:1 Root_M_middle:3 Root_M_middle:2",
             "Hip_R_start:0 Hip_R_start:1 Hip_L_start:3 Hip_L_start:2 Root_M_middle:0 Root_M_middle:1",
@@ -206,11 +195,10 @@ def special_skin_cage_branch(parent: str,
             "Hip_L_start:1 Hip_L_start:2 Root_M_middle:4 Root_M_middle:3",
         )
         reversed_faces = (1,)
-    elif parent == "Chest_M" and {
-            "Neck_M", "Shoulder_R", "Shoulder_L"}.issubset(children):
+    elif parent == "Chest_M" and children == ("Neck_M", "Shoulder_R", "Shoulder_L"):
         raw = (
             "Chest_M_middle:3 Shoulder_L_start:0 Shoulder_L_start:1 Neck_M_start:3",
-            "Neck_M_start:3 Neck_M_start:2 Chest_M_middle:2 Chest_M_middle:3",
+            "Neck_M_start:3 Neck_M_start:2 Chest_M_middle:2 Chest_M_middle:2 Chest_M_middle:3",
             "Chest_M_middle:2 Neck_M_start:2 Shoulder_R_start:3 Shoulder_R_start:2",
             "Chest_M_middle:1 Shoulder_R_start:1 Shoulder_R_start:0 Neck_M_start:1",
             "Neck_M_start:1 Neck_M_start:0 Chest_M_middle:0 Chest_M_middle:1",

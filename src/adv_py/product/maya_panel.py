@@ -1118,21 +1118,16 @@ def create_panel(controller: MayaPanelController | None = None):
 
             self.control_orient_targets = QtWidgets.QPlainTextEdit()
             self.control_orient_targets.setPlaceholderText(
-                "每行一个已登记控制器路径")
+                "留空使用当前选择；也可每行填写一个控制器路径")
             self.control_orient_targets.setMaximumHeight(76)
-            self.control_orient_child_selections = QtWidgets.QPlainTextEdit()
-            self.control_orient_child_selections.setPlaceholderText(
-                "分支关节填写：控制器名 = 直接子关节名；镜像时两侧分别填写")
-            self.control_orient_child_selections.setMaximumHeight(64)
             self.control_orient_primary = QtWidgets.QComboBox()
             self.control_orient_secondary = QtWidgets.QComboBox()
-            self.control_orient_world_up = QtWidgets.QComboBox()
             for axis in ("X", "Y", "Z", "-X", "-Y", "-Z"):
                 self.control_orient_primary.addItem(axis, axis)
                 self.control_orient_secondary.addItem(axis, axis)
-                self.control_orient_world_up.addItem(axis, axis)
             self.control_orient_secondary.setCurrentIndex(1)
-            self.control_orient_world_up.setCurrentIndex(1)
+            self.control_orient_primary.currentIndexChanged.connect(self._control_orient_axis_changed)
+            self.control_orient_secondary.currentIndexChanged.connect(self._control_orient_axis_changed)
             self.control_orient_world_orient = QtWidgets.QCheckBox("World Orient")
             self.control_orient_world_match_mode = QtWidgets.QCheckBox("World Match")
             self.control_orient_world_orient.toggled.connect(
@@ -1141,11 +1136,15 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._control_orient_mode_changed)
             self.control_orient_curve_unaffected = QtWidgets.QCheckBox(
                 "改变方向后保持曲线世界形状")
+            self.control_orient_curve_unaffected.setChecked(True)
             self.control_orient_mirror = QtWidgets.QCheckBox("同时设置对侧控制器")
             self.control_orient_mirror.setChecked(True)
             self.control_orient_mirrored_behavior = QtWidgets.QCheckBox(
                 "左右同轴旋转产生对称动作")
             self.control_orient_mirrored_behavior.setChecked(True)
+            self.control_orient_mirrored_translate = QtWidgets.QCheckBox("镜像平移")
+            self.control_orient_attach_mirror = QtWidgets.QCheckBox("重新附着时镜像")
+            self.control_orient_attach_mirror.setChecked(True)
             group, form = self._group("10 · Control Orient", [
                 ("目标控制器", self.control_orient_targets),
                 ("Primary Axis", self.control_orient_primary),
@@ -1155,12 +1154,11 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("Curve Unaffected", self.control_orient_curve_unaffected),
                 ("Mirror", self.control_orient_mirror),
                 ("Mirrored Behavior",
-                 self.control_orient_mirrored_behavior)])
+                 self.control_orient_mirrored_behavior),
+                ("Mirrored Translate", self.control_orient_mirrored_translate)])
             form.addRow(self._button("设置控制器局部轴", self._set_control_orient_axis))
-            form.addRow("扩展参考轴", self.control_orient_world_up)
-            form.addRow("扩展子关节", self.control_orient_child_selections)
-            form.addRow(self._button("朝向子关节（扩展）", self._set_control_orient_world_match))
             form.addRow(self._button("分离全部控制器", self._detach_control_orient_custom))
+            form.addRow(self.control_orient_attach_mirror)
             form.addRow(self._button("重新附着全部控制器", self._attach_control_orient_custom))
             stack.addWidget(group)
 
@@ -1185,6 +1183,17 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
 
             group, form = self._group("10B · Game Engine", [])
+            self.game_joint_primary = QtWidgets.QComboBox()
+            self.game_joint_secondary = QtWidgets.QComboBox()
+            self.game_joint_primary.addItems(('X', 'Y', 'Z'))
+            self.game_joint_secondary.addItems(('X', 'Y', 'Z'))
+            self.game_joint_secondary.setCurrentIndex(1)
+            form.addRow('Custom Orient Joints · 主轴', self.game_joint_primary)
+            form.addRow('次轴', self.game_joint_secondary)
+            for text, action in (('创建', 'create'), ('删除', 'delete'), ('显示坐标轴', 'show_axis'),
+                                 ('连接', 'connect'), ('断开', 'disconnect'), ('转移蒙皮', 'transfer_skin')):
+                form.addRow(self._button(text,
+                    lambda checked=False, action=action: self._custom_orient_joints(action)))
             form.addRow(self._button("创建 Root Motion",
                                      self._create_game_engine_root_motion))
             form.addRow(self._button("删除 Root Motion",
@@ -2536,10 +2545,9 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已检查 {skins} 个 Skin，清理 {removed} 个无效影响关节。"
 
         def _prune_small_skin_weights(self):
-            meshes, weak = self.controller.prune_small_skin_weights(
+            meshes = self.controller.prune_small_skin_weights(
                 self._namespace())
-            return (f"已检查 {meshes} 个蒙皮网格；原有 {weak} 项非零权重"
-                    "低于 0.01，已完成修剪并回读。")
+            return f"已对 {meshes} 个网格 Shape 执行原版 0.01 阈值修剪。"
 
         def _mocap_page(self):
             page, stack = self._page()
@@ -3284,7 +3292,8 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.control_orient_secondary.currentData(),
                 self.control_orient_curve_unaffected.isChecked(),
                 self.control_orient_mirror.isChecked(),
-                self.control_orient_mirrored_behavior.isChecked())
+                self.control_orient_mirrored_behavior.isChecked(),
+                self.control_orient_mirrored_translate.isChecked())
             return f"已设置 {count} 个控制器的局部轴"
 
         def _control_orient_mode_changed(self, checked):
@@ -3299,6 +3308,12 @@ def create_panel(controller: MayaPanelController | None = None):
             self.control_orient_primary.setEnabled(manual)
             self.control_orient_secondary.setEnabled(manual)
 
+        def _control_orient_axis_changed(self, index):
+            primary = self.control_orient_primary.currentIndex()
+            secondary = self.control_orient_secondary.currentIndex()
+            if primary % 3 == secondary % 3:
+                self.control_orient_secondary.setCurrentIndex(0 if secondary == 5 else secondary + 1)
+
         def _set_control_orient_world(self):
             controls = tuple(line.strip() for line in
                 self.control_orient_targets.toPlainText().splitlines()
@@ -3306,11 +3321,12 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_orient_world(
                 self._namespace(), controls,
                 self.control_orient_curve_unaffected.isChecked(),
-                self.control_orient_mirror.isChecked())
-            self.control_orient_primary.setCurrentIndex(0)
-            self.control_orient_secondary.setCurrentIndex(2)
-            self.control_orient_mirrored_behavior.setChecked(False)
-            return f"已将 {count} 个控制器对齐世界坐标轴；镜像行为已关闭"
+                self.control_orient_mirror.isChecked(),
+                self.control_orient_mirrored_behavior.isChecked(),
+                self.control_orient_mirrored_translate.isChecked(),
+                self.control_orient_primary.currentData(),
+                self.control_orient_secondary.currentData())
+            return f"已将 {count} 个控制器对齐世界坐标轴"
 
         def _set_control_orient_world_axis_match(self):
             controls = tuple(line.strip() for line in
@@ -3319,48 +3335,34 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_orient_world_axis_match(
                 self._namespace(), controls,
                 self.control_orient_curve_unaffected.isChecked(),
-                self.control_orient_mirror.isChecked())
-            self.control_orient_primary.setCurrentIndex(0)
-            self.control_orient_secondary.setCurrentIndex(2)
-            self.control_orient_mirrored_behavior.setChecked(False)
+                self.control_orient_mirror.isChecked(),
+                self.control_orient_mirrored_behavior.isChecked(),
+                self.control_orient_mirrored_translate.isChecked(),
+                self.control_orient_primary.currentData(),
+                self.control_orient_secondary.currentData())
             return f"已按变形关节的世界轴匹配 {count} 个控制器"
 
-        def _set_control_orient_world_match(self):
-            controls = tuple(line.strip() for line in
-                self.control_orient_targets.toPlainText().splitlines()
-                if line.strip())
-            child_selections = []
-            for line in self.control_orient_child_selections.toPlainText().splitlines():
-                if not line.strip():
-                    continue
-                control, separator, child = line.partition("=")
-                if not separator or not control.strip() or not child.strip():
-                    raise ValueError("子关节指定应为：控制器名 = 直接子关节名")
-                child_selections.append((control.strip(), child.strip()))
-            count = self.controller.control_orient_world_match(
-                self._namespace(), controls,
-                self.control_orient_primary.currentData(),
-                self.control_orient_secondary.currentData(),
-                self.control_orient_world_up.currentData(),
-                self.control_orient_curve_unaffected.isChecked(),
-                self.control_orient_mirror.isChecked(),
-                tuple(child_selections))
-            self.control_orient_mirrored_behavior.setChecked(False)
-            return f"已将 {count} 个控制器朝向子关节；镜像行为已关闭"
-
         def _detach_control_orient_custom(self):
-            proxies = self.controller.control_orient_custom_detach(
+            controls = self.controller.control_orient_custom_detach(
                 self._namespace())
-            return f"已分离 {len(proxies)} 个控制器；旋转橙色预览曲线后重新附着"
+            return f"已分离 {len(controls)} 个控制器；调整控制器方向后重新附着"
 
         def _attach_control_orient_custom(self):
             count = self.controller.control_orient_custom_attach(
-                self._namespace())
+                self._namespace(), self.control_orient_attach_mirror.isChecked())
             return f"已重新附着 {count} 个控制器并保留手工方向"
 
         def _create_unreal_joints(self):
             plan = self.controller.unreal_joints_create(self._namespace())
             return f"已创建 {len(plan.joints)} 个通用 Unreal IK 关节"
+
+        def _custom_orient_joints(self, action):
+            result = self.controller.custom_orient_joints(self._namespace(), action,
+                self.game_joint_primary.currentText(), self.game_joint_secondary.currentText())
+            if action == 'transfer_skin':
+                back, skins = result
+                return f"已将 {len(skins)} 个蒙皮的影响连接转回 ADV 骨架" if back else f"已将 {len(skins)} 个蒙皮的影响连接转到 GameSkeleton"
+            return 'Custom Orient Joints 操作已完成'
 
         def _delete_unreal_joints(self):
             self.controller.unreal_joints_delete(self._namespace())
@@ -3572,7 +3574,9 @@ def create_panel(controller: MayaPanelController | None = None):
             return "已设置原版 Smooth Bind 选项，并打开 Maya 绑定选项窗口"
 
         def _create_skin_cage(self):
-            count = self.controller.skin_cage_create(self._namespace())
+            count = self.controller.skin_cage_create(
+                self._namespace(),
+                include_controller=self.skin_cage_sliders_include_controller.isChecked())
             return f"已生成 SkinCage：{count} 条关节链"
 
         def _delete_skin_cage(self):
@@ -3581,7 +3585,8 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _mirror_skin_cage(self, source_side):
             count = self.controller.skin_cage_mirror(
-                self._namespace(), source_side)
+                self._namespace(), source_side,
+                include_controller=self.skin_cage_sliders_include_controller.isChecked())
             return f"已镜像 {count} 对 SkinCage 截面曲线"
 
         def _skin_cage_deformation_width(self):
@@ -3594,7 +3599,9 @@ def create_panel(controller: MayaPanelController | None = None):
             return "已创建 GroinStart 和 GroinSide 定位器"
 
         def _skin_cage_adjust_groin(self):
-            count = self.controller.skin_cage_adjust_groin(self._namespace())
+            count = self.controller.skin_cage_adjust_groin(
+                self._namespace(),
+                include_controller=self.skin_cage_sliders_include_controller.isChecked())
             return f"已调整右髋截面并镜像 {count} 对 SkinCage 曲线"
 
         def _skin_cage_groin_joint(self):
@@ -3907,9 +3914,10 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已读取 {len(rows)} 组 IK 系统与侧别"
 
         def _match_source_limb_mode(self):
-            self.controller.animation_match_source_limb(self._namespace(),
+            result=self.controller.animation_match_source_limb(self._namespace(),
                 self.limb_part.currentData(),self.limb_side.currentData(),
                 self.limb_mode.currentData())
+            if result is False:return '没有切换：FKIKBlend 需要处于源模式端点'
             return '当前来源 IK 系统已完成姿态切换'
 
         def _bake_spine_mode(self):

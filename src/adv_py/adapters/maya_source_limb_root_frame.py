@@ -1,5 +1,6 @@
 """Native source IK start frames and their locked parent-follow matrix graph."""
 from dataclasses import asdict,replace
+from .maya_original_transform_channels import align_original_transform
 from adv_py.core.character_registry import canonical,CharacterRegistryError
 from adv_py.core.source_body_matrix import SourceBodyMatrixPlan
 from adv_py.core.source_rp_dynamics import SourceRpNode
@@ -8,19 +9,24 @@ from adv_py.core.source_limb_root_frame import SourceIkRootFrameRecord,decode_re
 MARKER='advPySourceIkRootFrame'
 
 
-def _matrix(axes,position):
-    return tuple(value for axis in axes for value in (*axis,0.))+(*position,1.)
-
-
 def create(host,spec):
     host._require_transaction();c=host._cmds
-    for path,parent,axes,position in ((spec.frame,spec.parent,spec.parent_axes,spec.parent_position),
-                                     (spec.offset,spec.frame,spec.axes,spec.position)):
+    for path in (spec.frame,spec.offset):
         name=path.rsplit('|',1)[-1]
-        if host.find_name_collisions(name):raise CharacterRegistryError('来源 IK 起点层级名称冲突：'+name)
-        node=c.createNode('transform',name=name,parent=parent,skipSelect=True)
-        c.setAttr(node+'.rotateOrder',spec.rotate_order)
-        c.xform(node,worldSpace=True,matrix=_matrix(axes,position))
+        if host.find_name_collisions(name):
+            raise CharacterRegistryError('来源 IK 起点层级名称冲突：'+name)
+    frame=c.createNode('transform',name=spec.frame.rsplit('|',1)[-1],
+                       parent=spec.parent,skipSelect=True)
+    c.setAttr(frame+'.rotateOrder',spec.rotate_order)
+    # MEL copies live parent translation/rotation, never parent scale/shear.
+    target=spec.source_parent or spec.source_joint
+    position=c.xform(target,query=True,worldSpace=True,translation=True)
+    rotation=c.xform(target,query=True,worldSpace=True,rotation=True)
+    c.xform(frame,worldSpace=True,translation=position,rotation=rotation)
+    offset=c.createNode('transform',name=spec.offset.rsplit('|',1)[-1],
+                        parent=frame,skipSelect=True)
+    c.setAttr(offset+'.rotateOrder',spec.rotate_order)
+    align_original_transform(c,offset,spec.source_joint,True,True)
     host._transaction_changed=True
 
 

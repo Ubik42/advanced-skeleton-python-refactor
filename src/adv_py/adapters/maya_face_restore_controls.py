@@ -33,7 +33,8 @@ class MayaFaceRestoreControlsMixin:
                     flags.update(hasMinValue=True, minValue=low, hasMaxValue=True, maxValue=high)
                 if c.attributeQuery(attribute, node=previous, softRangeExists=True):
                     low, high = c.attributeQuery(attribute, node=previous, softRange=True)
-                    flags.update(softMinValue=low, softMaxValue=high)
+                    flags.update(softMinValue=low, hasSoftMinValue=True,
+                                 softMaxValue=high, hasSoftMaxValue=True)
                 if kind == "enum":
                     flags["enumName"] = c.addAttr(plug, query=True, enumName=True)
                 c.addAttr(control, **flags)
@@ -130,12 +131,12 @@ class MayaFaceRestoreControlsMixin:
         # asGetSkinCluster chooses the final history Skin; keep this policy
         # for the multi-Skin branch instead of requiring a single Skin.
         for mesh in self._all_head_meshes():
-            skin = self._original_pupil_skin(mesh, exclude_prefix=False)
+            skin = self.original_face_bs_skin(mesh)
             freeze_native_skin_cluster(skin)
             raw.setAttr(skin + ".envelope", 1)
         if c.objExists("FaceJointsLayer") and c.objExists("asFaceBS"):
             for mesh in c.listRelatives("FaceJointsLayer", children=True) or []:
-                skin = self._original_pupil_skin(self.scene_address(mesh), exclude_prefix=False)
+                skin = self.original_face_bs_skin(mesh)
                 freeze_native_skin_cluster(skin)
         raw.dgdirty(allPlugs=True)
         raw.select([item for item in selection if raw.objExists(item)], replace=True)

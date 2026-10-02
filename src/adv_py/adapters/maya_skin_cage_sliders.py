@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 
 from adv_py.core.skin_cage_sliders import SkinCageSlider
 from .maya_adv_icons import create_adv_icon
@@ -12,6 +13,7 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
     def __init__(self, namespace: str = "") -> None:
         super().__init__(namespace)
         self._include_controller = False
+        self._slider_sampler = ""
 
     def _leaf(self, node: str) -> str:
         return node.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
@@ -19,79 +21,74 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
     def _parent_joint(self, joint: str) -> str:
         parents = self.cmds.listRelatives(joint, parent=True, type="joint",
                                           fullPath=True) or []
-        if not parents:
-            raise ValueError("变形关节缺少父关节：" + joint)
-        return parents[0]
+        return parents[0] if parents else self._name("Root_M")
 
     def _twist_child(self, joint: str) -> str:
+        """asSkinCurveSliderInfo preserves native child order and last match."""
         c = self.cmds
-        visited = set()
-        current = joint
-        while current not in visited:
-            visited.add(current)
-            children = c.listRelatives(current, children=True,
-                                       type="joint", fullPath=True) or []
-            candidates = [child for child in children
-                          if "Slider" not in self._leaf(child)
-                          and not (c.objExists(child+".partialJoint")
-                                   and c.getAttr(child+".partialJoint"))]
-            def is_part(child):
-                return bool(re.search(r"Part[0-9]+_[LRM]$",self._leaf(child)))
-            ranked = sorted(candidates, key=lambda child: (
-                not c.objExists(self._name("FK" + self._leaf(child))),
-                not is_part(child), self._leaf(child)))
-            if not ranked:
-                break
-            current = ranked[0]
-            if not is_part(current):
-                return current
-        raise ValueError("末段 Twist 截面缺少后继关节：" + joint)
+        seen = set()
+        while joint and joint not in seen:
+            seen.add(joint)
+            child = ""
+            for candidate in c.listRelatives(joint, children=True, type="joint") or []:
+                leaf = self._leaf(candidate)
+                if "Slider" in leaf:
+                    continue
+                if self._cage_fk(candidate):
+                    child = candidate
+                if re.search(r"Part[0-9]_", leaf):
+                    child = candidate
+            if not child or not re.search(r"Part[0-9]", self._leaf(child)):
+                return child
+            joint = child
+        return ""
 
     def capture_slider_rows(self) -> tuple[tuple[str, str, str, int, str], ...]:
         c = self.cmds
-        selection = c.ls(selection=True, long=True, transforms=True) or []
+        selection = c.ls(selection=True) or []
         if not selection:
             raise ValueError("请选择 SkinCage 截面曲线")
         rows = []
         for profile in selection:
             leaf = self._leaf(profile)
             parts = leaf.split("_")
-            if len(parts) != 3 or not parts[2].startswith((
-                    "startProfile", "middleProfile", "endProfile",
-                    "twistProfile")):
+            if len(parts) < 3 or "Profile" not in parts[2]:
                 raise ValueError("请选择 SkinCage 截面曲线：" + leaf)
-            if not c.listRelatives(profile, shapes=True,
-                                   type="nurbsCurve"):
-                raise ValueError("所选截面不是 NURBS 曲线：" + leaf)
             joint = self._name(parts[0] + "_" + parts[1])
-            if not c.objExists(joint) or c.nodeType(joint) != "joint":
-                raise ValueError("截面缺少对应变形关节：" + leaf)
             kind = parts[2]
-            if kind.startswith("twistProfile") and kind != "twistProfile1":
-                ordinal = int(kind.removeprefix("twistProfile"))
-                next_profile = self._name(
-                    f"{parts[0]}_{parts[1]}_twistProfile{ordinal + 1}")
-                if c.objExists(next_profile):
-                    continue
-                joint = self._twist_child(joint)
-                segment = "start"
-            else:
-                segment = ("end" if kind.startswith("twistProfile")
-                           else kind.removesuffix("Profile"))
-            if kind.startswith("endProfile"):
-                restore = joint
-            elif kind == "twistProfile1":
+            segment = kind.removesuffix("Profile") if kind in (
+                "startProfile", "middleProfile", "endProfile") else ""
+            if kind == "twistProfile1":
+                segment = "end"
+            elif re.fullmatch(r"twistProfile[2-9]", kind):
+                child = self._twist_child(joint)
+                following = profile[:-1] + str(int(profile[-1]) + 1)
+                if child and c.objExists(child) and not c.objExists(following):
+                    joint, segment = child, "start"
+            if not segment:
+                continue
+            if kind == "twistProfile1":
                 part = self._name(parts[0] + "Part1_" + parts[1])
                 restore = part if c.objExists(part) else joint
+            elif kind == "endProfile":
+                restore = joint
             else:
-                restore = self._parent_joint(joint)
+                restore = (c.listRelatives(joint, parent=True) or [""])[0]
             bend_axis = 0
-            deform_name=self._leaf(joint)
-            if "Elbow" in deform_name or "Knee" in deform_name:
+            if "Elbow" in self._leaf(joint) or "Knee" in self._leaf(joint):
                 orient = c.getAttr(joint + ".jointOrient")[0]
+                opm = self._name("FitSkeleton") + ".useOffsetParentMatrix"
+                if c.objExists(opm) and c.getAttr(opm):
+                    from maya.api import OpenMaya as om
+                    matrix = c.getAttr(joint + ".offsetParentMatrix")
+                    if len(matrix) == 1:
+                        matrix = matrix[0]
+                    rotation = om.MTransformationMatrix(om.MMatrix(matrix)).rotation()
+                    from math import degrees
+                    orient = tuple(degrees(value) for value in (rotation.x, rotation.y, rotation.z))
                 if abs(orient[1]) > abs(orient[2]):
                     bend_axis = 1
-                elif abs(orient[2]) > abs(orient[1]):
+                if abs(orient[2]) > abs(orient[1]):
                     bend_axis = 2
             rows.append((profile, joint, restore, bend_axis, segment))
         return tuple(rows)
@@ -105,40 +102,48 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             if not c.objExists(self._name(leaf)):
                 raise ValueError("SkinCage Sliders 缺少原版节点：" + leaf)
         if include_controller:
-            for leaf in ("ControlSet", "Main", "buildPose"):
+            self._cage_main()
+            for leaf in ("ControlSet", "buildPose"):
                 if not c.objExists(self._name(leaf)):
                     raise ValueError("带控制器的 Sliders 缺少：" + leaf)
             for spec in plan:
-                if not c.objExists(self._name("FK" +
-                                               self._leaf(spec.deform_joint))):
+                if not self._cage_fk(spec.deform_joint):
                     raise ValueError("Sliders 缺少 FK 驱动控制器："
                                      + spec.deform_joint)
         for spec in plan:
             if len(c.ls(spec.profile + ".cv[*]", flatten=True) or []) < 5:
                 raise ValueError("SkinCage 截面至少需要五个 CV：" + spec.profile)
-            existing = [c.objExists(self._name(spec.joint(i)))
-                        for i in spec.indices]
-            if creating and any(existing):
-                raise ValueError("Sliders 已存在：" + spec.profile)
-            if not creating and not any(existing):
-                raise ValueError("所选截面没有 Sliders：" + spec.profile)
 
     def ensure_partial_joints(self,
                               plan: tuple[SkinCageSlider, ...]) -> None:
         from adv_py.adapters.maya_partial_joints import MayaPartialJointsHost
-        from adv_py.application.partial_joints import CreatePartialJoints
+        from adv_py.core.partial_joints import plan_create_partial_joints
 
         c = self.cmds
         original = c.ls(selection=True, long=True) or []
         try:
-            for joint in dict.fromkeys(spec.deform_joint for spec in plan):
+            for joint in dict.fromkeys(
+                    spec.deform_joint for spec in plan
+                    if not any(c.objExists(self._name(spec.joint(index)))
+                               for index in (0, 1))):
                 leaf = self._leaf(joint)
                 stem, side = leaf.rsplit("_", 1)
                 if c.objExists(self._name(stem + "Partial_" + side)):
                     continue
                 c.select(joint, replace=True)
-                CreatePartialJoints(MayaPartialJointsHost(
-                    namespace=self.namespace)).apply()
+                helper = MayaPartialJointsHost(namespace=self.namespace)
+                plan = plan_create_partial_joints(
+                    helper.capture_partial_candidates(),
+                    helper.resolve_partial_selection(),
+                    use_opm=helper.partial_uses_opm())
+                # The SkinCage operation owns rollback. A second host opening
+                # another undo chunk here splits a single source operation.
+                helper._transaction_active = True
+                try:
+                    for spec in plan.specs:
+                        helper.create_partial_joint(spec)
+                finally:
+                    helper._transaction_active = False
         finally:
             c.select(original, replace=True) if original else c.select(clear=True)
 
@@ -159,17 +164,32 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
                                      query=True, worldSpace=True,
                                      translation=True))
 
-    def _closest_vertex(self, position: tuple[float, ...]) -> str:
+    @contextmanager
+    def slider_sampling_scope(self):
+        """The source uses one named closestSampler for the whole selection."""
         c = self.cmds
-        sampler = c.createNode("closestPointOnMesh")
-        try:
-            c.connectAttr(self._name("skinCage") + ".outMesh",
-                          sampler + ".inMesh", force=True)
-            c.setAttr(sampler + ".inPosition", *position, type="double3")
-            index = int(c.getAttr(sampler + ".closestVertexIndex"))
-            return self._name("skinCage") + f".vtx[{index}]"
-        finally:
+        selection = c.ls(selection=True, long=True) or []
+        sampler = self._name("closestSampler")
+        if c.objExists(sampler):
             c.delete(sampler)
+        self._slider_sampler = c.createNode("closestPointOnMesh", name=sampler)
+        c.connectAttr(self._name("skinCage") + ".outMesh",
+                      self._slider_sampler + ".inMesh", force=True)
+        try:
+            yield
+        finally:
+            if c.objExists(self._slider_sampler):
+                c.delete(self._slider_sampler)
+            self._slider_sampler = ""
+            c.select(selection, replace=True) if selection else c.select(clear=True)
+
+    def _closest_vertex(self, position: tuple[float, ...]) -> str:
+        if not self._slider_sampler:
+            raise RuntimeError("Slider sampling requires its operation scope")
+        c = self.cmds
+        c.setAttr(self._slider_sampler + ".inPosition", *position, type="double3")
+        index = int(c.getAttr(self._slider_sampler + ".closestVertexIndex"))
+        return self._name("skinCage") + f".vtx[{index}]"
 
     def _slider_indices(self, spec: SkinCageSlider,
                         index: int) -> tuple[int, int]:
@@ -190,9 +210,9 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
         if spec.side not in ("L", "R"):
             return self._closest_vertex(sample)
         other_side = "R" if spec.side == "L" else "L"
-        opposite_leaf = self._leaf(spec.profile).replace(
-            f"_{spec.side}_", f"_{other_side}_", 1)
-        opposite = self._name(opposite_leaf)
+        # For a twist profile the source still displaces the canonical
+        # opposite start/end profile, rather than the opposite twist profile.
+        opposite = self._name(f"{spec.stem}_{other_side}_{spec.segment}Profile")
         if not c.objExists(opposite):
             return self._closest_vertex(sample)
         c.move(0, 0, -999, opposite, relative=True, worldSpace=True)
@@ -210,10 +230,14 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
         distance = self._name(shared + "Dist" + suffix)
         normalize = self._name(shared + "DistNormalize" + suffix)
         if not c.objExists(distance):
+            distance = c.createNode("distanceBetween", name=distance)
             start = c.createNode("transform", name=self._name(
-                shared + "Start" + suffix), parent=parent, skipSelect=True)
+                shared + "Start" + suffix), skipSelect=True)
             end = c.createNode("transform", name=self._name(
-                shared + "End" + suffix), parent=parent, skipSelect=True)
+                shared + "End" + suffix), skipSelect=True)
+            c.connectAttr(end + ".translate", distance + ".point2", force=True)
+            start = c.parent(start, parent)[0]
+            end = c.parent(end, parent)[0]
             c.xform(start, worldSpace=True, translation=midpoint)
             c.xform(end, worldSpace=True, translation=midpoint)
             partial = self._name(f"{spec.stem}Partial_{spec.side}")
@@ -229,14 +253,10 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             end = c.parent(end, start)[0]
             c.parentConstraint(spec.deform_joint, start, maintainOffset=True)
             c.parentConstraint(partial, end, maintainOffset=True)
-            distance = c.createNode("distanceBetween", name=distance)
-            c.connectAttr(end + ".translate", distance + ".point2")
             normalize = c.createNode("multiplyDivide", name=normalize)
             c.setAttr(normalize + ".operation", 2)
             c.connectAttr(distance + ".distance", normalize + ".input1X")
             baseline = float(c.getAttr(distance + ".distance"))
-            if baseline < 1e-6:
-                raise ValueError("Slider 初始距离为零：" + spec.profile)
             c.setAttr(normalize + ".input2X", baseline)
         prefix = f"{spec.stem}{spec.segment}Slide"
         reducer = c.createNode("multiplyDivide", name=self._name(
@@ -245,8 +265,9 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             prefix + "Multiply" + suffix))
         plus = c.createNode("plusMinusAverage", name=self._name(
             prefix + "PlusOffset" + suffix))
-        c.connectAttr(reducer + ".outputX", slide + ".input1X")
+        c.addAttr(slider, longName="slide", attributeType="double", defaultValue=1, keyable=True)
         c.connectAttr(slider + ".slide", slide + ".input2X")
+        c.connectAttr(reducer + ".outputX", slide + ".input1X")
         c.connectAttr(slide + ".outputX", plus + ".input1D[0]")
         width = max(abs(float(c.getAttr(slider + ".translateY"))),
                     abs(float(c.getAttr(slider + ".translateZ"))))
@@ -262,7 +283,7 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             c.connectAttr(minus + ".output1D", reducer + ".input1X")
             axis = "X"
         else:
-            axis = "Y" if index in (0, 2) else "Z"
+            axis = "Y" if spec.bend_axis == 2 or (spec.bend_axis == 0 and index in (0, 2)) else "Z"
             c.setAttr(reducer + ".input2X", width)
             reverse = c.createNode("reverse", name=self._name(
                 prefix + "Reverse" + suffix))
@@ -276,6 +297,9 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             c.connectAttr(reverse + ".outputX", absolute + ".firstTerm")
             c.connectAttr(reverse + ".outputX",
                           absolute + ".colorIfFalseR")
+            # The MEL creates the same Reducer name twice in this branch;
+            # Maya auto-names the second, unused node. Keep that graph behavior.
+            c.createNode("multiplyDivide", name=self._name(prefix + "Reducer" + suffix))
             c.connectAttr(reverse + ".outputX", negate + ".input1X")
             c.setAttr(negate + ".input2X", -1)
             c.connectAttr(negate + ".outputX",
@@ -288,71 +312,82 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
 
     def _controller_driver(self, spec: SkinCageSlider, index: int,
                            slider: str, parent: str, system: str) -> None:
+        """asCreateSliders controller branch invokes the Python asDsCreate port."""
+        from .maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.core.driving_systems import DrivingCreateOptions
         c = self.cmds
         leaf = spec.joint(index)
-        offset = c.createNode("transform", name=self._name("FKOffset" + leaf),
-                              parent=system, skipSelect=True)
-        c.xform(offset, worldSpace=True,
-                matrix=c.xform(slider, query=True, worldSpace=True,
-                               matrix=True))
-        extra = c.createNode("transform", name=self._name("FKExtra" + leaf),
-                             parent=offset, skipSelect=True)
-        bounds = c.exactWorldBoundingBox(self._name("skinCage"))
-        height = max(bounds[4] - bounds[1], 0.001)
-        control = create_adv_icon(
-            c, name=self._name("FK" + leaf), parent=extra,
-            template="Bend_icon", radius=0.01 * height,
-            fallback_normal=(1.0, 0.0, 0.0))
-        c.sets(control, add=self._name("ControlSet"))
-        c.sets(extra, add=self._name("ControlSet"))
-        c.parentConstraint(parent, offset, maintainOffset=True)
-        fkx = c.createNode("transform", name=self._name("FKX" + leaf),
-                           parent=control, skipSelect=True)
-        c.parentConstraint(fkx, slider, maintainOffset=True)
-        marker = c.createNode("transform", parent=slider, skipSelect=True)
-        marker = c.parent(marker, spec.deform_joint)[0]
-        local = c.getAttr(marker + ".translate")[0]
-        c.delete(marker)
-        driver = self._name("FK" + self._leaf(spec.deform_joint))
-        rotate = ("rotateZ" if spec.bend_axis or index in (0, 2)
-                  else "rotateY")
-        axis = "translateX" if spec.segment != "middle" else (
-            "translateY" if index in (0, 2) else "translateZ")
-        rest = float(c.getAttr(control + "." + axis))
-        c.setDrivenKeyframe(control + "." + axis,
-                            currentDriver=driver + "." + rotate,
-                            driverValue=0, value=rest)
-        for alternate in (False, True):
-            angle = -90 if index in (1, 2) else 90
-            if alternate:
-                angle *= -1
-            if spec.segment == "end":
-                angle *= -1
-            displacement = (local[1] if index in (0, 2) else local[2]) / 4.0
-            if alternate and spec.segment != "middle":
-                displacement *= -1
-            if spec.segment != "middle" and index in (0, 1):
-                displacement *= -1
-            c.setDrivenKeyframe(control + "." + axis,
-                                currentDriver=driver + "." + rotate,
-                                driverValue=angle,
-                                value=rest + displacement)
-        curves = c.listConnections(control + "." + axis,
-                                   source=True, destination=False,
-                                   type="animCurve") or []
-        if len(curves) != 1:
-            raise RuntimeError("Slider 控制器 SDK 曲线创建失败：" + leaf)
-        sdk_name = self._name("SDKFK" + leaf + "_" + axis)
-        curve = c.rename(curves[0], sdk_name)
-        if spec.bend_axis:
-            c.setAttr(curve + ".preInfinity", 1)
-            c.setAttr(curve + ".postInfinity", 1)
-            c.keyTangent(curve, index=(0, 0),
-                         inTangentType="spline", outTangentType="spline")
-            c.keyTangent(curve, index=(2, 2),
-                         inTangentType="spline", outTangentType="spline")
+        offset = c.createNode("transform", name=self._name("FKOffset" + leaf), parent=system)
+        extra = c.createNode("transform", name=self._name("FKExtra" + leaf), parent=offset)
+        from .maya_original_transform_channels import lock_original_transform_channels
+        lock_original_transform_channels(c,extra,False,False,True,True)
+        height = float(c.getAttr(self._cage_main() + ".height"))
+        control = create_adv_icon(c, name=self._name("FK" + leaf), parent=extra,
+                                  template="Bend_icon", radius=.01 * height,
+                                  fallback_normal=(1, 0, 0))
+        c.setAttr(control + ".t", 0, 0, 0, type="float3")
+        c.sets(control, extra, add=self._name("ControlSet"))
+        self._cage_align(offset, slider)
+        c.setAttr(offset + ".rotateOrder", c.getAttr(slider + ".rotateOrder"))
+        fkx = c.createNode("transform", name=self._name("FKX" + leaf), parent=control)
+        self._cage_parent_constraint(fkx, slider, maintain_offset=False)
+        self._cage_parent_constraint(parent, offset, maintain_offset=True)
+        c.setAttr(slider + ".segmentScaleCompensate", 0)
         self._record_slider_build_pose(leaf)
-        c.setAttr(slider + ".segmentScaleCompensate", False)
+        temporary = self._name("tempTransform")
+        if c.objExists(temporary):
+            c.delete(temporary)
+        temporary = c.createNode("transform", name=temporary, parent=slider)
+        temporary = c.parent(temporary, spec.deform_joint)[0]
+        local = c.getAttr(temporary + ".t")[0]
+        c.delete(temporary)
+        helper = MayaDrivingSystemsHost(namespace=self.namespace or None)
+        helper._transaction_active = True
+        helper._original_driving_from_build = True
+        from maya import mel
+        q_rotations = bool(mel.eval("global int $asDSQRotate; $asDSQRotate;"))
+        if spec.bend_axis in (0, 2):
+            q_rotations = spec.bend_axis == 0
+            mel.eval("global int $asDSQRotate; $asDSQRotate=%d;" % int(q_rotations))
+        try:
+            rotate = "rotateY" if spec.bend_axis == 0 and index in (1, 3) else "rotateZ"
+            driven_axis = "translateX" if spec.segment != "middle" else (
+                "translateY" if index in (0, 2) else "translateZ")
+            driver_control = self._cage_fk(spec.deform_joint)
+            driver_leaf = self._leaf(driver_control)
+            for alternate in (False, True):
+                angle = -90 if index in (1, 2) else 90
+                if alternate:
+                    angle *= -1
+                if spec.segment == "end":
+                    angle *= -1
+                value = local[1 if index in (0, 2) else 2] / 4
+                if alternate and spec.segment != "middle":
+                    value *= -1
+                if spec.segment != "middle" and index in (0, 1):
+                    value *= -1
+                c.setAttr(driver_control + "." + rotate, angle)
+                c.setAttr(control + "." + driven_axis, value)
+                options = DrivingCreateOptions(driver_leaf, rotate, mirror=False,
+                                               q_rotations=q_rotations)
+                plan = helper.capture_original_driving_create(options)
+                helper.create_original_driving_system(plan)
+            if not q_rotations:
+                curve = self._name("SDKFK" + leaf + "_" + driven_axis)
+                c.setAttr(curve + ".preInfinity", 1)
+                c.setAttr(curve + ".postInfinity", 1)
+                for key in (0, 2):
+                    c.keyTangent(curve, index=(key, key),
+                                 inTangentType="spline", outTangentType="spline")
+        finally:
+            helper._transaction_active = False
+        main = self._cage_main()
+        if not c.objExists(main + ".slideSysVis"):
+            c.addAttr(main, longName="slideSysVis", attributeType="bool", defaultValue=1, keyable=True)
+            c.setAttr(main + ".slideSysVis", keyable=False, channelBox=True)
+        system = self._name("SlideSystem")
+        if not c.isConnected(main + ".slideSysVis", system + ".v"):
+            c.connectAttr(main + ".slideSysVis", system + ".v")
 
     def _slider_pose_commands(self, leaf: str) -> tuple[str, str]:
         return tuple('xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 "%s";'
@@ -369,23 +404,11 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
         c.setAttr(plug, existing + "".join(
             self._slider_pose_commands(leaf)), type="string")
 
-    def _remove_slider_build_pose(self, leaf: str) -> None:
-        c = self.cmds
-        pose = self._name("buildPose")
-        if not c.objExists(pose) or not c.attributeQuery(
-                "udExtraAttr", node=pose, exists=True):
-            return
-        plug = pose + ".udExtraAttr"
-        existing = c.getAttr(plug) or ""
-        updated = existing
-        for command in self._slider_pose_commands(leaf):
-            updated = updated.replace(command, "")
-        if updated != existing:
-            c.setAttr(plug, updated, type="string")
-
     def create_slider(self, spec: SkinCageSlider, *,
-                      include_controller: bool) -> None:
+                      include_controller: bool) -> bool:
         c = self.cmds
+        if any(c.objExists(self._name(spec.joint(index))) for index in (0, 1)):
+            return False
         system = self._system("SlideSystem", self._name("MotionSystem"))
         scale = self._name("MainScaleMultiplyDivide")
         if c.objExists(scale) and not c.isConnected(
@@ -393,20 +416,26 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             c.connectAttr(scale + ".output", system + ".scale",
                           force=True)
         group = self._system(f"{spec.stem}SlideSystem_{spec.side}", system)
+        self.ensure_partial_joints((spec,))
         partial = self._name(f"{spec.stem}Partial_{spec.side}")
         first_parent = self._parent_joint(spec.deform_joint)
         parent = (first_parent if spec.segment == "start" else partial
                   if spec.segment == "middle" else spec.deform_joint)
+        vertices = {}
+        if spec.segment == "end" and "Part1_" in self._leaf(spec.restore_joint):
+            parent = self._cage_rla_child(spec.deform_joint)
         for index in spec.indices:
             cv, next_cv = self._slider_indices(spec, index)
             a, b = self._cv(spec, cv), self._cv(spec, next_cv)
             midpoint = tuple((a[axis] + b[axis]) / 2 for axis in range(3))
-            joint = c.createNode("joint", name=self._name(spec.joint(index)),
-                                 parent=parent, skipSelect=True)
-            c.xform(joint, worldSpace=True, translation=midpoint)
+            c.select(spec.deform_joint, replace=True)
+            joint = c.joint(name=self._name(spec.joint(index)))
+            if parent != spec.deform_joint:
+                joint = c.parent(joint, parent)[0]
             c.sets(joint, add=self._name("DeformSet"))
-            c.addAttr(joint, longName="slide", attributeType="double",
-                      defaultValue=1, keyable=True)
+            c.delete(c.orientConstraint(spec.profile, joint))
+            c.makeIdentity(joint, apply=True, translate=False, rotate=True, scale=False, normal=0)
+            c.xform(joint, worldSpace=True, translation=midpoint)
             if include_controller:
                 self._controller_driver(spec, index, joint, parent, group)
             else:
@@ -414,85 +443,64 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
                                       group, midpoint)
             c.skinCluster(self._name("skinClusterSkinCage"), edit=True,
                           addInfluence=joint, weight=0, lockWeights=False)
-            vertex = self._sample_vertex(spec, index, 0.833)
-            c.skinPercent(self._name("skinClusterSkinCage"), vertex,
-                          transformValue=[(joint, 1.0)])
-        skin = self._name("skinClusterSkinCage")
-        if len(spec.indices) == 4:
-            for index in spec.indices:
-                vertex = self._sample_vertex(spec, index, 0.833)
-                current = self._name(spec.joint(index))
-                previous = self._name(spec.joint((index - 1) % 4))
-                c.skinPercent(skin, vertex, transformValue=[
-                    (current, 0.5), (previous, 0.5)])
-        else:
-            extra = ((2, 1), (4, 3)) if spec.indices == (1, 3) else (
-                (1, 0), (3, 2))
-            for cv, index in extra:
-                flipped = (2, 3, 0, 1, 2)[cv] if spec.side == "L" else cv
-                vertex = self._closest_vertex(self._cv(spec, flipped))
-                c.skinPercent(skin, vertex, transformValue=[
-                    (self._name(spec.joint(index)), 1.0)])
-        if include_controller:
-            main = self._name("Main")
-            if not c.attributeQuery("slideSysVis", node=main, exists=True):
-                c.addAttr(main, longName="slideSysVis",
-                          attributeType="bool", defaultValue=True,
-                          keyable=True)
-            if not c.isConnected(main + ".slideSysVis", system + ".visibility"):
-                c.connectAttr(main + ".slideSysVis", system + ".visibility",
-                              force=True)
+            vertex = self._sample_vertex(spec, index, .833)
+            vertices[index] = vertex
+            skin = self._name("skinClusterSkinCage")
+            c.skinPercent(skin, vertex, transformValue=[(joint, 1)])
+            if spec.bend_axis == 0:
+                if index > 0:
+                    c.skinPercent(skin, vertex, transformValue=[
+                        (self._name(spec.joint(index - 1)), .5)])
+                if index == 3:
+                    c.skinPercent(skin, vertices[0], transformValue=[
+                        (self._name(spec.joint(3)), .5)])
+            if (spec.bend_axis == 1 and index == 3) or (spec.bend_axis == 2 and index == 2):
+                extra = ((2, 1), (4, 3)) if spec.bend_axis == 1 else ((1, 0), (3, 2))
+                for pickup, slider_index in extra:
+                    cv_index = (2, 3, 0, 1, 2)[pickup] if spec.side == "L" else pickup
+                    vertex = self._closest_vertex(self._cv(spec, cv_index))
+                    c.skinPercent(skin, vertex, transformValue=[
+                        (self._name(spec.joint(slider_index)), 1)])
+        return True
 
     def delete_slider(self, spec: SkinCageSlider) -> None:
         c = self.cmds
         skin = self._name("skinClusterSkinCage")
-        center = self._profile_center(spec)
         for index in range(4):
-            point = self._cv(spec, index)
-            sample = tuple(center[axis] + 0.832 * (
-                point[axis] - center[axis]) for axis in range(3))
-            vertex = self._closest_vertex(sample)
-            weights = ([(spec.deform_joint, 0.5),
-                        (spec.restore_joint, 0.5)]
-                       if spec.segment == "middle" else
-                       [(spec.restore_joint, 1.0)])
+            # MEL reads the holder position BEFORE its .832 scale.
+            vertex = self._closest_vertex(self._cv(spec, index))
+            weights = ([(spec.deform_joint, .5), (spec.restore_joint, .5)]
+                       if spec.segment == "middle" else [(spec.restore_joint, 1)])
             c.skinPercent(skin, vertex, transformValue=weights)
-        for index in spec.indices:
-            leaf = spec.joint(index)
-            joint = self._name(leaf)
-            if c.objExists(joint):
-                influences = c.skinCluster(skin, query=True,
-                                           influence=True) or []
-                if any(self._leaf(value) == leaf for value in influences):
-                    c.skinCluster(skin, edit=True, removeInfluence=joint)
-                c.delete(joint)
-            control = self._name("FKOffset" + leaf)
-            if c.objExists(control):
-                self._remove_slider_build_pose(leaf)
-                c.delete(control)
-            sdk = self._name("SDKFK" + leaf + "_" + (
-                "translateX" if spec.segment != "middle" else
-                "translateY" if index in (0, 2) else "translateZ"))
-            if c.objExists(sdk):
-                c.delete(sdk)
-            prefix = f"{spec.stem}{spec.segment}Slide"
-            suffix = f"{index}_{spec.side}"
-            for part in ("Reducer", "Multiply", "PlusOffset", "MinusOne",
-                         "Reverse", "Absolutor", "TimesMinusOne"):
-                node = self._name(prefix + part + suffix)
+        for index in range(4):
+            for name in (spec.joint(index), "FKOffset" + spec.joint(index),
+                         f"{spec.stem}SlideStart{index}_{spec.side}"):
+                node = self._name(name)
                 if c.objExists(node):
                     c.delete(node)
-            if not any(c.objExists(self._name(
-                    f"{spec.stem}{segment}Slider{index}_{spec.side}"))
-                    for segment in ("start", "middle", "end")):
-                shared = f"{spec.stem}Slide"
-                for part in ("Start", "End", "Dist", "DistNormalize"):
-                    node = self._name(shared + part + suffix)
-                    if c.objExists(node):
-                        c.delete(node)
         group = self._name(f"{spec.stem}SlideSystem_{spec.side}")
         if c.objExists(group) and not c.listRelatives(group, children=True):
             c.delete(group)
+
+    @contextmanager
+    def slider_delete_time_scope(self):
+        c = self.cmds
+        current = c.currentTime(query=True)
+        c.currentTime(0)
+        try:
+            yield
+        finally:
+            c.currentTime(current)
+
+    def finish_slider_delete(self) -> None:
+        from .maya_driving_systems import MayaDrivingSystemsHost
+        helper = MayaDrivingSystemsHost(namespace=self.namespace or None)
+        helper._transaction_active = True
+        try:
+            helper.go_to_original_corrective_build_pose(face=False)
+        finally:
+            helper._transaction_active = False
+        self.cmds.select(clear=True)
 
     def capture_sliders(self, spec: SkinCageSlider, *,
                         present: bool) -> bool:
@@ -527,10 +535,6 @@ class MayaSkinCageSliderHost(MayaSkinCageHost):
             elif present:
                 if not all(c.objExists(node) for node in distance_nodes):
                     return False
-            elif (any(c.objExists(node) for node in control_names)
-                  or c.objExists(sdk)
-                  or any(c.objExists(node) for node in distance_nodes)
-                  or any(command in pose_script for command in
-                         self._slider_pose_commands(leaf))):
+            elif any(c.objExists(node) for node in control_names):
                 return False
         return True

@@ -59,7 +59,12 @@ def _custom_orient(c,control):
     leaf=control.rsplit('|',1)[-1]
     namespace,separator,name=leaf.rpartition(':')
     prefix=namespace+':' if separator else ''
-    matches=c.ls(prefix+'CustomOrient'+(name if separator else leaf),long=True) or []
+    from .maya_original_control_identity import command_registration, control_roles
+    actual=name if separator else leaf
+    role=control_roles(command_registration(c,namespace)).get(actual,actual)
+    candidates=tuple(dict.fromkeys((prefix+'CustomOrient'+actual,prefix+'CustomOrient'+role)))
+    matches=list(dict.fromkeys(path for candidate in candidates
+                              for path in c.ls(candidate,long=True) or []))
     if not matches:return
     if len(matches)!=1:raise CharacterRegistryError('自定义朝向节点不唯一：'+control)
     custom=matches[0]
@@ -73,11 +78,10 @@ def _custom_orient(c,control):
     c.xform(control,relative=True,objectSpace=True,rotation=rotation)
     if c.getAttr(custom+'.scaleX')<0:
         rotation=c.xform(control,query=True,worldSpace=True,rotation=True)
-        scale=tuple(c.getAttr(custom+'.scale')[0])
         try:
-            c.setAttr(custom+'.scale',1.,1.,1.)
+            c.setAttr(custom+'.scale',1.,1.,1.,type='float3')
             c.xform(control,worldSpace=True,rotation=rotation)
-        finally:c.setAttr(custom+'.scale',*scale)
+        finally:c.setAttr(custom+'.scale',-1.,-1.,-1.,type='float3')
         if c.attributeQuery('worldorient',node=control,exists=True) and c.getAttr(control+'.worldorient'):
             c.rotate(*c.xform(custom,query=True,objectSpace=True,rotation=True),control,
                      relative=True,objectSpace=True)

@@ -2,6 +2,8 @@
 from fnmatch import fnmatchcase
 
 
+from .maya_original_skin_history import remove_unused_for_skin
+
 class MayaFaceBSCleanupMixin:
     def _original_bs_delete_existing(self, nodes):
         found = [node for node in nodes if self._cmds.objExists(node)]
@@ -37,17 +39,18 @@ class MayaFaceBSCleanupMixin:
                     c.delete(node)
             self._original_bs_delete_existing(("bwctrlEye_R_blink", "bwctrlEye_L_blink"))
         else:
-            # Source repeats this flood per sampled control; apply the identical
-            # final flood once to each additional mesh without redundant passes.
-            for geometry in source["target_geometry"]:
-                if geometry == source["geometry"]:
-                    continue
-                skin = self.original_face_bs_skin(geometry)
-                try:
-                    raw.skinPercent(skin, self.scene_address(geometry), transformValue=((self.scene_address(source["head"]), 1),))
-                except RuntimeError:
-                    pass
-                raw.skinCluster(skin, edit=True, removeUnusedInfluence=True)
+            # asFaceToBlendShapes repeats the flood and influence removal for
+            # each sampled control. Preserve the source mutation order.
+            for control in source["controls"]:
+                for geometry in source["target_geometry"]:
+                    if geometry == source["geometry"]:
+                        continue
+                    skin = self.original_face_bs_skin(geometry)
+                    try:
+                        raw.skinPercent(skin, self.scene_address(geometry), transformValue=((self.scene_address(source["head"]), 1),))
+                    except RuntimeError:
+                        pass
+                    remove_unused_for_skin(raw, skin)
             skin = self.scene_address(source["skin"])
             for joint in raw.listConnections(skin + ".matrix") or []:
                 raw.setAttr(joint + ".liw", True)

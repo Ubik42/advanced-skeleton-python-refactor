@@ -5,6 +5,10 @@ options. Prefix capture and restoration of an existing rig remain separate.
 """
 from contextlib import nullcontext
 
+from .maya_original_skin_history import bind_original_skin
+
+
+from .maya_original_transform_channels import lock_original_transform_channels
 
 class MayaFacePrepSkinMixin:
     def prepare_original_face_skin_environment(self, source):
@@ -54,16 +58,13 @@ class MayaFacePrepSkinMixin:
         namespace = c._creation_namespace if hasattr(c, "_creation_namespace") else nullcontext
         with namespace():
             duplicate = raw.duplicate(mesh, name=self.scene_address("newSkinClusterLayer"), returnRootsOnly=True)[0]
-        for attr in ("tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz", "v"):
-            raw.setAttr(duplicate + "." + attr, lock=False)
+        lock_original_transform_channels(raw, duplicate)
         raw.sets(duplicate, edit=True, forceElement=":initialShadingGroup")
         for shape in raw.listRelatives(duplicate, shapes=True, fullPath=True) or []:
             if raw.getAttr(shape + ".intermediateObject"):
                 raw.delete(shape)
-        with namespace():
-            temporary = raw.skinCluster([duplicate, *influences], toSelectedBones=True,
-                                        maximumInfluences=3, dropoffRate=4, removeUnusedInfluence=False,
-                                        name=self.scene_address("newSkinClusterSC"))[0]
+        temporary = bind_original_skin(raw, (duplicate, *influences),
+            self.scene_address("newSkinClusterSC"), namespace=self.namespace)
         raw.select((mesh, duplicate), replace=True)
         raw.copySkinWeights(sourceSkin=skin_path,destinationSkin=temporary,
                             noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
@@ -74,10 +75,16 @@ class MayaFacePrepSkinMixin:
         remaining=[node for node in raw.listHistory(mesh) or []
                    if raw.nodeType(node)=="skinCluster"]
         layered=dict(multi=True,frontOfChain=True) if remaining else {}
-        with namespace():
-            regenerated = raw.skinCluster([mesh, *influences], toSelectedBones=True,
-                                          maximumInfluences=3, dropoffRate=4, removeUnusedInfluence=False,
-                                          name=skin_path,**layered)[0]
+        if layered:
+            # Maya's modern multi-Skin graph needs this host compatibility path.
+            # Keep it distinct from the ordinary source binding procedure.
+            with namespace():
+                regenerated = raw.skinCluster([mesh, *influences], toSelectedBones=True,
+                    maximumInfluences=3, dropoffRate=4, removeUnusedInfluence=False,
+                    name=skin_path, **layered)[0]
+        else:
+            regenerated = bind_original_skin(raw, (mesh, *influences), skin_path,
+                                             namespace=self.namespace)
         raw.select((duplicate, mesh), replace=True)
         raw.copySkinWeights(sourceSkin=temporary,destinationSkin=regenerated,
                             noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")

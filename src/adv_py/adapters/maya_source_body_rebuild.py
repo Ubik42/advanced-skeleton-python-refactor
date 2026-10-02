@@ -76,7 +76,8 @@ def capture_fk_policy(host, registration):
             host.validate_body_bendy_handoff(driver)
         if (c.isConnected(control + '.scale',driver + '.scale')
                 or all(c.isConnected(control + '.scale' + axis,
-                                     driver + '.scale' + axis) for axis in 'XYZ')):
+                                     driver + '.scale' + axis) for axis in 'XYZ')
+                or _sdk_scale_drives(c,registration,control,driver)):
             scale.add(control)
         bendy_scale = namespace + "AdvPy_BendyDeformScale" + body_stem
         if c.objExists(bendy_scale) and c.isConnected(
@@ -136,6 +137,8 @@ def capture_fk_policy(host, registration):
         source_nonopm_fk_blend_targets=any(c.objExists(node+'.advPySourceNonOpmFkBlendTarget') for node in owned),
         source_nonopm_inverse_scale=any(c.objExists(node+'.advPySourceFkInverseScale') for node in owned),
         source_native_ik_effectors=any(c.objExists(node+'.advPySourceIkEffector') for node in owned),
+        source_rp_mode_controls=any(c.objExists(channel.node+'.advPySourceRpMode')
+            for channel in registration.channels if channel.attribute=='FKIKBlend'),
         source_spline_layouts=tuple(plan for plan in
             (registration.spine,*registration.additional_spines) if isinstance(plan,BodySplinePlan)),
         source_spline_body_root=registration.body_root,
@@ -177,3 +180,34 @@ def capture_fk_policy(host, registration):
 def _pre_aim_controls(controls):
     from adv_py.core.source_limb_aim import pre_aim_control_path
     return frozenset(pre_aim_control_path(control) for control in controls)
+
+
+def _sdk_scale_drives(commands,registration,control,driver):
+    """SDK ScaleMPD preserves the original FK scale feature on rebuild.
+
+    Match the saved source insertion's exact inputs and output, instead of
+    considering any upstream multiplyDivide to be an authored FK feature.
+    """
+    from .maya_driving_registration import SDK_MARKER
+    from adv_py.core.character_registry import safe_json,exact
+    c=commands
+    for node in registration.nodes:
+        marker=node.path+'.'+SDK_MARKER
+        if not c.objExists(marker):continue
+        record=exact(safe_json(c.getAttr(marker)),('child','scale'))
+        scale=record['scale']
+        if scale is None:continue
+        exact(scale,('name','kind','values','connections'))
+        if scale['kind']!='multiplyDivide':continue
+        name=scale['name']
+        edges={target:source for source,target in scale['connections']}
+        if edges.get('input1')==control+'.scale':
+            if (c.isConnected(control+'.scale',name+'.input1')
+                    and c.isConnected(name+'.output',driver+'.scale')):
+                return True
+        elif all(edges.get('input1'+axis)==control+'.scale'+axis for axis in 'XYZ'):
+            if all(c.isConnected(control+'.scale'+axis,name+'.input1'+axis)
+                   and c.isConnected(name+'.output'+axis,driver+'.scale'+axis)
+                   for axis in 'XYZ'):
+                return True
+    return False

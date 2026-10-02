@@ -63,6 +63,13 @@ class BodyArmIkSpec:
     source_straight_chain: bool = False
     source_original_pole: bool = False
     source_native_effector: bool = False
+    source_pole_joint_paths: tuple[str, ...] = ()
+    source_pole_middle_index: int = 0
+    source_pole_length: float = 0.0
+    source_fk_orientation_path: str | None = None
+    source_align_joint_path: str | None = None
+    source_middle_joint_path: str | None = None
+    source_fit_joint_names: tuple[str,...] = ()
 
     @property
     def source_effector_name(self):
@@ -286,6 +293,13 @@ def plan_body_arm_ik(
                                      if align_helpers else None),
             source_straight_chain=straight,
             source_original_pole=source_pole_placement,
+            source_pole_joint_paths=(tuple(joint.path for joint in source_chain)
+                                     if source_pole_placement else ()),
+            source_pole_middle_index=middle_index,
+            # MEL walks the authoring chain backwards when summing ikLenght.
+            source_pole_length=sum(sum((x-y)**2 for x,y in zip(a.world_position,
+                b.world_position))**.5 for a,b in reversed(tuple(zip(
+                    source_chain,source_chain[1:])))),
         ))
     return BodyArmIkPlan(root_path, root_name, tuple(limbs))
 

@@ -1,5 +1,10 @@
 # Codex Goal：完成 ADV Python 复刻、保持行为的优化与 Blender 迁移
 
+2026-10-02 当前补充：Control Orient 已接入原版 CustomOrient／CustomOrientReverse 层级、Mirror、Detach／Attach、构建姿态确认及重建交接，旧 rotateAxis 写入、校准补偿和预览代理运行路径已删除。Game Engine 六项 Custom Orient Joints 操作已接入原版分支。均为代码接入，未启动 Maya、未做真实验收；旧场景迁移和导出骨架 Skin 登记仍有边界待核对。详见 docs/verification/source-control-orient-current-offline.md。
+
+2026-10-02 最新执行状态：真实 Maya 测试停止，当前连续补核心 Python 源码；先前已清理 75 个遗留 Maya 测试进程。恢复真实测试时必须检查实际进程、严格单实例串行并核实退出，不能因报告写完就再开窗口。本批 SDK 主构建与重建、原版公共 RP 模式和匹配、Skin／Face 多项源码接入均未做新的 Maya 验收，禁止引用历史通过记录来宣布当前代码完整可用。离线新增检查没有新增失败，也不能据此称全套离线检查或 Maya 整链通过。优先级与剩余项见开发计划和本批核对记录。
+
+
 持续开发 `D:\3D\_tools\_DCC\advanced-skeleton-python-refactor`。以 `D:\3D\_tools\_DCC\MayaScope\AnalyseAdv\ADV_6.925_reference\AdvancedSkeleton.mel` 为只读行为依据，用 Python 复刻原版的角色绑定逻辑、Maya 场景图、参数分支和操作入口。目标是原版逻辑的重构与优化，不是另做一个方向不同的替代品。
 
 2026-10-02 用户授权的完整长期范围按以下顺序推进，不能把后续阶段提前并行，不能因一次局部验收或一次提交宣布全部完成：

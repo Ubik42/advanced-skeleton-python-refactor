@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from adv_py.core.geometry_box_skin import BoxSkinPair
 from .maya_geometry_poly_boxes import MayaPolyBoxesHost
+from .maya_original_skin_history import new_original_skin_clusters
 
+
+from .maya_original_transform_channels import lock_original_transform_channels
 
 class MayaBoxSkinHost(MayaPolyBoxesHost):
     def __init__(self, namespace: str = "") -> None:
@@ -23,15 +26,9 @@ class MayaBoxSkinHost(MayaPolyBoxesHost):
         deform = self._name("DeformSet")
         if not c.objExists(deform):
             raise ValueError("BoxSkin 缺少 DeformSet")
-        influences = {self._leaf(node) for node in
-                      c.sets(deform, query=True) or ()
-                      if c.objExists(node) and c.nodeType(node) == "joint"}
         for pair in pairs:
-            if (pair.joint not in influences
-                    or not c.objExists(self._name(pair.joint))):
+            if not c.objExists(self._name(pair.joint)):
                 raise ValueError("BoxSkin 缺少变形关节：" + pair.joint)
-        if c.objExists(self._name("AdvPy_BoxSkinClosestSampler")):
-            raise ValueError("BoxSkin 临时采样节点名称已占用")
 
     def create_box_skin(self, pairs: tuple[BoxSkinPair, ...]) -> int:
         c=self.cmds
@@ -52,16 +49,14 @@ class MayaBoxSkinHost(MayaPolyBoxesHost):
         copies=[]
         for pair in pairs:
             box=self._name(pair.box)
-            copy=c.duplicate(box,name=self._name(pair.box+'BoxSkin'),returnRootsOnly=True)[0]
-            for attr in ('translate','rotate','scale'):
-                for axis in 'XYZ':c.setAttr(copy+'.'+attr+axis,lock=False,keyable=True)
-            c.setAttr(copy+'.visibility',lock=False)
+            copy=c.duplicate(box)[0]
+            copy=c.rename(copy,self._name(pair.box+'BoxSkin'))
+            lock_original_transform_channels(c, copy)
             copy=c.parent(copy,group)[0]
             c.editDisplayLayerMembers(layer,copy,noRecurse=True)
-            bind_shape=c.listRelatives(copy,shapes=True,noIntermediate=True,type='mesh',fullPath=True)[0]
-            c.skinCluster(self._name(pair.joint),bind_shape,toSelectedBones=True,
-                maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False,
-                name=self._name(pair.box+'SkinCluster'))
+            c.select(self._name(pair.joint),copy,replace=True)
+            skins=new_original_skin_clusters(commands=c,namespace=self.namespace)
+            c.rename(skins[0],self._name(pair.box+'SkinCluster'))
             c.refresh()
             copies.append(copy)
         # Source duplicates the already-bound individual meshes before
@@ -74,16 +69,17 @@ class MayaBoxSkinHost(MayaPolyBoxesHost):
         c.editDisplayLayerMembers(layer,mesh,noRecurse=True)
         deform=self._name('DeformSet')
         c.select(mesh,replace=True);c.select(deform,add=True)
-        influences=tuple(c.ls(selection=True,type='joint'))
-        bind_shape=c.listRelatives(mesh,shapes=True,noIntermediate=True,type='mesh',fullPath=True)[0]
-        skin=c.skinCluster(influences,bind_shape,toSelectedBones=True,
-            maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False,
-            name=self._name('BoxSkinMeshSkinCluster'))[0]
+        skins=new_original_skin_clusters(commands=c,namespace=self.namespace)
+        skin=c.rename(skins[0],self._name('BoxSkinMeshSkinCluster'))
+        c.select(c.listRelatives(group,children=True),mesh,replace=True)
         shape=c.listRelatives(mesh,shapes=True,noIntermediate=True,type='mesh')[0]
-        sampler=c.createNode('closestPointOnMesh',name=self._name('AdvPy_BoxSkinClosestSampler'))
+        c.createNode('closestPointOnMesh',name=self._name('closestSampler'))
+        # The MEL procedure addresses this literal name after createNode.
+        # Do not silently substitute an auto-numbered node on a name clash.
+        sampler=self._name('closestSampler')
         expected={}
         try:
-            c.connectAttr(shape+'.outMesh',sampler+'.inMesh')
+            c.connectAttr(shape+'.outMesh',sampler+'.inMesh',force=True)
             for pair in pairs:
                 source=self._name(pair.box)
                 for index in range(int(c.polyEvaluate(source,vertex=True))):
@@ -96,7 +92,7 @@ class MayaBoxSkinHost(MayaPolyBoxesHost):
             self._expected_weights=expected
         finally:
             c.delete(sampler)
-        c.delete(copies)
+        c.delete(c.listRelatives(group,children=True) or [])
         c.parent(mesh,group)
         # Do not replace the source's rounded reciprocal with 1/.95: its
         # small resulting scale drift is part of the original operation.
@@ -134,8 +130,7 @@ class MayaBoxSkinHost(MayaPolyBoxesHost):
 
     def delete_box_skin(self) -> None:
         c = self.cmds
-        for leaf in ("BoxSkinGeometry", "BoxSkinMeshSkinCluster",
-                     "BoxSkinMesh", "BoxSkin"):
+        for leaf in ("BoxSkin", "BoxSkinGeometry", "BoxSkinMesh"):
             node = self._name(leaf)
             if c.objExists(node):
                 c.delete(node)

@@ -173,6 +173,10 @@ class StageBodyCharacterRebuild:
         fit_channels=host.capture_character_rebuild_fit_channels(original.registration.container)
         fit_values=host.read_fit_skeleton_settings(original.registration.container)
         fit_curve=host.capture_control_curves((original.registration.container,),strict=True)[0]
+        capture_driving = getattr(host, 'capture_body_driving_rebuild', None)
+        driving_state = capture_driving(original.registration) if capture_driving else None
+        capture_orient = getattr(host, 'capture_body_control_orient_rebuild', None)
+        orient_state = capture_orient(original.registration) if capture_orient else ()
         with TemporaryDirectory(prefix='adv-py-rebuild-') as directory:
             fit=Path(directory)/'source.fit.json'
             # Built ADV keeps Fit beneath Group. Export its authored data
@@ -263,6 +267,27 @@ class StageBodyCharacterRebuild:
                     SwitchGameRootMotion(stage).apply(create=True)
                     registration=stage.read_character_registration()
                 host.match_character_rebuild_solver(stage,registration)
+                driving_sets_created = False
+                if driving_state is not None or orient_state:
+                    if selection_mode == 'none':
+                        raise CharacterRegistryError('原版朝向和 SDK 重建需要 ControlSet 和构建姿态')
+                    # SDK construction uses the native source sets/pose. Create
+                    # them now, then populate the complete AllSet after SDK
+                    # restoration has added the final graph nodes.
+                    finalize_body_character_sets(stage, registration, built.rig.plan,
+                        segments=built.segment_influences, extras=built.selection_extras,
+                        scene_before=scene_before, fit_container=fit_path, populate_all=False)
+                    driving_sets_created = True
+                if orient_state:
+                    with stage.transaction('Restore original controller orientations'):
+                        registration, rig = stage.restore_body_control_orient_rebuild(
+                            orient_state, registration, built.rig)
+                    built = replace(built, registration=registration, rig=rig)
+                if driving_state is not None:
+                    with stage.transaction('Restore original Fit Driving Systems'):
+                        registration, rig = stage.restore_body_driving_rebuild(
+                            driving_state, registration, built.rig, fit=fit_path)
+                    built = replace(built, registration=registration, rig=rig)
                 spline_change=None
                 if spline_counts:
                     from adv_py.core.spline_control_rebuild import plan_spline_control_rebuild
@@ -277,6 +302,7 @@ class StageBodyCharacterRebuild:
                         segments=built.segment_influences,
                         extras=built.selection_extras,
                         scene_before=scene_before, fit_container=fit_path,
+                        create_sets=not driving_sets_created,
                         populate_all=selection_mode == "populated")
                     if spline_change is None or not spline_change.systems:
                         with stage.transaction('Preserve original selection membership'):
@@ -356,11 +382,14 @@ class StageBodyCharacterRebuild:
                     (*preserved_direct, *nested), key=lambda row: row[0]))
                 host.capture_body_geometry_contents(
                     {row[0] for row in preserved_geometry})
+                from adv_py.adapters.maya_driving_rebuild import derived_property_plugs
+                derived_plugs = derived_property_plugs(driving_state, original.registration)
+                property_options = {'derived_plugs': derived_plugs} if derived_plugs else {}
                 if spline_change is not None and spline_change.systems:
                     from adv_py.adapters.maya_spline_control_rebuild import plan_properties
-                    properties=plan_properties(host,stage,original,registration,spline_change)
+                    properties=plan_properties(host,stage,original,registration,spline_change,**property_options)
                 else:
-                    properties=host.plan_character_property_transfer(original,namespace)
+                    properties=host.plan_character_property_transfer(original,namespace,**property_options)
                 staged=StagedCharacterRebuild(original,namespace,registration,
                                               properties,
                                               authored_geometry=preserved_geometry,

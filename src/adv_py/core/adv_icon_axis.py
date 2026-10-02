@@ -44,3 +44,17 @@ def rotate_icon_point(
     x, z = x * cos(ry) + z * sin(ry), -x * sin(ry) + z * cos(ry)
     x, y = x * cos(rz) - y * sin(rz), x * sin(rz) + y * cos(rz)
     return (x, y, z)
+
+
+def tertiary_axis(primary: str, secondary: str) -> str:
+    """asGetTerAxis (MEL 26247): ordered pair and both authored signs."""
+    # Reuse the same valid source enum domain as icon orientation.
+    icon_axis_offset(primary, secondary)
+    axis, flipped = {
+        ('X', 'Y'): ('Z', False), ('X', 'Z'): ('Y', True),
+        ('Y', 'X'): ('Z', True), ('Y', 'Z'): ('X', False),
+        ('Z', 'X'): ('Y', False), ('Z', 'Y'): ('X', True),
+    }[(primary[-1], secondary[-1])]
+    flipped ^= primary.startswith('-')
+    flipped ^= secondary.startswith('-')
+    return ('-' if flipped else '') + axis

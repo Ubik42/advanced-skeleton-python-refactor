@@ -3,6 +3,8 @@ from contextlib import contextmanager, nullcontext
 from math import dist
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
+from .maya_original_transform_channels import align_original_transform
+
 class MayaFaceEyeBallMixin:
     def capture_original_face_eye_input(self):
         c=self._cmds; fit=self._fit(required=True)
@@ -21,20 +23,7 @@ class MayaFaceEyeBallMixin:
                 "eyes":{side:self.read_original_face_parts(name) for side,name in (("_R","RightEye"),("_L","LeftEye"))}}
 
     def _original_eye_align(self,node,target,translate=True,rotate=True):
-        c=self._cmds
-        previous=c.listRelatives(node,parent=True,fullPath=True) or []
-        c.parent(node,target)
-        parent=c.listRelatives(node,parent=True,fullPath=True)[0]
-        target_path=c.ls(target,long=True)[0]
-        generated=parent if parent!=target_path else None
-        if translate:
-            c.xform(node,objectSpace=True,translation=(0,0,0))
-            if generated: c.xform(generated,objectSpace=True,translation=(0,0,0))
-        if rotate:
-            c.xform(node,objectSpace=True,rotation=(0,0,0))
-            if generated: c.xform(generated,objectSpace=True,rotation=(0,0,0))
-        c.parent(node,previous[0]) if previous else c.parent(node,world=True)
-        if generated: c.delete(generated)
+        return align_original_transform(self._cmds,node,target,translate,rotate)
 
     def _original_eye_aim_follow(self,head):
         """asParentConstraintBlend AimEye_M AimEyeFollow_M EyeAimFollowHead."""
@@ -196,9 +185,13 @@ class MayaFaceEyeBallMixin:
                     if raw.objExists(joint+".lockInfluenceWeights"): raw.setAttr(joint+".lockInfluenceWeights",0)
                     raw.skinPercent(skin,geo,transformValue=((joint,1),))
             else:
-                with c._creation_namespace() if hasattr(c,"_creation_namespace") else nullcontext():
-                    skin=raw.skinCluster(joint,geo,toSelectedBones=True,maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False)[0]
-                    skin=raw.rename(skin,self.scene_address("eyeSC"+side))
+                from .maya_original_skin_history import new_original_skin_clusters
+                raw.select((joint,geo),replace=True)
+                created=new_original_skin_clusters(commands=raw,namespace=self.namespace)
+                # Source renames every Skin returned by native expansion,
+                # retaining the last returned name for this eye selection.
+                for created_skin in created:
+                    skin=raw.rename(created_skin,self.scene_address("eyeSC"+side))
             skins.append(skin)
         return skins
 

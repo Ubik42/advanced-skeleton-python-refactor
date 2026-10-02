@@ -120,19 +120,21 @@ def describe_source_limb_bindings(plan, body):
             toe = toe_align = toe_source = reverse_roll = reverse_handle = None
             hybrid_controls = ()
             position_source = primary[-1].source_joint
-            # asAlignFKIK positions from FKX, including the end Sub layer.
-            position_source = next(row.receiver for row in joints if row.body == position_source)
+            # MEL 10837 initially reads FK; the later positioning pass reads
+            # FKX after stretchy/volume are enabled (10924). Keep both roles.
+            position_source = next(row.control for row in joints if row.body == position_source)
             align = ik.wrist_align_path
             attributes = ()
             if foot:
                 toe_body=next(joint.source_joint for joint in drivers
                               if joint.path==foot.toe_driver_path)
                 toe_source=fk[toe_body]
-                qtoe=next((row for row in joints if any(joint.path==row.body
+                qtoes=tuple(row for row in joints if any(joint.path==row.body
                     and joint.label is not None and 'QToes' in joint.label.text
-                    for joint in body.joints)),None)
-                if qtoe:
-                    position_source=qtoe.control
+                    for joint in body.joints))
+                qtoe=qtoes[0] if qtoes else None
+                if qtoes:
+                    position_source=qtoes[-1].control
                 attributes = tuple((attr, foot.attribute_default(attr))
                                    for attr in foot.attributes
                                    if attr not in ('footPivotsVis',))

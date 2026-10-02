@@ -1,6 +1,8 @@
 """Original conversion template, joint and additional Skin layers."""
-from contextlib import nullcontext
+from .maya_original_skin_history import bind_original_skin, remove_unused_for_skin
 
+
+from .maya_original_transform_channels import lock_original_transform_channels
 
 class MayaFaceBSLayersMixin:
     @staticmethod
@@ -12,8 +14,7 @@ class MayaFaceBSLayersMixin:
         c = self._cmds
         raw = getattr(c, "raw", c)
         c.duplicate(geometry, name=name)
-        for attr in ("tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz", "v"):
-            c.setAttr(name + "." + attr, lock=False)
+        lock_original_transform_channels(c, name)
         c.parent(name, parent)
         raw.sets(self.scene_address(name), edit=True, forceElement=":initialShadingGroup")
         children = c.listRelatives(name, children=True, type="transform") or []
@@ -55,10 +56,8 @@ class MayaFaceBSLayersMixin:
             c.duplicate(template, name=layer)
             c.parent(layer, "FaceJointsLayer")
             influences = raw.listConnections(skin + ".matrix", source=True, destination=False, type="joint") or []
-            with c._creation_namespace() if hasattr(c, "_creation_namespace") else nullcontext():
-                raw.skinCluster([*influences, self.scene_address(layer)], toSelectedBones=True,
-                    maximumInfluences=3, dropoffRate=4, removeUnusedInfluence=False,
-                    name=self.scene_address(layer + "SC"))
+            bind_original_skin(c, (*influences, layer), layer + "SC",
+                               namespace=self.namespace)
             self._cage_copy_selected((geometry,), (layer,))
             for joint in c.listConnections(layer + "SC.matrix") or []:
                 raw.setAttr(self.scene_address(joint) + ".lockInfluenceWeights", bool(c.sets(joint, isMember="FaceAllSet")))
@@ -88,13 +87,21 @@ class MayaFaceBSLayersMixin:
         c = self._cmds
         c.duplicate("TemplateLayer", name=layer + "Layer")
         result = []
-        lookup = {self._original_bs_geo_tag(mesh, first_colon=True): mesh for mesh in source["all_head"]}
+        raw = getattr(c, "raw", c)
         for child in c.listRelatives(layer + "Layer", children=True, type="transform", fullPath=True) or []:
             tag = self._original_restore_leaf(child).replace("TemplateLayer_", "", 1)
             renamed = c.rename(child, layer + "Layer_" + tag)
             shape = c.listRelatives("FaceJointsLayer_" + tag, shapes=True)[0]
             bs = c.listConnections(shape, source=False, destination=True, type="blendShape")[0]
-            geometry = lookup[tag]
+            # asFaceCreateSkinLayer follows the BlendShape's future history,
+            # taking the first mesh's parent rather than inferring an output
+            # from the template name or the original All Head registration.
+            geometry = ""
+            for node in raw.listHistory(self.scene_address(bs), future=True) or []:
+                if raw.nodeType(node) == "mesh":
+                    geometry = self._original_bs_physical_address(
+                        raw.listRelatives(node, parent=True, fullPath=True)[0])
+                    break
             self._original_face_bs_add_target(geometry, bs, renamed)
             c.setAttr(bs + "." + self._original_restore_leaf(renamed), 1)
             result.append(renamed)
@@ -120,10 +127,8 @@ class MayaFaceBSLayersMixin:
             influences = [self.scene_address(joint) for joint in joints]
             if self._original_restore_leaf(mesh) == main:
                 influences += raw.listConnections(self.scene_address(source["skin"]) + ".matrix", source=True, destination=False, type="joint") or []
-            with c._creation_namespace() if hasattr(c, "_creation_namespace") else nullcontext():
-                raw.skinCluster([*influences, self.scene_address(mesh)], toSelectedBones=True,
-                    maximumInfluences=3, dropoffRate=4, removeUnusedInfluence=False,
-                    name=self.scene_address(self._original_restore_leaf(mesh) + "SC"))
+            bind_original_skin(c, (*influences, mesh),
+                self._original_restore_leaf(mesh) + "SC", namespace=self.namespace)
             c.skinPercent(self._original_restore_leaf(mesh) + "SC", mesh, transformValue=(("middleFaceJoint_M", 1),))
         self._cage_copy_selected((geometry,), (main,))
         influences = c.listConnections(main + "SC.matrix", source=True, destination=False, type="joint") or []
@@ -146,9 +151,9 @@ class MayaFaceBSLayersMixin:
             raw.setAttr(self.scene_address(joint) + ".lockInfluenceWeights", True)
         for joint in joints[:3]:
             raw.setAttr(self.scene_address(joint) + ".lockInfluenceWeights", False)
+        c.select(main, replace=True)
         for stem in ("upper", "lower"):
             y = c.xform(stem + "Face_M", query=True, worldSpace=True, translation=True)[1]
-            c.select(main, replace=True)
             raw.polySelectConstraint(mode=3, type=1, dist=3,
                 distbound=(y, 9999) if stem == "upper" else (0, y),
                 distaxis=(0, 1, 0), distpoint=(0, 0, 0))
@@ -161,13 +166,14 @@ class MayaFaceBSLayersMixin:
         raw.polySelectConstraint(mode=0)
         for stem in ("upper", "lower"):
             self.smooth_original_face_flood(main + "SC", raw.ls(self.scene_address(main) + ".vtx[*]", flatten=True) or [], stem + "FaceJoint_M", "middleFaceJoint_M", 10)
-        c.skinCluster(main + "SC", edit=True, removeUnusedInfluence=True)
+        remove_unused_for_skin(raw, self.scene_address(main + "SC"))
         for mesh in children:
             if self._original_restore_leaf(mesh) != main:
                 self._cage_copy_selected((main,), (mesh,))
         raw.skinCluster(self.scene_address(source["skin"]), edit=True, selectInfluenceVerts=self.scene_address(head))
-        all_vertices = set(raw.ls(self.scene_address(geometry) + ".vtx[*]", flatten=True) or [])
-        remaining = all_vertices - set(raw.ls(selection=True, flatten=True) or [])
+        all_vertices = raw.ls(self.scene_address(geometry) + ".vtx[*]", flatten=True) or []
+        selected = set(raw.ls(selection=True, flatten=True) or [])
+        remaining = [vertex for vertex in all_vertices if vertex not in selected]
         if remaining:
             c.skinPercent(main + "SC", [main + "." + vertex.split(".", 1)[1] for vertex in remaining], transformValue=(("FaceJoint_M", 1),))
         for part in ("RightEye", "LeftEye"):

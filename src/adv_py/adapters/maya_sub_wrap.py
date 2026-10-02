@@ -1,8 +1,6 @@
 """Maya SubWrap cage, wrap deformers, attachment and component sets."""
 from __future__ import annotations
 
-from contextlib import contextmanager
-
 from .maya_skin_cage import MayaSkinCageHost
 
 
@@ -27,21 +25,15 @@ class MayaSubWrapHost(MayaSkinCageHost):
 
     def preflight_cage(self, *, creating: bool) -> None:
         c = self.cmds
-        for leaf in ("skinCage", "Geometry"):
-            if not c.objExists(self._name(leaf)):
-                raise ValueError("SubWrap 缺少原版节点：" + leaf)
-        present = c.objExists(self._name("skinSub"))
-        if creating and present:
-            raise ValueError("SubWrap 笼体已存在")
-        if not creating and not present:
-            raise ValueError("SubWrap 笼体不存在")
         if creating:
-            for leaf in ("subWrapPolySmoothProxy", "SkinSub"):
-                if c.objExists(self._name(leaf)):
-                    raise ValueError("SubWrap 有残留节点：" + leaf)
+            if not c.objExists(self._name("skinCage")):
+                raise ValueError('"skinCage" not found; create SkinCage first')
+            if c.objExists(self._name("skinSub")):
+                raise ValueError('"skinSub" already exists')
 
     def create_cage(self) -> None:
         c = self.cmds
+        selected = c.ls(selection=True) or []
         cages = self._name("Cages")
         if not c.objExists(cages):
             cages = c.createNode("transform", name=cages,
@@ -51,25 +43,23 @@ class MayaSubWrapHost(MayaSkinCageHost):
             "subWrapPolySmoothProxy"))
         sub = c.polyCube(name=self._name("skinSub"), width=1, height=1,
                          depth=1, subdivisionsX=1, subdivisionsY=1,
-                         subdivisionsZ=1, constructionHistory=False)[0]
+                         subdivisionsZ=1, axis=(0, 1, 0), createUVs=4,
+                         constructionHistory=False)[0]
         sub = c.parent(sub, cages)[0]
         c.connectAttr(self._shape(self._name("skinCage")) + ".outMesh",
-                      proxy + ".inputPolymesh", force=True)
-        c.connectAttr(proxy + ".output", self._shape(sub) + ".inMesh",
-                      force=True)
-        layer = c.createDisplayLayer(empty=True, name=self._name("SkinSub"))
-        c.editDisplayLayerMembers(layer, sub)
+                      proxy + ".inputPolymesh")
+        c.connectAttr(proxy + ".output", self._shape(sub) + ".inMesh")
+        c.select(sub, replace=True)
+        layer = c.createDisplayLayer(name=self._name("SkinSub"), number=1, noRecurse=True)
         c.setAttr(layer + ".displayType", 2)
         c.setAttr(layer + ".color", 30)
         original = self._name("SkinCage")
-        if c.objExists(original):
-            c.setAttr(original + ".displayType", 1)
+        c.setAttr(original + ".displayType", 1)
+        c.select(selected, replace=True) if selected else c.select(clear=True)
 
     def delete_cage(self) -> None:
         c = self.cmds
-        if self._sub_wrap_nodes():
-            self.detach_all()
-        for leaf in ("skinSub", "SkinSub", "subWrapPolySmoothProxy"):
+        for leaf in ("skinSub", "SkinSub"):
             node = self._name(leaf)
             if c.objExists(node):
                 c.delete(node)
@@ -100,69 +90,51 @@ class MayaSubWrapHost(MayaSkinCageHost):
             if self._wraps(mesh):
                 raise ValueError("网格已有 Wrap 变形器：" + mesh)
 
-    @contextmanager
-    def _legacy_component_sets(self):
-        c = self.cmds
-        key = "deformationUseComponentTags"
-        exists = c.optionVar(exists=key)
-        old = c.optionVar(query=key) if exists else None
-        if old:
-            c.optionVar(intValue=(key, 0))
-        try:
-            yield
-        finally:
-            if old:
-                c.optionVar(intValue=(key, old))
-
     def _reverse_visibility(self) -> str:
         c = self.cmds
         main = self._name("Main")
-        if not c.attributeQuery("wrapDeform", node=main, exists=True):
+        if not c.objExists(main + ".wrapDeform"):
             c.addAttr(main, longName="wrapDeform", attributeType="bool",
                       defaultValue=True, keyable=True)
+            c.setAttr(main + ".wrapDeform", keyable=False, channelBox=True)
         reverse = self._name("wrapDeformReverse")
         if not c.objExists(reverse):
             reverse = c.createNode("reverse", name=reverse)
-        if not c.isConnected(main + ".wrapDeform", reverse + ".inputX"):
-            c.connectAttr(main + ".wrapDeform", reverse + ".inputX",
-                          force=True)
+            c.connectAttr(main + ".wrapDeform", reverse + ".inputX")
         return reverse
 
-    def _next_wrap_name(self) -> str:
-        index = 1
-        while self.cmds.objExists(self._name(f"subWrap{index}")):
-            index += 1
-        return self._name(f"subWrap{index}")
-
     def wrap_mesh(self, mesh: str) -> None:
-        from maya import mel
+        self.wrap_meshes((mesh,))
 
+    def wrap_meshes(self, meshes: tuple[str, ...]) -> None:
+        """asWrapSkin creates the batch first, then configures all source wraps.
+
+        wrapValues is shared across the final loop: a missing mesh attribute
+        retains the preceding wrap's value, rather than resetting its default.
+        """
+        from maya import mel
+        from .maya_face_deformer_sets import original_face_deformer_sets
         c = self.cmds
-        before = set(self._wraps(mesh))
-        original = c.ls(selection=True, long=True) or []
-        try:
-            with self._legacy_component_sets():
-                c.select(mesh, replace=True)
-                c.select(self._name("skinSub"), add=True)
-                mel.eval('doWrapArgList 7 { "1","0","1", "2", "1", "1", "1", "0" }')
-        finally:
-            c.select(original, replace=True) if original else c.select(clear=True)
-        created = [node for node in self._wraps(mesh) if node not in before]
-        if len(created) != 1:
-            raise RuntimeError("Maya 未为网格创建唯一 Wrap：" + mesh)
-        wrap = c.rename(created[0], self._next_wrap_name())
         reverse = self._reverse_visibility()
-        for attr, default in zip(_WRAP_ATTRS, _WRAP_DEFAULTS):
-            value = (c.getAttr(mesh + "." + attr) if c.attributeQuery(
-                attr, node=mesh, exists=True) else default)
-            c.setAttr(wrap + "." + attr, value)
-        for attr, value in (("dropoff", 4), ("smoothness", 0),
-                            ("inflType", 2)):
-            sub = self._name("skinSub")
-            if c.attributeQuery(attr, node=sub, exists=True):
-                c.setAttr(sub + "." + attr, value)
-        c.connectAttr(reverse + ".outputX", wrap + ".nodeState",
-                      force=True)
+        for mesh in meshes:
+            c.select(mesh, replace=True)
+            c.select(self._name("skinSub"), add=True)
+            with original_face_deformer_sets(c):
+                mel.eval('doWrapArgList 7 {"1","0","1","2","1","1","1","0"};')
+        wraps = c.listConnections(self._name("skinSub") + ".worldMesh", type="wrap") or []
+        values = list(_WRAP_DEFAULTS)
+        for index, old in enumerate(wraps):
+            wrap = c.rename(old, self._name("subWrap" + str(index + 1)))
+            mesh = c.listConnections(wrap + ".outputGeometry")[0]
+            c.setAttr(wrap + ".nodeState", 1)
+            for index, attr in enumerate(_WRAP_ATTRS):
+                if c.objExists(mesh + "." + attr):
+                    values[index] = c.getAttr(mesh + "." + attr)
+                c.setAttr(wrap + "." + attr, values[index])
+            for attr, value in (("dropoff", 4), ("smoothness", 0), ("inflType", 2)):
+                c.setAttr(self._name("skinSub") + "." + attr, value)
+            c.connectAttr(reverse + ".output.outputX", wrap + ".nodeState")
+        c.select(clear=True)
 
     def mesh_wrapped(self, mesh: str) -> bool:
         c = self.cmds
@@ -189,30 +161,38 @@ class MayaSubWrapHost(MayaSkinCageHost):
         if not c.objExists(cage) or not c.attributeQuery(
                 "subWrapped", node=cage, exists=True):
             raise ValueError("SkinCage 没有已解除的 SubWrap 网格记录")
+        if not c.objExists(self._name("skinSub")):
+            raise ValueError("skinSub not found; create SubWrap first")
         stored = c.getAttr(cage + ".subWrapped") or ""
-        meshes = tuple(dict.fromkeys(mesh for mesh in stored.split(";")
-                                     if mesh and c.objExists(mesh)))
+        meshes = tuple(mesh for mesh in stored.split(";")
+                       if mesh and c.objExists(mesh))
         return meshes
 
     def detach_all(self) -> tuple[str, ...]:
+        """asSkinSubDetach preserves final downstream mesh and deletion order.
+
+        The original deletes the whole subWrap array inside its loop. Do not
+        quietly turn that into per-wrap deletion while claiming source fidelity.
+        Multiple wraps require native validation against this source behavior.
+        """
         c = self.cmds
+        wraps = self._sub_wrap_nodes()
         records = []
-        for wrap in self._sub_wrap_nodes():
-            shapes = c.deformer(wrap, query=True, geometry=True) or []
-            if len(shapes) != 1:
-                raise ValueError("SubWrap 变形器缺少唯一目标网格：" + wrap)
-            mesh = self._mesh(shapes[0])
+        mesh = ""
+        for wrap in wraps:
+            for node in c.listHistory(wrap + ".outputGeometry", future=True) or []:
+                if c.nodeType(node) == "mesh":
+                    mesh = c.listRelatives(node, parent=True)[0]
             records.append(mesh)
             for attr in _WRAP_ATTRS:
-                if not c.attributeQuery(attr, node=mesh, exists=True):
+                if not c.objExists(mesh + "." + attr):
                     c.addAttr(mesh, longName=attr, attributeType="double")
                 c.setAttr(mesh + "." + attr, c.getAttr(wrap + "." + attr))
-            c.delete(wrap)
+            c.delete(list(wraps))
         cage = self._name("skinCage")
-        if not c.attributeQuery("subWrapped", node=cage, exists=True):
+        if not c.objExists(cage + ".subWrapped"):
             c.addAttr(cage, longName="subWrapped", dataType="string")
-        c.setAttr(cage + ".subWrapped", ";".join(records) + (
-            ";" if records else ""), type="string")
+        c.setAttr(cage + ".subWrapped", "".join(mesh + ";" for mesh in records), type="string")
         return tuple(records)
 
     def selected_vertices(self) -> tuple[str, ...]:
@@ -220,46 +200,54 @@ class MayaSubWrapHost(MayaSkinCageHost):
                                   long=True) or ())
 
     def _deformer_set(self, node: str) -> str:
-        c = self.cmds
-        sets = c.listConnections(node + ".message", type="objectSet") or []
-        if len(sets) != 1:
-            raise ValueError("变形器缺少唯一组件集合：" + node)
-        return sets[0]
+        return self.cmds.listConnections(node + ".message")[0]
 
     def exclude_vertices(self, vertices: tuple[str, ...]) -> None:
+        """asWrapExlude: final Wrap/Skin history, native smoothing and inversion."""
         c = self.cmds
-        meshes = {self._mesh(vertex) for vertex in vertices}
-        if len(meshes) != 1:
-            raise ValueError("一次只能排除同一网格的顶点")
-        mesh = next(iter(meshes))
-        wraps = self._wraps(mesh)
-        if len(wraps) != 1:
-            raise ValueError("所选网格需要唯一的 Wrap 变形器")
-        skin = self._skin(mesh)
-        if not skin:
-            from adv_py.application.skin_cage import CopySkinCageWeights
+        from maya import mel
+        mesh = self._mesh(vertices[0])
+        wraps = self._wraps(vertices[0])
+        if not wraps:
+            raise ValueError("No wrap deformer on selected object")
+        wrap = wraps[-1]
+        skin = self._skin(vertices[0])
+        had_skin = bool(skin)
+        c.select(list(vertices), replace=True)
+        if not had_skin:
+            from adv_py.core.skin_cage import plan_skin_cage_copy
+            from .maya_original_skin_operations import smooth_skin_on_selected
+            plan = plan_skin_cage_copy((mesh,), vertices)
+            self.preflight_copy(plan)
+            for target in plan:
+                self.copy_weights(target)
+            objects = c.ls(selection=True, objectsOnly=True)
+            target = c.listRelatives(objects[0], parent=True)[0]
+            c.select(target, replace=True)
+            smooth_skin_on_selected(self.namespace, cmds=c, transactional=False)
             c.select(list(vertices), replace=True)
-            CopySkinCageWeights(MayaSkinCageHost(self.namespace)).execute()
-            skin = self._skin(mesh)
-        wrap_set = self._deformer_set(wraps[0])
-        skin_set = self._deformer_set(skin)
-        c.sets(list(vertices), remove=wrap_set)
-        count = int(c.polyEvaluate(mesh, vertex=True))
-        excluded = {int(vertex.rsplit("[", 1)[1].rstrip("]"))
-                    for vertex in vertices}
-        others = [mesh + f".vtx[{index}]" for index in range(count)
-                  if index not in excluded]
-        if others:
-            c.sets(others, remove=skin_set)
+        skin = self._skin(vertices[0])
+        wrap_set, skin_set = self._deformer_set(wrap), self._deformer_set(skin)
+        c.sets(remove=wrap_set)
+        selected = c.ls(selection=True) or []
+        objects = c.ls(selection=True, objectsOnly=True) or []
+        c.select(objects[0] + ".vtx[0:999999]", replace=True)
+        c.select(selected, deselect=True)
+        c.sets(remove=skin_set)
+        if not had_skin:
+            objects = c.ls(selection=True, objectsOnly=True) or []
+            c.select(objects[0], replace=True)
+            mel.eval("removeUnusedInfluences;")
+        c.select(list(vertices), replace=True)
 
     def vertices_excluded(self, vertices: tuple[str, ...]) -> bool:
         c = self.cmds
         mesh = self._mesh(vertices[0])
         wraps = self._wraps(mesh)
         skin = self._skin(mesh)
-        if len(wraps) != 1 or not skin:
+        if not wraps or not skin:
             return False
-        wrap_set = self._deformer_set(wraps[0])
+        wrap_set = self._deformer_set(wraps[-1])
         skin_set = self._deformer_set(skin)
         return all(not c.sets(vertex, isMember=wrap_set)
                    and c.sets(vertex, isMember=skin_set)

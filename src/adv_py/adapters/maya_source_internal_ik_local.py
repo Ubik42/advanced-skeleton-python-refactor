@@ -1,6 +1,9 @@
 """Create source internal IKLocal only under an existing FK parent follower."""
 from adv_py.core.fit_settings import FitSkeletonValidationError
-from .maya_adv_icons import create_adv_icon
+from .maya_adv_icons import create_adv_icon,original_fit_icon_axis_offset
+from .maya_original_transform_channels import (
+    align_original_transform,lock_original_transform_channels,
+)
 
 
 def create(host,spec):
@@ -11,15 +14,20 @@ def create(host,spec):
            spec.extra_path.rsplit('|',1)[-1],spec.constraint_name)
     if any(host.find_name_collisions(name) for name in names):
         raise FitSkeletonValidationError('来源内部 IKLocal 名称冲突')
-    offset=host._spine_frame(names[1],spec.offset_path.rsplit('|',1)[0],
-                             spec.world_position,spec.world_axes)
-    extra=host._create_body_extra_layer(spec.offset_path,names[2],spec.extra_path)
+    offset=c.createNode('transform',name=names[1],skipSelect=True)
+    c.setAttr(offset+'.rotateOrder',spec.rotate_order)
+    c.xform(offset,worldSpace=True,translation=spec.world_position)
+    extra=c.createNode('transform',name=names[2],parent=offset,skipSelect=True)
+    c.setAttr(extra+'.rotateOrder',spec.rotate_order)
     control=create_adv_icon(c,name=spec.control_name,parent=extra,
-        template='IKLocal_icon',radius=spec.radius,fallback_normal=(1.,0.,0.))
-    for node in (offset,extra,control):
-        c.setAttr(node+'.rotateOrder',spec.rotate_order)
-    for attribute in ('scaleX','scaleY','scaleZ','visibility'):
-        c.setAttr(extra+'.'+attribute,lock=True,keyable=False)
+        template='IKLocal_icon',radius=spec.radius,fallback_normal=(1.,0.,0.),
+        axis_offset=original_fit_icon_axis_offset(c,spec.fit_joint_names,side=spec.side)
+                    if spec.fit_joint_names else (0.,0.,0.),mirror_left=spec.side=='L')
+    c.setAttr(control+'.rotateOrder',spec.rotate_order)
+    lock_original_transform_channels(c,extra,False,False,True,True)
+    if spec.orientation_target:
+        offset=align_original_transform(c,offset,spec.orientation_target,False,True)
+    c.parent(offset,spec.offset_path.rsplit('|',1)[0],absolute=True)
     if c.objExists(spec.old_follow_constraint):
         c.delete(spec.old_follow_constraint)
     c.parentConstraint(spec.control_path,spec.target,

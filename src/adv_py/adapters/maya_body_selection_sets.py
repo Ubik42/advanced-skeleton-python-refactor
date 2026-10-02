@@ -134,8 +134,10 @@ class MayaBodySelectionSetsMixin:
         target = self._body_selection_set_address(plan.set_name)
         if not c.objExists(target) or c.nodeType(target) != "objectSet":
             raise ValueError("角色 AllSet 不存在")
-        if c.sets(target, query=True):
-            raise ValueError("角色 AllSet 已有成员")
+        existing = set(self.capture_body_all_set_members())
+        unexpected = existing - set(plan.members)
+        if unexpected:
+            raise ValueError("角色 AllSet 含有本次构建之外的成员：" + repr(sorted(unexpected)))
         members = tuple(
             address if address.startswith((":", "|")) else ":" + address
             for address in (self.scene_address(path) for path in plan.members))
@@ -144,6 +146,9 @@ class MayaBodySelectionSetsMixin:
                     member, isNodeReferenced=True):
                 raise ValueError("AllSet 成员缺失或属于引用：" + member)
         self._transaction_changed = True
+        # Native ADV accumulates membership throughout construction, then
+        # adds the final scene difference. SDK/Face helpers can already have
+        # enrolled their own generated nodes before this final pass.
         c.sets(members, add=target)
 
     def capture_body_all_set_members(self) -> tuple[str, ...]:

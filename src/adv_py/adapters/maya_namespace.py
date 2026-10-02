@@ -75,7 +75,7 @@ _NODE_RESULTS |= {'polyPlane'}
 _CREATE |= {'polyPlane'}
 _NODE_RESULTS |= {'polySphere'}
 _CREATE |= {'polySphere'}
-_NODE_ARGS |= {'reorderDeformers', 'cutKey'}
+_NODE_ARGS |= {'reorderDeformers', 'cutKey', 'selectKey'}
 _NODE_ARGS |= {'nodeCast'}
 _NODE_RESULTS |= {'nodeCast'}
 
@@ -110,6 +110,17 @@ _CREATE |= {'polyProjection','polyCopyUV','offsetCurve','nurbsToPoly','extendSur
 
 # Version queries carry no scene addresses and are shared by all characters.
 _GLOBAL |= {'about'}
+
+# Original Align/Switch changes shared timeline and Auto Key state. These
+# flags carry no scene addresses; node-bearing key commands remain scoped.
+_GLOBAL |= {'autoKeyframe', 'playbackOptions', 'warning'}
+
+# Fit's native mirror and Skin rebind set queries are used with the scoped
+# host as well as the root host. Keep their node arguments/results explicit.
+_NODE_ARGS |= {'mirrorJoint', 'listSets'}
+_NODE_RESULTS |= {'mirrorJoint', 'listSets'}
+_CREATE |= {'mirrorJoint'}
+_READ |= {'listSets'}
 
 class MayaCharacterCommands:
     def __init__(self,commands,namespace):
@@ -189,6 +200,10 @@ class MayaCharacterCommands:
                              'forceElement','fe','clear','cl'):
                     if flag in kwargs and isinstance(kwargs[flag], str):
                         kwargs[flag]=address(kwargs[flag])
+            if name=='listSets':
+                for flag in ('object','o'):
+                    if isinstance(kwargs.get(flag),str):
+                        kwargs[flag]=address(kwargs[flag])
             if name=='skinCluster':
                 for flag in ('addInfluence','removeInfluence','selectInfluenceVerts'):
                     if isinstance(kwargs.get(flag),(str,tuple,list)):
@@ -214,7 +229,12 @@ class MayaCharacterCommands:
                 for flag in ('transform','t'):
                     if isinstance(kwargs.get(flag),str):kwargs[flag]=address(kwargs[flag])
                 for flag in ('transformValue','tv'):
-                    if flag in kwargs:kwargs[flag]=[(address(p),v) for p,v in kwargs[flag]]
+                    if flag in kwargs:
+                        values=kwargs[flag]
+                        if (len(values)==2 and isinstance(values[0],str)
+                                and isinstance(values[1],(int,float))):
+                            kwargs[flag]=(address(values[0]),values[1])
+                        else:kwargs[flag]=[(address(p),v) for p,v in values]
             readonly=query or name in _READ or (name=='sets' and ('isMember' in kwargs or 'im' in kwargs)) or (name=='lockNode' and kwargs.get('query',kwargs.get('q')))
             if not readonly and name!='select':
                 for item in addresses:

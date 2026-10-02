@@ -54,8 +54,9 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
         return self._cmds.createNode(kind,name=name,**({"parent":parent} if parent else {}))
 
     def _lip_skin(self,name,joints,geometry,maximum=3):
-        return self._cmds.skinCluster((*joints,geometry),name=name,toSelectedBones=True,
-            maximumInfluences=maximum,dropoffRate=4,removeUnusedInfluence=False)[0]
+        from .maya_original_skin_history import bind_original_skin
+        return bind_original_skin(self._cmds, (*joints,geometry), name,
+            namespace=self.namespace, maximum_influences=maximum)
 
     def _lip_ordered_vertices(self,curve,geometry):
         c=self._cmds; raw=getattr(c,"raw",c)
@@ -113,7 +114,7 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
             for arc in ("upper","lower"):
                 attr=arc+action
                 c.addAttr("ctrlLips_M",longName=attr,attributeType="double",keyable=True,
-                          softMaxValue=10,softMinValue=-10)
+                          softMaxValue=10,hasSoftMaxValue=True,softMinValue=-10,hasMinValue=True)
                 self.original_face_output_bw("ctrlLips_M."+attr)
         self._lip_region(source)
         counts=self._lip_build_curves(source)

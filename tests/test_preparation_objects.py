@@ -9,11 +9,13 @@ from adv_py.core.preparation_objects import (
 
 
 class PreparationObjectsTests(unittest.TestCase):
-    def test_eye_requires_one_model_and_skin_accepts_many(self):
+    def test_all_fields_preserve_original_object_or_component_lists(self):
         objects = ("|model:Body", "|model:Coat")
         self.assertEqual(validate_preparation_objects(Role.SKIN, objects), objects)
-        with self.assertRaisesRegex(ValueError, "一个眼球"):
-            validate_preparation_objects(Role.RIGHT_EYE, objects)
+        self.assertEqual(validate_preparation_objects(Role.RIGHT_EYE, objects), objects)
+        self.assertEqual(validate_preparation_objects(Role.RIGHT_EYE,
+                         ("|model:Head.f[12:23]",)), ("|model:Head.f[12:23]",))
+        self.assertEqual(validate_preparation_objects(Role.SKIN, ()), ())
 
     def test_record_reads_back_and_reselects(self):
         class Host:

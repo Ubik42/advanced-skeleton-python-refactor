@@ -5,6 +5,8 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_face_eye_loop_fit import MayaFaceEyeLoopFitMixin
 
 
+from .maya_original_transform_channels import lock_original_transform_channels
+
 class MayaFaceFitUpgradeMixin:
     def capture_original_face_fit_upgrade(self):
         c = self._cmds
@@ -59,10 +61,7 @@ class MayaFaceFitUpgradeMixin:
             holder = c.parent(holder, "OldFaceFitSkeletonHolder")[0]
             children = c.listRelatives(holder, children=True, type="transform") or []
             for child in children:
-                for channel in ("t", "r", "s"):
-                    for axis in "xyz":
-                        c.setAttr(child + "." + channel + axis, lock=False, keyable=True)
-                c.setAttr(child + ".v", lock=False, keyable=True)
+                lock_original_transform_channels(c, child)
             if children:
                 children = c.parent(children, world=True)
                 for child in children:

@@ -39,22 +39,24 @@ class MayaPreparationObjectsHost:
 
     def selected_meshes(self) -> tuple[str, ...]:
         cmds = self.cmds
-        selected = cmds.ls(selection=True, long=True, objectsOnly=True) or []
+        # asChooseBodyInput preserves component ranges. objectsOnly would
+        # silently bind an entire mesh when the user supplied selected faces.
+        selected = cmds.ls(selection=True, long=True) or []
         meshes = []
         for node in selected:
-            if cmds.nodeType(node) == "mesh":
-                node = (cmds.listRelatives(node, parent=True, fullPath=True) or [None])[0]
-            if not node or cmds.nodeType(node) != "transform":
-                continue
-            shapes = cmds.listRelatives(node, shapes=True, noIntermediate=True,
-                                        fullPath=True) or []
-            if not any(cmds.nodeType(shape) == "mesh" for shape in shapes):
-                continue
-            short = node.rsplit("|", 1)[-1].split(":")[-1]
+            short = node.rsplit("|", 1)[-1]
+            matches = tuple(cmds.ls(short, long=True) or ())
+            if len(matches) != 1:
+                cmds.select(matches, replace=True)
+                raise ValueError("模型短名不是场景内唯一名称：" + short)
             if short == "Eye" or short.startswith("Eye."):
                 raise ValueError("模型不能命名为 Eye；该名称由原版眼部绑定使用")
-            if node not in meshes:
-                meshes.append(node)
+            if "." not in node:
+                shapes = cmds.listRelatives(node, shapes=True,
+                                            fullPath=True) or []
+                if not shapes or cmds.nodeType(shapes[0]) != "mesh":
+                    continue
+            meshes.append(node)
         return tuple(meshes)
 
     def _stored_names(self, role: PreparationObjectRole) -> tuple[str, ...]:
@@ -63,8 +65,9 @@ class MayaPreparationObjectsHost:
         attribute = _ATTRIBUTES[role]
         if fit and cmds.attributeQuery(attribute, node=fit, exists=True):
             value = cmds.getAttr(fit + "." + attribute) or ""
-            if value.strip():
-                return tuple(value.split())
+            # An empty Fit field is a saved empty input, not a request to
+            # resurrect an older pre-Fit record from the network node.
+            return tuple(value.split())
         if cmds.objExists(self.storage):
             if cmds.nodeType(self.storage) != "network":
                 raise ValueError("准备记录名称已被其他节点占用：" + self.storage)
@@ -145,4 +148,7 @@ class MayaPreparationObjectsHost:
             cmds.undoInfo(closeChunk=True)
 
     def select_objects(self, objects: tuple[str, ...]) -> None:
-        self.cmds.select(list(objects), replace=True)
+        if objects:
+            self.cmds.select(list(objects), replace=True)
+        else:
+            self.cmds.select(clear=True)

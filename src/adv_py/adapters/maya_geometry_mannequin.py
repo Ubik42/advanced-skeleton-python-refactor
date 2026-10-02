@@ -27,14 +27,9 @@ class MayaMannequinHost(MayaSkeletonGeometryHost):
         raise ValueError('Mannequin 缺少角色主控制器')
 
     def _source_offset(self,joint):
-        c=self.cmds;main=self._main();fit=self._name('FitSkeleton')
-        # The registered Python Main has the same Fit axis identity.
-        source=main
-        if not c.objExists(main+'.primaryAxis') and self._leaf(main)=='AdvPy_Global':source=fit
-        primary=self._axis(source,'primaryAxis','X');secondary=self._axis(source,'secondaryAxis','Y')
-        if c.objExists(fit+'.worldmatch') and c.getAttr(fit+'.worldmatch') and c.objExists(joint+'.primaryAxis'):
-            primary=self._axis(joint,'primaryAxis',primary);secondary=self._axis(joint,'secondaryAxis',secondary)
-        return icon_axis_offset(primary,secondary)
+        from .maya_original_axes import original_axes
+        return icon_axis_offset(*original_axes(self.cmds,joint,self._main(),
+                                              fit_skeleton=self._name('FitSkeleton')))
 
     def _rla_child(self,joint,tolerance):
         c=self.cmds;children=c.listRelatives(joint,children=True,type='joint',fullPath=True) or []

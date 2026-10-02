@@ -48,6 +48,7 @@ class FitAutoPlaceScanState:
     max_finger_width: float = 0.
     average_finger_diameter: float = 0.
     previous_finger_box: tuple = (0.,) * 6
+    previous_finger_selection: list = field(default_factory=list)
     has_ncloth: bool = False
     hit_thumb: bool = False
     nucleus: str = ''

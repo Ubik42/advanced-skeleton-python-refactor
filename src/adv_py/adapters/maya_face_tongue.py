@@ -212,8 +212,9 @@ class MayaFaceTongueHost(MayaFaceEyeLidRigHost):
             c.xform(lattice,worldSpace=True,translation=source.fit_positions[index])
             c.xform(lattice,worldSpace=True,scale=(bounds[3]-bounds[0],bounds[4]-bounds[1],0))
         c.delete(cube,constructionHistory=True)
-        box_skin=c.skinCluster((*source.joints,cube),toSelectedBones=True,
-            maximumInfluences=1,dropoffRate=4,removeUnusedInfluence=False,name="tongueBoxSC")[0]
+        from .maya_original_skin_history import bind_original_skin
+        box_skin=bind_original_skin(c, (cube,*source.joints), "tongueBoxSC",
+            namespace=self.namespace, maximum_influences=1)
         for index in range(count):
             vertices=(*rings[index],*rings[index+1]) if index==count-1 else rings[index]
             c.skinPercent(box_skin,vertices,transformValue=[(source.joints[index],1)])
@@ -221,13 +222,10 @@ class MayaFaceTongueHost(MayaFaceEyeLidRigHost):
                 c.skinPercent(box_skin,rings[index],transformValue=[(source.joints[index-1],.5)])
         skin=self.scene_address(source.skin) if source.skin else None
         if skin is None:
-            # Explicit geometry may be in the model namespace; new Skin stays
-            # inside this character and may bind an object or component region.
-            with c._creation_namespace() if hasattr(c,"_creation_namespace") else _unchanged():
-                skin=raw.skinCluster((*tuple(self.scene_address(j) for j in source.joints),
-                    *tuple(self.scene_address(g) for g in source.geometry)),toSelectedBones=True,
-                    maximumInfluences=1,dropoffRate=4,removeUnusedInfluence=False,
-                    name=self.scene_address("tongueSC"))[0]
+            # Source selects the Tongue region before adding its joints.
+            skin=bind_original_skin(c, (*source.geometry,*source.joints), "tongueSC",
+                namespace=self.namespace, maximum_influences=1)
+            skin=self.scene_address(skin)
         else:
             for joint in source.joints:
                 raw.skinCluster(skin,edit=True,lockWeights=True,weight=0,
@@ -237,7 +235,10 @@ class MayaFaceTongueHost(MayaFaceEyeLidRigHost):
                                                toVertex=True)
         vertices=tuple(raw.ls(target,flatten=True,long=True) or [])
         if not vertices: raise RuntimeError("Tongue 未找到目标顶点")
-        raw.skinPercent(skin,vertices,transformValue=[(self.scene_address(source.joints[0]),1)])
+        try:
+            raw.skinPercent(skin,vertices,transformValue=[(self.scene_address(source.joints[0]),1)])
+        except RuntimeError:
+            pass  # Source catchQuiet after converting the Tongue selection.
         raw.select(self.scene_address(cube),replace=True)
         raw.select(vertices if source.component_geometry else tuple(self.scene_address(g)
             for g in source.geometry),add=True)

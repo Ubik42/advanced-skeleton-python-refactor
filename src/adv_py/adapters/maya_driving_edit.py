@@ -1,8 +1,12 @@
 """Original time-axis SDK editing, symmetry preview, apply and cancel."""
 import json
+import re
 from fnmatch import fnmatchcase
 from adv_py.core.corrective_shapes import corrective_round
 from adv_py.core.driving_systems import DrivingCreateOptions,original_sdk_control,original_sdk_attribute
+from .maya_original_control_identity import (
+    source_control_name,source_fk_control,source_mirror_control,
+)
 
 class MayaDrivingEditMixin:
     def _original_driving_connect(self, source, destination, *, force=False):
@@ -23,7 +27,7 @@ class MayaDrivingEditMixin:
                 mouth=fnmatchcase(control,"ctrlMouthCorner_*")
                 if mouth and (fnmatchcase(attr,"translate[A-Z]") or (c.getAttr(control+".tx")==0 and c.getAttr(control+".ty")==0)):continue
                 if value==0:continue
-                if (control.endswith("_L") or attr.endswith("Left")) and attr not in ("mouthLeft","jawLeft"):
+                if (source_control_name(self,control).endswith("_L") or attr.endswith("Left")) and attr not in ("mouthLeft","jawLeft"):
                     raise ValueError("请仅修改右侧或中间驱动属性："+control+"."+attr)
                 if driver:
                     if driver==control and attribute=="translateX" and attr=="translateY":
@@ -31,8 +35,8 @@ class MayaDrivingEditMixin:
                         attr=self.original_blended_driver_name((control+".tx",control+".ty"))
                         c.addAttr(control,longName=attr,attributeType="double",defaultValue=1,keyable=False)
                         if c.objExists("BlendedCorrectiveDriver"):c.delete("BlendedCorrectiveDriver")
-                        if control.endswith("_R"):
-                            left=control[:-2]+"_L"
+                        if source_control_name(self,control).endswith("_R"):
+                            left=source_mirror_control(self,control,"L")
                             c.setAttr(left+".tx",c.getAttr(control+".tx"));c.setAttr(left+".ty",c.getAttr(control+".ty"))
                             if c.objExists("BlendedCorrectiveDriver"):c.delete("BlendedCorrectiveDriver")
                             c.setAttr(left+".tx",0);c.setAttr(left+".ty",0)
@@ -92,8 +96,10 @@ class MayaDrivingEditMixin:
         restore=[]
         for control in c.sets(group,query=True) or []:
             control=self._original_restore_leaf(control)
-            if not control.endswith("_L") or not c.objExists(control[:-2]+"_R"):continue
-            stem=control[:-2];right=stem+"_R"
+            role=source_control_name(self,control)
+            right=source_mirror_control(self,control,'R')
+            if not role.endswith("_L") or not c.objExists(right):continue
+            stem=role[:-2]
             path=(c.ls(control,long=True) or [control])[0]
             custom="CustomSystem|" in path
             custom_local=custom and c.objExists(control+".localOrient") and bool(c.getAttr(control+".localOrient"))
@@ -101,17 +107,17 @@ class MayaDrivingEditMixin:
                 if "_" in attr or c.getAttr(control+"."+attr,lock=True):continue
                 value=c.getAttr(control+"."+attr)
                 if not isinstance(value,(int,float)):continue
-                restore.append((control+"."+attr,value))
                 stored=stem+"_"+attr
                 c.addAttr("TestSymmetry",longName=stored,attributeType="double",keyable=True)
                 mpd=c.createNode("multiplyDivide",name="TestSymmetry_"+stored+"_MultiplyDivide")
                 c.connectAttr(right+"."+attr,mpd+".input1X")
-                local=control.startswith(("FK","Bend")) or c.objExists(control+".ikLocal") or custom_local
+                local=role.startswith(("FK","Bend")) or c.objExists(control+".ikLocal") or custom_local
                 flip=-1 if attr in (("tx","ty","tz") if local else ("tx","ry","rz")) else 1
                 if face and not custom:flip=1
                 c.setAttr(mpd+".input2X",flip)
                 c.connectAttr(mpd+".outputX","TestSymmetry."+stored)
                 c.connectAttr("TestSymmetry."+stored,control+"."+attr)
+                restore.append((control+"."+attr,c.getAttr(control+"."+attr)))
         c.addAttr("TestSymmetry",longName="udAttr",dataType="string")
         c.setAttr("TestSymmetry.udAttr","".join("setAttr "+plug+" "+str(value)+";" for plug,value in restore),type="string")
 
@@ -136,10 +142,13 @@ class MayaDrivingEditMixin:
         self.go_to_original_corrective_build_pose()
         curves=self.original_driving_curves(control,attribute)
         if not curves:raise ValueError("驱动属性没有可编辑的 SDK 曲线")
+        raw.refresh()
         if not c.objExists("CustomOrientsDisabled"):
+            from .maya_original_control_identity import original_custom_orient_node
             for curve in curves:
                 target=original_sdk_control(curve)
-                if c.objExists("CustomOrient"+target):raise ValueError("请先禁用自定义朝向："+target)
+                if original_custom_orient_node(self, target):
+                    raise ValueError("请先禁用自定义朝向："+target)
         affected=[];minimum=0.;maximum=0.;editing=[]
         for curve in curves:
             if "_L_" in curve:continue
@@ -149,20 +158,32 @@ class MayaDrivingEditMixin:
             c.createNode(c.nodeType(curve).replace("animCurveU","animCurveT",1),name=name)
             self.copy_original_driving_curve(curve,name)
             c.connectAttr(name+".output",target+"."+attr)
-            destination=self._original_driving_curve_destination(curve)
-            if "_scale" in destination and ".input[" in destination and not destination.endswith(".input[0]"):
-                c.keyframe(name,edit=True,relative=True,option="over",valueChange=1)
             keys=c.keyframe(curve,query=True,floatChange=True) or []
             if keys:minimum=min(minimum,keys[0]);maximum=max(maximum,keys[-1])
+            if len(keys)<2:c.warning('Less then 2 keys in SDK AnimCurve "'+curve+'"')
             editing.append(name)
+        raw.playbackOptions(minTime=minimum,animationStartTime=minimum,animationEndTime=maximum,maxTime=maximum)
+        if maximum<=1 and slider:raw.timeControl(slider,edit=True,snap=False)
+        # asDsEdit completes all preview connections before shifting additive
+        # scale curves. Query only downstream blendWeighted plugs, as in MEL.
+        for curve in curves:
+            if "_L_" in curve:continue
+            destinations=c.listConnections(curve+".output",source=False,destination=True,
+                                           skipConversionNodes=True,plugs=True,type="blendWeighted") or []
+            if destinations and re.search(r"_scale.*\.input\[[1-9][0-9]*\]$",destinations[0]):
+                c.keyframe(curve+"_Editing",edit=True,relative=True,option="over",valueChange=1)
+            keys=c.keyframe(curve,query=True,floatChange=True) or []
+            if keys:minimum=min(minimum,keys[0]);maximum=max(maximum,keys[-1])
+            if len(keys)<2:c.warning('Less then 2 keys in SDK AnimCurve "'+curve+'"')
         raw.playbackOptions(minTime=minimum,animationStartTime=minimum,animationEndTime=maximum,maxTime=maximum)
         if maximum<=1 and slider:raw.timeControl(slider,edit=True,snap=False)
         raw.currentTime(current if current else maximum)
         if other:
             driver=control+"."+attribute
-            if not control.startswith("IK") and c.objExists("FK"+driver):driver="FK"+driver
-            if attribute.startswith("qRotate"):driver="FK"+control+"."+attribute.replace("qRotate","rotate",1)
-            if attribute.startswith("opm"):driver="FK"+control+"."+attribute.removeprefix("opm")
+            fk=source_fk_control(self,control)
+            if not source_control_name(self,control).startswith("IK") and c.objExists(fk+"."+attribute):driver=fk+"."+attribute
+            if attribute.startswith("qRotate"):driver=fk+"."+attribute.replace("qRotate","rotate",1)
+            if attribute.startswith("opm"):driver=fk+"."+attribute.removeprefix("opm")
             if c.objExists(driver):self._original_driving_connect("time1.outTime",driver)
             self.mute_original_driving_sdks(curves)
         if test_symmetry:self._original_driving_symmetry_preview(face=bool(face))
@@ -176,9 +197,13 @@ class MayaDrivingEditMixin:
         c.addAttr("EditingDrivingSystem",longName="advPyEditingCurves",dataType="string")
         c.setAttr("EditingDrivingSystem.advPyEditingCurves",json.dumps(editing),type="string")
         if show_only_affected:self.show_original_driving_affected_controls(tuple(affected),affected_only=True)
-        if all(c.objExists(prefix+control) for prefix in ("FK","FKX","IKX","FKOffset")):
-            switch=self.find_original_fkik_control("FK"+control)
-            if switch and c.objExists(switch+".FKIKBlend"):c.setAttr(switch+".FKIKBlend",0)
+        from .maya_original_control_identity import registration,leaf
+        saved=registration(self)
+        fk=source_fk_control(self,control)
+        has_source_limb=saved is not None and any(
+            leaf(row.control)==leaf(fk) for limb in saved.source_limbs for row in limb.joints)
+        if has_source_limb or all(c.objExists(prefix+control) for prefix in ("FK","FKX","IKX","FKOffset")):
+            self.set_original_corrective_fk(fk)
         if raw.headsUpDisplay("HUDEDSMode",query=True,exists=True):raw.headsUpDisplay("HUDEDSMode",remove=True)
         raw.headsUpDisplay("HUDEDSMode",section=2,block=0,blockSize="medium",label="Editing Driving System: "+control+"."+attribute,labelFontSize="large")
         raw.displayColor("headsUpDisplayLabels",16)
@@ -211,8 +236,8 @@ class MayaDrivingEditMixin:
             fit=self.plan_body_driving_fit_sync(self.scene_address("FitSkeleton"))
             if fit:self.apply_body_driving_fit_sync(fit)
         self.update_original_driving_soft_range(control,attribute)
-        if not control.endswith("_L"):
-            left=control.replace("_R","_L",1)
+        if not source_control_name(self,control).endswith("_L"):
+            left=source_mirror_control(self,control,'L')
             if c.objExists(left):self.mirror_original_driving_attribute(left,attribute)
         return result
 
@@ -221,6 +246,7 @@ class MayaDrivingEditMixin:
         c=self._cmds
         self.remove_original_driving_test_animation();self.go_to_original_corrective_build_pose()
         curves=self.original_driving_curves(control,attribute)
+        self._corrective_raw().refresh()
         face=c.objExists("FaceControlSet") and c.sets(control,isMember="FaceControlSet")
         path=(c.ls(control,long=True) or [control])[0].replace(self.namespace+":" if self.namespace else "","")
         other=not face and "|DrivingSystem|" not in path
@@ -229,4 +255,6 @@ class MayaDrivingEditMixin:
             except RuntimeError:pass
         if curves:c.delete(curves)
         self.update_original_driving_pose_attributes();self.go_to_original_corrective_build_pose()
+        from .maya_driving_registration import refresh_registered_sdks
+        refresh_registered_sdks(self)
         return len(curves)

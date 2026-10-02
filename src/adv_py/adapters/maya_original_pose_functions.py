@@ -56,19 +56,19 @@ class MayaOriginalPoseFunctionsMixin:
                 value=c.getAttr(plug)
                 if not isinstance(value,(int,float)):raise ValueError("构建姿态只支持数值通道："+plug)
                 node,attr=plug.rsplit(".",1)
-                rows.append((self._original_restore_leaf(node),c.attributeQuery(attr,node=node,longName=True),value))
+                rows.append((self._original_restore_leaf(node),attr,value))
         source=(c.getAttr("FitSkeleton.run") or "") if c.objExists("FitSkeleton.run") else ""
         existing={part.strip() for part in source.split(";") if part.strip()}
         self._transaction_changed=True
         for node,attr,value in rows:
             statement="setAttr "+node+"."+attr+" "+str(value)
-            if statement not in existing:source+=(";" if source and not source.endswith(";") else "")+statement+";";existing.add(statement)
+            if statement not in existing:source+=statement+";"
         if not c.objExists("FitSkeleton.run"):c.addAttr("FitSkeleton",longName="run",dataType="string")
         c.setAttr("FitSkeleton.run",source,type="string")
         plug="FitSkeleton.advPyBuildPoseOverrides"
         overrides=json.loads(c.getAttr(plug)) if c.objExists(plug) else []
         values={(self._original_restore_leaf(row[0]),row[1]):row[2] for row in overrides}
-        values.update({(node,attr):value for node,attr,value in rows})
+        values.update({(node,c.attributeQuery(attr,node=node,longName=True)):value for node,attr,value in rows})
         if not c.objExists(plug):c.addAttr("FitSkeleton",longName="advPyBuildPoseOverrides",dataType="string")
         c.setAttr(plug,json.dumps([(node,attr,value) for (node,attr),value in values.items()]),type="string")
         return len(rows)
@@ -82,9 +82,11 @@ class MayaOriginalPoseFunctionsMixin:
                     if c.objExists(plug) and abs(c.getAttr(plug)-neutral)>.001]
         if nonneutral:raise ValueError("请先返回构建姿态，再切换自定义朝向："+nonneutral[0])
         self._transaction_changed=True;count=0
+        selection=c.ls(selection=True) or []
         if enabled:
             for attr in c.listAttr("CustomOrientsDisabled",userDefined=True) or []:
-                node,channel=attr.rsplit("_",1)
+                fields=attr.split("_")
+                node=fields[0]+"_"+fields[1];channel=fields[2]
                 c.setAttr(node+"."+channel,c.getAttr("CustomOrientsDisabled."+attr));count+=1
             c.delete("CustomOrientsDisabled")
         else:
@@ -94,11 +96,13 @@ class MayaOriginalPoseFunctionsMixin:
                 for axis in "xyz":c.setAttr("CustomOrientsDisabled."+channel+axis,lock=True,keyable=False)
             c.setAttr("CustomOrientsDisabled.v",lock=True,keyable=False)
             for node in nodes:
-                for channel,neutral in (("r",0),("s",1)):
-                    for axis in "xyz":
+                for axis in "xyz":
+                    for channel,neutral in (("r",0),("s",1)):
                         plug=node+"."+channel+axis;value=c.getAttr(plug)
                         if value==neutral:continue
                         attr=self._original_restore_leaf(node)+"_"+channel+axis
                         c.addAttr("CustomOrientsDisabled",longName=attr,attributeType="double",defaultValue=value,keyable=True)
                         c.setAttr(plug,neutral);count+=1
+        try:c.select(selection,replace=True) if selection else c.select(clear=True)
+        except RuntimeError:pass
         return count

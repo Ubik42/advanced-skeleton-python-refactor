@@ -126,18 +126,9 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
         return str(value or default)
 
     def _orient_offset(self, joint: str) -> tuple[float, float, float]:
-        c = self.cmds
-        main = self._main()
-        if self._leaf(main)=='AdvPy_Global' and not c.objExists(main+'.primaryAxis'):
-            main=self._name('FitSkeleton')
-        primary = self._axis(main, "primaryAxis", "X")
-        secondary = self._axis(main, "secondaryAxis", "Y")
-        fit = self._name("FitSkeleton")
-        if c.objExists(fit) and c.attributeQuery("worldmatch", node=fit, exists=True):
-            if c.getAttr(fit + ".worldmatch"):
-                primary = self._axis(joint, "primaryAxis", primary)
-                secondary = self._axis(joint, "secondaryAxis", secondary)
-        return icon_axis_offset(primary, secondary)
+        from .maya_original_axes import original_axes
+        return icon_axis_offset(*original_axes(self.cmds,joint,self._main(),
+                                              fit_skeleton=self._name('FitSkeleton')))
 
     def _child_joint(self, spec: BoneCopy) -> str:
         c = self.cmds
@@ -290,14 +281,9 @@ class MayaSkeletonGeometryHost(MayaSkinCageHost):
         self.cmds.setAttr(bone + ".scale", value, value, value, type="double3")
 
     def _secondary_vector(self, joint: str) -> tuple[int, int, int]:
-        main=self._main()
-        if self._leaf(main)=='AdvPy_Global' and not self.cmds.objExists(main+'.primaryAxis'):main=self._name('FitSkeleton')
-        axis = self._axis(main, "secondaryAxis", "Y")
-        fit = self._name("FitSkeleton")
-        if self.cmds.objExists(fit) and self.cmds.attributeQuery(
-                "worldmatch", node=fit, exists=True):
-            if self.cmds.getAttr(fit + ".worldmatch"):
-                axis = self._axis(joint, "secondaryAxis", axis)
+        from .maya_original_axes import original_axis
+        axis=original_axis(self.cmds,'secondary',joint,self._main(),
+                           fit_skeleton=self._name('FitSkeleton'))
         sign = -1 if axis.startswith("-") else 1
         return tuple(sign if name == axis[-1] else 0 for name in "XYZ")
 

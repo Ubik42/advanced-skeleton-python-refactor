@@ -13,6 +13,23 @@ from .maya_face_bs_targets import MayaFaceBSTargetsMixin
 
 class MayaFaceBSConversionMixin(MayaFaceBSEditMixin, MayaFaceBSTargetsMixin, MayaFaceBSSamplingMixin, MayaFaceBSLayersMixin,
                                 MayaFaceBSCleanupMixin, MayaFaceBSMixedMixin, MayaFaceBSAttachersMixin):
+    def prepare_original_face_build_dependencies(self):
+        """Prepare Mixed's native command before the complete Face undo chunk.
+
+        Finish can convert to Mixed inside the enclosing 30-stage build. Maya
+        plugin loading there would invalidate that operation's undo boundary.
+        This changes host setup only, leaving the source conversion order intact.
+        """
+        c = self._cmds
+        fit = self._fit(required=True)
+        mixed = c.objExists(fit + '.RigType') and int(c.getAttr(fit + '.RigType')) == 2
+        game = c.objExists(fit + '.GameEngine') and bool(c.getAttr(fit + '.GameEngine'))
+        # A rebuild can retain an old asFaceBS until RebuildRestore, which
+        # performs the same conversion inside the complete build transaction.
+        if mixed and not game:
+            from .maya_native_node_cast import prepare_native_node_cast
+            prepare_native_node_cast(self)
+
     def original_face_bs_skin(self, geometry):
         """asGetSkinCluster's pruned, interest-level-two production history.
 
@@ -21,11 +38,11 @@ class MayaFaceBSConversionMixin(MayaFaceBSEditMixin, MayaFaceBSTargetsMixin, May
         Skin instead of the production model's Skin after Mixed preparation.
         """
         raw = getattr(self._cmds, "raw", self._cmds)
-        nodes = [node for node in raw.listHistory(self.scene_address(geometry),
-            pruneDagObjects=True, interestLevel=2) or [] if raw.nodeType(node) == "skinCluster"]
-        if not nodes:
+        from .maya_original_skin_history import original_skin_cluster
+        skin = original_skin_cluster(raw, self.scene_address(geometry))
+        if not skin:
             raise FitSkeletonValidationError("Face 转换模型缺少原版生产 Skin：" + geometry)
-        return nodes[-1]
+        return skin
 
     @staticmethod
     def _original_restore_leaf(node):

@@ -788,7 +788,7 @@ class MayaFaceEyeLidRigHost(MayaFaceCtrlBoxMixin, MayaFaceBaseMixin, MayaFaceBui
                     if c.objExists(eye_control+"."+attribute):
                         raise FitSkeletonValidationError("原版眼部属性已占用："+attribute)
                     c.addAttr(eye_control,longName=attribute,attributeType="double",
-                              minValue=0,softMinValue=0,softMaxValue=10,keyable=True)
+                              minValue=0,softMinValue=0,softMaxValue=10,hasSoftMaxValue=True,keyable=True)
                     bw=c.createNode("blendWeighted",name="bw"+eye_name+"_"+attribute)
                     c.connectAttr(eye_control+"."+attribute,bw+".input[0]")
                 fraction = c.createNode("multiplyDivide",

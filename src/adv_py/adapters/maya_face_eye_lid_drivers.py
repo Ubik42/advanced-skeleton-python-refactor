@@ -20,12 +20,12 @@ class MayaFaceEyeLidDriversMixin:
                 control = arc + "Lid" + side
                 if not c.objExists(control + ".blink"):
                     c.addAttr(control, longName="blink", attributeType="double", softMinValue=0,
-                              softMaxValue=10, keyable=True)
+                              softMaxValue=10, hasSoftMaxValue=True, hasMinValue=True, keyable=True)
                     self.original_face_output_bw(control + ".blink")
                 center_range = "upperblinkCenterSR" + side
                 if arc == "upper":
                     c.addAttr(control, longName="blinkCenter", attributeType="double", softMinValue=0,
-                              softMaxValue=10, defaultValue=2, keyable=True)
+                              softMaxValue=10, hasSoftMaxValue=True, hasMinValue=True, defaultValue=2, keyable=True)
                     center = self.original_face_output_bw(control + ".blinkCenter")
                     c.createNode("setRange", name=center_range)
                     c.setAttr(center_range + ".oldMax", 10, 10, 10, type="float3")
@@ -63,7 +63,7 @@ class MayaFaceEyeLidDriversMixin:
                 c.connectAttr(reverse + ".outputX", blend + "." + arc + "UnClosedLidCurve" + side)
                 if not c.objExists(control + ".lidOut"):
                     c.addAttr(control, longName="lidOut", attributeType="double", softMinValue=0,
-                              softMaxValue=10, keyable=True)
+                              softMaxValue=10, hasSoftMaxValue=True, hasMinValue=True, keyable=True)
                     output = self.original_face_output_bw(control + ".lidOut")
                     self._original_lid_normalize_reverse(arc + "lidOutBlend" + side, output)
                 c.connectAttr(arc + "lidOutBlend" + side + "UnitConversion.output", "LidSetup" + side + "." + arc + "LidOut")
@@ -91,7 +91,7 @@ class MayaFaceEyeLidDriversMixin:
             c.parent(fleshy, stem + "Attach" + side)
         c.parent("SDK" + control, fleshy)
         c.addAttr(control, longName="fleshy", attributeType="double", softMinValue=0,
-                  softMaxValue=10, defaultValue=default, keyable=True)
+                  softMaxValue=10, hasSoftMaxValue=True, hasMinValue=True, defaultValue=default, keyable=True)
         multiply = c.createNode("multiplyDivide", name=control + "FleshyMPD")
         tx = c.createNode("unitConversion", name=control + "FleshyTXConversion")
         ty = c.createNode("unitConversion", name=control + "FleshyTYConversion")

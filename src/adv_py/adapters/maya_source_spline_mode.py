@@ -4,6 +4,7 @@ from dataclasses import replace
 from adv_py.core.body_parent_constraint import plan_body_parent_constraint,audit_body_parent_constraint
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_adv_icons import create_adv_icon
+from .maya_original_transform_channels import lock_original_transform_channels
 
 
 def _follow_plan(host,plan):
@@ -14,12 +15,14 @@ def _follow_plan(host,plan):
         skip_scale=not plan.use_offset_parent_matrix))
 
 
-def create(host,plan):
+def create(host,plan, *, hybrid_unit=True):
     mode=plan.source_mode
     if mode is None:return
     host._require_transaction();host._transaction_changed=True
     c=host._cmds
-    if any(host.find_name_collisions(name) for name in mode.node_names):
+    names=mode.node_names if hybrid_unit else tuple(
+        name for name in mode.node_names if name!=mode.hybrid_visibility_unit)
+    if any(host.find_name_collisions(name) for name in names):
         raise FitSkeletonValidationError('来源 Spline FKIK 控制器名称被占用：'+mode.name)
     frame=c.createNode('transform',name=mode.frame_name,
                        parent=mode.frame.rsplit('|',1)[0],skipSelect=True)
@@ -56,15 +59,13 @@ def create(host,plan):
                 or mode.name.endswith('_L') and position[0]<start[0]):
             c.setAttr(control+'.translateZ',-float(c.getAttr(control+'.translateZ')))
     c.parent(control,mode.frame,absolute=True)
-    for kind in ('translate','rotate','scale'):
-        for axis in 'XYZ':c.setAttr(mode.control+'.'+kind+axis,lock=True,keyable=False)
-    c.setAttr(mode.control+'.visibility',lock=True,keyable=False)
+    lock_original_transform_channels(c,mode.control,True,True,True,True)
     c.addAttr(mode.control,longName='FKIKBlend',attributeType='double',
               minValue=0.,maxValue=10.,defaultValue=0.,keyable=True)
     for attribute,value in (('startJoint',mode.start_joint),('middleJoint',mode.middle_joint),('endJoint',mode.end_joint)):
         c.addAttr(mode.control,longName=attribute,dataType='string')
         c.setAttr(mode.control+'.'+attribute,value,type='string',lock=True)
-    for unit in (mode.weight_unit,mode.visibility_unit,mode.hybrid_visibility_unit):
+    for unit in (mode.weight_unit,mode.visibility_unit)+((mode.hybrid_visibility_unit,) if hybrid_unit else ()):
         c.createNode('unitConversion',name=unit,skipSelect=True)
         c.setAttr(unit+'.conversionFactor',.1)
     for unit in (mode.weight_unit,mode.visibility_unit):
@@ -73,10 +74,10 @@ def create(host,plan):
     c.setAttr(mode.visibility_range+'.minX',10.)
     c.setAttr(mode.visibility_range+'.oldMaxX',10.)
     c.connectAttr(plan.mode_plug,mode.visibility_range+'.valueX')
-    audit(host,plan)
+    audit(host,plan,hybrid_unit=hybrid_unit)
 
 
-def audit(host,plan):
+def audit(host,plan, *, hybrid_unit=True):
     mode=plan.source_mode
     if mode is None:return
     c=host._cmds
@@ -94,7 +95,7 @@ def audit(host,plan):
     for attribute,value in (('startJoint',mode.start_joint),('middleJoint',mode.middle_joint),('endJoint',mode.end_joint)):
         if c.getAttr(mode.control+'.'+attribute)!=value or not c.getAttr(mode.control+'.'+attribute,lock=True):
             raise FitSkeletonValidationError('来源 Spline FKIK 骨链标记改变：'+attribute)
-    for unit in (mode.weight_unit,mode.visibility_unit,mode.hybrid_visibility_unit):
+    for unit in (mode.weight_unit,mode.visibility_unit)+((mode.hybrid_visibility_unit,) if hybrid_unit else ()):
         if c.nodeType(unit)!='unitConversion' or abs(c.getAttr(unit+'.conversionFactor')-.1)>1e-12:
             raise FitSkeletonValidationError('来源 Spline FKIK 权重转换改变：'+unit)
     edges=tuple((plan.mode_plug,unit+'.input') for unit in (mode.weight_unit,mode.visibility_unit))

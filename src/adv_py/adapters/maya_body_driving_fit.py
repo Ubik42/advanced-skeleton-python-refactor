@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import re
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from .maya_driving_catalog import MayaDrivingCatalogMixin
 
 
 _ATTRIBUTE = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*$")
@@ -39,6 +40,65 @@ class DrivingFitPlan:
 
 
 class MayaBodyDrivingFitMixin:
+    def capture_body_control_orient_rebuild(self, registration):
+        from .maya_control_orient_rebuild import capture
+        return capture(self, registration)
+
+    def restore_body_control_orient_rebuild(self, rows, registration, rig):
+        from .maya_control_orient_rebuild import restore
+        return restore(self, rows, registration, rig)
+
+    def capture_body_driving_rebuild(self, registration):
+        from .maya_driving_rebuild import capture
+        return capture(self, registration)
+
+    def restore_body_driving_rebuild(self, state, registration, rig, *, fit='FitSkeleton'):
+        from .maya_driving_rebuild import restore
+        return restore(self, state, registration, rig, fit=fit)
+
+    def restore_body_driving_from_fit(self, registration, rig, *, fit='FitSkeleton',
+                                      scene_before=None, populate_all=True):
+        """Join native SDK restoration to the existing Body undo transaction."""
+        self._require_transaction()
+        from .maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.core.fit_part import FitPartFinalPaths, rebase_plan_paths_after_parts
+        # The same scene boundary, transaction flags and host state are used;
+        # no second scene host or nested native undo chunk is initialized.
+        driving = object.__new__(MayaDrivingSystemsHost)
+        driving.__dict__ = self.__dict__
+        plan = driving.capture_original_driving_fit_restore(fit)
+        if not plan:
+            return registration, rig
+        if driving.original_corrective_body_registration() != registration:
+            raise FitSkeletonValidationError('Fit SDK 恢复需要当前 Body 登记')
+        driving.restore_original_driving_from_fit(plan, fit=fit)
+        if populate_all:
+            # Source AllSet collection and automatic unit naming run AFTER
+            # the restored SDK curves/controllers are built (MEL 85824).
+            if scene_before is None:
+                raise FitSkeletonValidationError('恢复 SDK 后登记 AllSet 缺少构建前快照')
+            from adv_py.application.body_all_set import PopulateBodyAllSet
+            PopulateBodyAllSet(self).apply(scene_before, fit)
+            from .maya_driving_registration import refresh_registered_sdks
+            refresh_registered_sdks(driving)
+        updated = self.read_character_registration()
+        current = {node.uuid: node for node in updated.nodes}
+        rewrites = []
+        for node in registration.nodes:
+            if node.uuid not in current:
+                raise FitSkeletonValidationError('恢复 Fit SDK 替换了 Body 原节点')
+            actual = current[node.uuid]
+            if actual.node_type != node.node_type:
+                raise FitSkeletonValidationError('恢复 Fit SDK 改变了 Body 原节点类型')
+            if actual.path != node.path:
+                rewrites.append((node.path, actual.path))
+        final_paths = FitPartFinalPaths((), (), tuple(rewrites))
+        return updated, rebase_plan_paths_after_parts(rig, final_paths)
+
+    _driving_catalog_leaf = staticmethod(MayaDrivingCatalogMixin._driving_catalog_leaf)
+    original_driving_attributes = MayaDrivingCatalogMixin.original_driving_attributes
+    original_driving_curves = MayaDrivingCatalogMixin.original_driving_curves
+    original_driving_systems = MayaDrivingCatalogMixin.original_driving_systems
     @property
     def _driving_cmds(self):
         return getattr(self._cmds, "raw", self._cmds)
@@ -61,51 +121,28 @@ class MayaBodyDrivingFitMixin:
         c = self._driving_cmds
         curves = list(c.listConnections(
             driver_plug, source=False, destination=True,
-            skipConversionNodes=True, type="animCurve") or ())
+            skipConversionNodes=True) or ())
         weighted = c.listConnections(
             driver_plug, source=False, destination=True,
             skipConversionNodes=True, type="blendWeighted") or ()
-        for node in weighted:
-            curves.extend(c.listConnections(
-                node + ".output", source=False, destination=True,
+        if weighted:
+            curves = list(c.listConnections(
+                weighted[0] + ".output", source=False, destination=True,
                 skipConversionNodes=True, type="animCurve") or ())
         paths = []
         for curve in curves:
             resolved = c.ls(curve, long=True) or ()
-            if len(resolved) != 1 or not c.nodeType(resolved[0]).startswith(
-                    "animCurve"):
+            if len(resolved) != 1:
                 raise FitSkeletonValidationError(
                     "DrivingSystem SDK 曲线不存在或不唯一：" + curve)
-            if resolved[0] not in paths:
-                paths.append(resolved[0])
-        return tuple(sorted(paths, key=lambda item: (
-            0 if "_translate" in item else
-            1 if "_rotate" in item else 2, item)))
-
-    def _driving_source_attributes(self, driver: str, *,
-                                   ordinary: bool,
-                                   face: bool) -> tuple[str, ...]:
-        c = self._driving_cmds
-        user = tuple(c.listAttr(driver, userDefined=True) or ())
-        if ordinary:
-            candidates = user
-        elif face:
-            candidates = (() if c.getAttr(driver + ".translateX", lock=True)
-                          else ("translateX", "translateY"))
-            candidates += tuple(name for name in user if (
-                not c.getAttr(driver + "." + name, lock=True)
-                and (c.getAttr(driver + "." + name, keyable=True)
-                     or c.getAttr(driver + "." + name,
-                                  channelBox=True))))
-            if self._driving_leaf(driver) == "ctrlPhonemes_M":
-                candidates = tuple(name for name in candidates if name not in
-                                   ("multipliers", "jaw", "lip"))
-        else:
-            # AutoDrivers are ordinary rig controls routed through weighted
-            # SDK input nodes. Only channels with an actual SDK edge qualify.
-            candidates = tuple(c.listAttr(driver, keyable=True) or ()) + user
-        return tuple(dict.fromkeys(name for name in candidates
-                                   if name != "optimizedDS"))
+            paths.append(resolved[0])
+        # Preserve discovery order within translate/rotate groups. MEL does
+        # not alphabetically sort, and puts every remaining node after them.
+        ordered=[path for path in paths if "_translate" in path]
+        ordered.extend(path for path in paths if "_rotate" in path)
+        for path in paths:
+            if path not in ordered:ordered.append(path)
+        return tuple(ordered)
 
     def _driving_limits(self, plug: str, *, user_defined: bool
                         ) -> tuple[float | None, ...]:
@@ -137,29 +174,19 @@ class MayaBodyDrivingFitMixin:
                                             node_type="objectSet")
         if driving is None or control_set is None:
             return None
-        face_set = self._driving_unique("FaceControlSet",
-                                         node_type="objectSet")
-        direct = set(c.listRelatives(driving, children=True,
-                                     fullPath=True, type="transform") or ())
-        members = c.sets(control_set, query=True) or ()
         candidates = []
-        for member in members:
-            resolved = c.ls(member, long=True, type="transform") or ()
+        for control in self.original_driving_systems():
+            resolved = c.ls(self.scene_address(control), long=True) or ()
             if len(resolved) != 1:
-                continue
-            path = resolved[0]
-            if path not in candidates:
-                candidates.append(path)
+                raise FitSkeletonValidationError(
+                    "DrivingSystem 控制器不存在或不唯一：" + control)
+            if c.sets(resolved[0], isMember=control_set):
+                candidates.append((control, resolved[0]))
         controls = []
         used_fit_attributes = set()
         curve_attributes: dict[tuple[str, str], str] = {}
-        for driver in candidates:
-            ordinary = driver in direct
-            face = bool(face_set and not c.objExists(
-                self.scene_address("asFaceBS"))
-                and c.sets(driver, isMember=face_set))
-            source_attrs = self._driving_source_attributes(
-                driver, ordinary=ordinary, face=face)
+        for control, driver in candidates:
+            source_attrs = self.original_driving_attributes(control)
             attributes = []
             user = set(c.listAttr(driver, userDefined=True) or ())
             for name in source_attrs:
@@ -167,8 +194,6 @@ class MayaBodyDrivingFitMixin:
                     raise FitSkeletonValidationError(
                         "DrivingSystem 属性名不支持迁移：" + name)
                 curves = self._driving_sdk_curves(driver + "." + name)
-                if not ordinary and not face and not curves:
-                    continue
                 for curve in curves:
                     key = (curve, name)
                     previous = curve_attributes.get(key)
@@ -186,9 +211,6 @@ class MayaBodyDrivingFitMixin:
                                               user_defined=name in user)
                 attributes.append(DrivingFitAttribute(
                     name, curves, *limits))
-            if (not ordinary and (not attributes or
-                    (face and not any(item.curves for item in attributes)))):
-                continue
             leaf = self._driving_leaf(driver)
             fit_attribute = "drivingSystem_" + leaf
             if (not _ATTRIBUTE.fullmatch(fit_attribute)
@@ -207,7 +229,7 @@ class MayaBodyDrivingFitMixin:
         fit = plan.fit
         if not c.objExists(fit):
             raise FitSkeletonValidationError("FitSkeleton 已丢失")
-        existing = tuple(c.listAttr(fit, userDefined=True) or ())
+        existing = tuple(c.listAttr(fit, userDefined=True, scalar=True) or ())
         self._transaction_changed = True
         if c.attributeQuery("drivingSystem", node=fit, exists=True):
             c.deleteAttr(fit + ".drivingSystem")
@@ -233,14 +255,15 @@ class MayaBodyDrivingFitMixin:
                                 + attribute.name)
                         c.deleteAttr(curve + "." + attribute.name)
                     options = {}
-                    for value, flag in (
-                        (attribute.minimum, "minValue"),
-                        (attribute.maximum, "maxValue"),
-                        (attribute.soft_minimum, "softMinValue"),
-                        (attribute.soft_maximum, "softMaxValue"),
+                    for value, flag, enabled in (
+                        (attribute.minimum, "minValue", "hasMinValue"),
+                        (attribute.maximum, "maxValue", "hasMaxValue"),
+                        (attribute.soft_minimum, "softMinValue", "hasSoftMinValue"),
+                        (attribute.soft_maximum, "softMaxValue", "hasSoftMaxValue"),
                     ):
                         if value is not None:
                             options[flag] = value
+                            options[enabled] = True
                     c.addAttr(curve, longName=attribute.name,
                               attributeType="float", keyable=False,
                               **options)

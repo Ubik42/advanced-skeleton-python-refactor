@@ -1908,122 +1908,33 @@ class MayaFitJointHost:
     def write_missing_fit_deform_profiles(
         self, container: str, joints: tuple[str, ...],
     ) -> None:
-        """Complete old and new Fit volume channels before Body construction."""
+        """asEnsureAllFitJointAttrs shares the exact original volume migration.
+
+        Preserve native descendant order reversed for end inheritance, attribute
+        adjacency, delete/recreate Fat nodes and the original legacy branches.
+        """
         self._require_transaction()
+        from types import SimpleNamespace
+        from .maya_original_fit_attributes import ensure_original_fit_joint_attributes
+        from .maya_skin_cage_source import MayaSkinCageSourceMixin
         c = self._cmds
         joint_set = set(joints)
         if len(joint_set) != len(joints) or any(
-            (c.ls(joint, long=True, type="joint") or []) != [joint]
-            for joint in joints
-        ):
-            raise ValueError("Fit 默认体积需要唯一且已创建的关节路径")
+                (c.ls(joint, long=True, type="joint") or []) != [joint]
+                for joint in joints):
+            raise ValueError("Fit volume requires unique created joint paths")
         fit = c.ls(container, long=True, type="transform") or []
         if len(fit) != 1:
-            raise ValueError("Fit 默认体积需要唯一的 Fit 容器")
-        axis = "X"
-        if c.attributeQuery("primaryAxis", node=fit[0], exists=True):
-            axis = c.getAttr(fit[0] + ".primaryAxis", asString=True).upper()
-        if axis not in ("X", "Y", "Z", "-X", "-Y", "-Z"):
-            raise ValueError("Fit 主轴无效")
-        translate_axis = axis[-1]
-        positions = {joint: tuple(float(value) for value in c.xform(
-            joint, query=True, worldSpace=True, translation=True))
-            for joint in joints}
-        scale = fit_build_scale(self.capture_fit_hierarchy(fit[0]))
-        child_tolerance = 0.01 * float(c.getAttr(fit[0] + ".scaleX"))
-        center_tolerance = 0.01 * scale
-
-        def matching_child(joint: str) -> str | None:
-            children = [child for child in (c.listRelatives(
-                joint, children=True, type="joint", fullPath=True) or [])
-                if child in joint_set]
-            center = abs(positions[joint][0]) < child_tolerance
-            selected = next((child for child in children
-                             if (abs(positions[child][0]) < child_tolerance)
-                             == center), None)
-            name = joint.rsplit("|", 1)[-1]
-            preferred = (("Head", "Head"), ("Ankle", "Toes"),
-                         ("Toes", "Toes"), ("Root", "Spine"))
-            for marker, child_marker in preferred:
-                if marker in name:
-                    selected = next((child for child in reversed(children)
-                                     if child_marker in child.rsplit("|", 1)[-1]),
-                                    selected)
-            return selected
-
-        for joint in sorted(joints, key=lambda path: path.count("|")):
-            if c.attributeQuery("fat", node=joint, exists=True):
-                fat = float(c.getAttr(joint + ".fat"))
-            else:
-                child = matching_child(joint)
-                if child:
-                    length = abs(float(c.getAttr(child + ".translate"
-                                                 + translate_axis)))
-                    fat = length / 4.0
-                    if abs(positions[joint][0]) < center_tolerance:
-                        fat *= 2.0
-                    if fat < 0.0001:
-                        fat = scale
-                else:
-                    parent = (c.listRelatives(joint, parent=True, type="joint",
-                                              fullPath=True) or [None])[0]
-                    fat = (float(c.getAttr(parent + ".fat"))
-                           if parent in joint_set
-                           and c.attributeQuery("fat", node=parent, exists=True)
-                           else 1.0)
-            front = (float(c.getAttr(joint + ".fatY"))
-                     if c.attributeQuery("fatY", node=joint, exists=True)
-                     else float(c.getAttr(joint + ".fatFront"))
-                     if c.attributeQuery("fatFront", node=joint, exists=True)
-                     else 1.0)
-            width = (float(c.getAttr(joint + ".fatZ"))
-                     if c.attributeQuery("fatZ", node=joint, exists=True)
-                     else float(c.getAttr(joint + ".fatWidth"))
-                     if c.attributeQuery("fatWidth", node=joint, exists=True)
-                     else 1.0)
-            FitDeformProfile(fat, front, width)
-            for attribute, value in (("fat", fat), ("fatFront", front),
-                                     ("fatWidth", width)):
-                if not c.attributeQuery(attribute, node=joint, exists=True):
-                    self._transaction_changed = True
-                    c.addAttr(joint, longName=attribute,
-                              attributeType="double", minValue=0,
-                              defaultValue=value, keyable=True)
-                elif abs(float(c.getAttr(joint + "." + attribute)) - value) > 1e-8:
-                    self._transaction_changed = True
-                    c.setAttr(joint + "." + attribute, value)
-            for old in ("fatY", "fatZ", "fatYAbs", "fatZAbs", "fatZabs"):
-                if c.attributeQuery(old, node=joint, exists=True):
-                    self._transaction_changed = True
-                    c.deleteAttr(joint + "." + old)
-            for attribute in ("fatFrontAbs", "fatWidthAbs"):
-                if not c.attributeQuery(attribute, node=joint, exists=True):
-                    self._transaction_changed = True
-                    c.addAttr(joint, longName=attribute,
-                              attributeType="double", keyable=False)
-            fat_node = joint.rsplit("|", 1)[-1] + "Fat"
-            if c.objExists(fat_node):
-                if c.nodeType(fat_node) != "multiplyDivide":
-                    raise ValueError("Fit 体积节点名称被其他对象占用：" + fat_node)
-            else:
-                self._transaction_changed = True
-                c.createNode("multiplyDivide", name=fat_node)
-            if int(c.getAttr(fat_node + ".operation")) != 1:
-                self._transaction_changed = True
-                c.setAttr(fat_node + ".operation", 1)
-            connections = (
-                (joint + ".fat", fat_node + ".input1Y"),
-                (joint + ".fat", fat_node + ".input1Z"),
-                (joint + ".fatFront", fat_node + ".input2Y"),
-                (joint + ".fatWidth", fat_node + ".input2Z"),
-                (fat_node + ".outputY", joint + ".fatFrontAbs"),
-                (fat_node + ".outputZ", joint + ".fatWidthAbs"),
-            )
-            for source, destination in connections:
-                if c.connectionInfo(destination,
-                                    sourceFromDestination=True) != source:
-                    self._transaction_changed = True
-                    c.connectAttr(source, destination, force=True)
+            raise ValueError("Fit volume requires one Fit container")
+        bridge = SimpleNamespace(cmds=c, _name=lambda leaf: fit[0] if leaf == "FitSkeleton" else leaf)
+        child = lambda joint: MayaSkinCageSourceMixin._cage_rla_child(bridge, joint)
+        # _cage_rla_child also uses the shared leaf helper.
+        bridge._cage_leaf = MayaSkinCageSourceMixin._cage_leaf
+        self._transaction_changed = True
+        ordered = c.listRelatives(fit[0], allDescendents=True, type="joint", fullPath=True) or []
+        for joint in reversed(ordered):
+            if joint in joint_set:
+                ensure_original_fit_joint_attributes(c, joint, fit[0], child)
 
     def _require_transaction(self) -> None:
         if not self._transaction_active:

@@ -17,9 +17,6 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
         # The source tests keepSkinWeights alone, not keepAll here.
         if not options.skin_weights or not c.objExists("prefix_asFaceSkinWeightsHolder"):
             return ()
-        fit=self._fit(required=True)
-        head=c.getAttr(fit+".HeadJoint")
-        face=self.read_face_objects(FacePreRole.FACE)[0]
         for holder in c.ls("prefix_asFaceSkinWeightsHolder*", type="transform") or []:
             if not c.objExists(holder + ".sourceObject"):
                 continue
@@ -27,13 +24,8 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
             mesh = self.scene_address(geometry)
             if not raw.objExists(mesh):
                 continue
-            old_skin = self._original_pupil_skin(self.scene_address(holder), exclude_prefix=False)
-            skin=(self.original_face_production_skin(geometry,head) if geometry==face
-                  else self.original_face_head_part_skin(geometry,head))
-            layer=c.getAttr(holder+".sourceSkin") if c.objExists(holder+".sourceSkin") else None
-            if layer:
-                if not c.objExists(layer): continue
-                skin=self.scene_address(layer)
+            old_skin = self.original_face_bs_skin(holder)
+            skin = self.original_face_bs_skin(geometry)
             if options.added_joints:
                 influences = raw.listConnections(skin + ".matrix", source=True, destination=False, type="joint") or []
                 identities = {uid for joint in influences for uid in raw.ls(joint, uuid=True) or []}
@@ -50,57 +42,10 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
                         parent = self._original_restore_leaf(parents[0]).replace("prefix_", "", 1)
                         c.parent(joint, parent)
             raw.select((self.scene_address(holder), mesh), replace=True)
-            if layer:
-                self._restore_original_face_layer_weights(holder,old_skin,geometry,skin)
-            else:
-                raw.copySkinWeights(sourceSkin=old_skin,destinationSkin=skin,
-                    noMirror=True, surfaceAssociation="closestPoint", influenceAssociation="closestJoint")
+            raw.copySkinWeights(sourceSkin=old_skin,destinationSkin=skin,
+                noMirror=True, surfaceAssociation="closestPoint", influenceAssociation="closestJoint")
             restored.append(geometry)
         return tuple(restored)
-
-    def _restore_original_face_layer_weights(self,holder,old_skin,geometry,skin):
-        """Restore same-topology native Skin by original joint identity.
-
-        Many lip joints share a position. closestJoint can merge their weights
-        after prefix renaming; map the original names to the rebuilt joints.
-        Native skinPercent writes participate in the encompassing Maya Undo.
-        """
-        from maya.api import OpenMaya as om, OpenMayaAnim as oma
-        c=self._cmds; raw=getattr(c,"raw",c)
-        count=int(raw.polyEvaluate(self.scene_address(geometry),vertex=True))
-        if count!=int(c.polyEvaluate(holder,vertex=True)):
-            raise ValueError("Face 分层权重恢复拓扑已改变："+geometry)
-        selection=om.MSelectionList(); selection.add(old_skin)
-        fn=oma.MFnSkinCluster(selection.getDependNode(0))
-        selection=om.MSelectionList(); selection.add(self.scene_address(holder))
-        path=selection.getDagPath(0); path.extendToShape()
-        component=om.MFnSingleIndexedComponent()
-        vertices=component.create(om.MFn.kMeshVertComponent); component.addElements(range(count))
-        weights,width=fn.getWeights(path,vertices)
-        mapped=[]
-        for influence in fn.influenceObjects():
-            leaf=influence.fullPathName().rsplit("|",1)[-1]
-            namespace,separator,stem=leaf.rpartition(":")
-            # Body Head may live outside the Face character namespace. Keep
-            # its physical namespace; remove prefix only from the joint stem.
-            mapped.append(namespace+":"+stem.removeprefix("prefix_") if separator
-                          else self.scene_address(leaf.removeprefix("prefix_")))
-        if any(not raw.objExists(joint) for joint in mapped):
-            # Changed fitting topology may generate a different Lip joint
-            # count. Retain the source's spatial remapping rule in that case;
-            # same-layout rebuilds use exact identities below.
-            raw.copySkinWeights(sourceSkin=old_skin,destinationSkin=skin,noMirror=True,
-                surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
-            return
-        current=raw.skinCluster(skin,query=True,influence=True) or []
-        identities={uid for joint in mapped for uid in raw.ls(joint,uuid=True) or []}
-        unused=[joint for joint in current if not identities.intersection(raw.ls(joint,uuid=True) or [])]
-        for joint in current: raw.setAttr(joint+".lockInfluenceWeights",False)
-        for index in range(count):
-            row=[(joint,float(weights[index*width+column])) for column,joint in enumerate(mapped)]
-            row.extend((joint,0.) for joint in unused)
-            raw.skinPercent(skin,self.scene_address(geometry)+f".vtx[{index}]",
-                transformValue=row,normalize=False)
 
     def restore_original_face(self, options=None):
         """Restore the captured graph in the existing build transaction."""

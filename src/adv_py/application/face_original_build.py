@@ -13,6 +13,9 @@ class BuildOriginalFace:
         raw = getattr(c, "raw", c)
         if raw.currentUnit(query=True, fullName=True) != "centimeter":
             raise ValueError("AdvancedSkeleton 需要厘米单位，请先切换 Maya 场景单位")
+        self.host.prepare_original_face_build_dependencies()
+        if not manually_restore:
+            self.host.prepare_original_face_restore_dependencies(keep)
         results = {}
         with self.host.transaction("按原版完整构建 Advanced Face"):
             for step, stage in enumerate(ORIGINAL_FACE_BUILD_STEPS, 1):
@@ -33,6 +36,10 @@ class BuildOriginalFaceStep:
         if type(step) is not int or not 1 <= step <= len(ORIGINAL_FACE_BUILD_STEPS):
             raise ValueError("Face 步骤必须为 1 至 30")
         source = self.host.preflight_original_face_build() if step == 1 else None
+        if ORIGINAL_FACE_BUILD_STEPS[step - 1] == "Finish":
+            self.host.prepare_original_face_build_dependencies()
+        if ORIGINAL_FACE_BUILD_STEPS[step - 1] == "RebuildRestore":
+            self.host.prepare_original_face_restore_dependencies(keep)
         with self.host.transaction("原版 Face 步骤：" + ORIGINAL_FACE_BUILD_STEPS[step - 1]):
             self.host.prepare_original_face_build_step(step)
             result = self.host.execute_original_face_build_stage(

@@ -4,72 +4,16 @@ from adv_py.core.driving_systems import DrivingAttribute,original_sdk_control,or
 from adv_py.core.corrective_shapes import corrective_round
 from .maya_corrective_shapes import MayaCorrectiveShapesHost
 from .maya_driving_curves import MayaDrivingCurvesMixin
+from .maya_driving_catalog import MayaDrivingCatalogMixin
+from .maya_driving_fit_restore import MayaDrivingFitRestoreMixin
 from .maya_driving_create import MayaDrivingCreateMixin
 from .maya_driving_optimize import MayaDrivingOptimizeMixin
 from .maya_driving_edit import MayaDrivingEditMixin
 from .maya_original_pose_functions import MayaOriginalPoseFunctionsMixin
+from .maya_original_control_identity import source_control_name,source_mirror_control
 
 
-class MayaDrivingSystemsHost(MayaOriginalPoseFunctionsMixin,MayaDrivingEditMixin,MayaDrivingCreateMixin,MayaDrivingCurvesMixin,MayaDrivingOptimizeMixin,MayaCorrectiveShapesHost):
-    def original_driving_attributes(self, control):
-        c=self._cmds
-        face=c.objExists("FaceControlSet") and c.sets(control,isMember="FaceControlSet")
-        path=(c.ls(control,long=True) or [control])[0]
-        metahuman=face and "|GRP_faceGUI|" in path
-        ordinary=not face and "|DrivingSystem|" not in path.replace((self.namespace+":") if self.namespace else "","")
-        if face or metahuman:
-            attrs=list(c.listAttr(control,keyable=True) or []) if metahuman else ([] if c.getAttr(control+".tx",lock=True) else ["translateX","translateY"])
-            attrs.extend(attr for attr in c.listAttr(control,userDefined=True) or [] if not c.getAttr(control+"."+attr,lock=True)
-                and (c.getAttr(control+"."+attr,keyable=True) or c.getAttr(control+"."+attr,channelBox=True)))
-            if self._original_restore_leaf(control)=="ctrlPhonemes_M":attrs=[a for a in attrs if a not in ("multipliers","jaw","lip")]
-        elif ordinary:
-            attrs=[]
-            destinations=c.listConnections(control,source=False,destination=True,skipConversionNodes=True,plugs=True,type="blendWeighted") or []
-            for destination in destinations:
-                sources=c.listConnections(destination,source=True,destination=False,skipConversionNodes=True,plugs=True) or []
-                if sources:attrs.append(sources[0].rsplit(".",1)[1])
-        else:attrs=c.listAttr(control,userDefined=True) or []
-        return tuple(dict.fromkeys(a for a in attrs if a!="optimizedDS"))
-
-    def original_driving_curves(self, control, attribute):
-        c=self._cmds
-        if control.startswith("FK") and c.objExists(control[2:]+"."+attribute):control=control[2:]
-        if c.objExists(control+"."+attribute):attribute=c.attributeQuery(attribute,node=control,longName=True)
-        bw="bw"+control+"_"+attribute
-        plug=bw+".output" if c.objExists(bw) else control+"."+attribute
-        return tuple(curve for curve in c.listConnections(plug,source=False,destination=True,skipConversionNodes=True,type="animCurve") or []
-                     if self._original_restore_leaf(curve).startswith(("SDK","bw")))
-
-    def original_driving_systems(self):
-        c=self._cmds
-        controls=list(c.listRelatives("DrivingSystem",children=True) or []) if c.objExists("DrivingSystem") else []
-        if c.objExists("ctrlBox") and not c.objExists("asFaceBS"):
-            for control in c.listRelatives("ctrlBox",allDescendents=True,type="transform") or []:
-                if any(c.objExists("bw"+control+"_"+attr) for attr in self.original_driving_attributes(control)):controls.append(control)
-        for bw in c.ls("bw*",type="blendWeighted") or []:
-            output=c.listConnections(bw+".output",skipConversionNodes=True) or []
-            if not output or c.nodeType(output[0]).startswith("animCurve"):continue
-            curves=c.listConnections(bw+".input",skipConversionNodes=True,type="animCurve") or []
-            if not curves:continue
-            driver_bw=c.listConnections(curves[0]+".input",skipConversionNodes=True,type="blendWeighted") or []
-            if not driver_bw:continue
-            sources=c.listConnections(driver_bw[0]+".input",skipConversionNodes=True,type="transform") or []
-            if not sources:continue
-            control=sources[0];leaf=self._original_restore_leaf(control)
-            parents=c.listRelatives(control,parent=True) or []
-            if parents and self._original_restore_leaf(parents[0])=="DrivingSystem":continue
-            if fnmatchcase(leaf,"SmilePull_[A-Z]") or fnmatchcase(leaf,"Lip_[A-Z]") or fnmatchcase(leaf,"CTRL_*_*"):continue
-            controls.append(control)
-        if c.objExists("MetaHumanControlPanelToggle.MetaHumanControlPanelVis") and c.getAttr("MetaHumanControlPanelToggle.MetaHumanControlPanelVis"):
-            for control in c.listRelatives("FRM_faceGUI",allDescendents=True,type="transform") or []:
-                leaf=self._original_restore_leaf(control)
-                if not leaf.startswith("CTRL_") or "followhead" in leaf.lower() or leaf in ("CTRL_expressions","CTRL_faceTweakersGUI","CTRL_GUIswitch"):continue
-                shapes=c.listRelatives(control,shapes=True) or []
-                materials=c.listConnections(shapes[0]+".instObjGroups",source=False,destination=True) or [] if shapes else []
-                if materials and self._original_restore_leaf(materials[0])=="asBlackSG":continue
-                controls.append(control)
-        return tuple(dict.fromkeys(controls))
-
+class MayaDrivingSystemsHost(MayaDrivingFitRestoreMixin,MayaDrivingCatalogMixin,MayaOriginalPoseFunctionsMixin,MayaDrivingEditMixin,MayaDrivingCreateMixin,MayaDrivingCurvesMixin,MayaDrivingOptimizeMixin,MayaCorrectiveShapesHost):
     def original_driving_catalog(self):
         c=self._cmds;result=[]
         for control in self.original_driving_systems():
@@ -94,23 +38,32 @@ class MayaDrivingSystemsHost(MayaOriginalPoseFunctionsMixin,MayaDrivingEditMixin
     def create_original_driving_sdk_layer(self, driven):
         self._require_transaction();self._transaction_changed=True
         c=self._cmds
+        driven=self._original_restore_leaf(driven)
+        before=self.original_corrective_body_registration()
         child=driven;parent=c.listRelatives(driven,parent=True)[0]
         for marker in ("Extra","CustomOrient"):
-            if marker in parent:
+            if marker in self._original_restore_leaf(parent):
                 child=parent;parent=c.listRelatives(parent,parent=True)[0]
         face=c.objExists("FaceControlSet") and c.sets(driven,isMember="FaceControlSet")
-        custom=not driven.startswith("FK")
+        bindings=self.original_corrective_fk_bindings()
+        registered_joint=next((joint for joint,control in bindings.items() if control==driven),None)
+        custom=not driven.startswith("FK") and registered_joint is None
         if custom:
-            stem,side=driven.rsplit("_",1);deform=stem+"Joint_"+side
-        else:deform=driven[2:]
+            tokens=driven.split("_");deform=tokens[0]+"Joint_"+(tokens[1] if len(tokens)>1 else "")
+        else:deform=registered_joint or driven[2:]
         sdk="SDK"+driven
         if c.objExists(sdk):return sdk
+        children=c.ls(child,long=True) or []
+        if len(children)!=1:raise ValueError("SDK 控制层不存在或不唯一："+child)
+        old_child=children[0]
+        child_uuid=c.ls(old_child,uuid=True)[0]
         c.createNode("transform",name=sdk,parent=parent)
         owned=c.objExists("AllSet") and c.sets(driven,isMember="AllSet")
         if owned:c.sets(sdk,add="AllSet")
         c.setAttr(sdk+".rotateOrder",c.getAttr(driven+".rotateOrder"))
         c.xform(sdk,objectSpace=True,translation=(0,0,0),rotation=(0,0,0),scale=(1,1,1))
-        c.parent(child,sdk)
+        c.parent(child,sdk,absolute=True)
+        scale_edges=[]
         if c.objExists(deform) and not face and not self.original_driver_uses_opm():
             mpd=sdk+"ScaleMPD"
             if c.objExists(mpd):c.delete(mpd)
@@ -119,13 +72,24 @@ class MayaDrivingSystemsHost(MayaOriginalPoseFunctionsMixin,MayaDrivingEditMixin
             if custom:
                 outputs=c.listConnections(driven+".s",source=False,destination=True,plugs=True,type="joint") or []
                 c.connectAttr(driven+".s",mpd+".input1");c.connectAttr(sdk+".s",mpd+".input2")
-                for output in outputs:c.connectAttr(mpd+".output",output,force=True)
+                if outputs:
+                    c.connectAttr(mpd+".output",outputs[0],force=True)
+                    scale_edges.append((driven+".scale",outputs[0],mpd+".output"))
             else:
                 for axis in "XYZ":
                     outputs=c.listConnections(driven+".scale"+axis,source=False,destination=True,plugs=True) or []
                     c.connectAttr(driven+".scale"+axis,mpd+".input1"+axis)
                     c.connectAttr(sdk+".scale"+axis,mpd+".input2"+axis)
-                    if outputs:c.connectAttr(mpd+".output"+axis,outputs[0],force=True)
+                    if outputs:
+                        c.connectAttr(mpd+".output"+axis,outputs[0],force=True)
+                        scale_edges.append((driven+".scale"+axis,outputs[0],mpd+".output"+axis))
+        if before is not None:
+            raw=self._corrective_raw()
+            actual=raw.ls(child_uuid,long=True) or []
+            if len(actual)!=1:raise ValueError("SDK 插层后的原节点身份丢失")
+            new_child=(c.identity.to_local(actual[0]) if hasattr(c,"identity") else actual[0])
+            from .maya_driving_registration import rebase_after_sdk
+            rebase_after_sdk(self,before,old_child,new_child,sdk,scale_edges=tuple(scale_edges))
         return sdk
 
     def graph_original_driving_attribute(self, control, attribute):
@@ -138,16 +102,22 @@ class MayaDrivingSystemsHost(MayaOriginalPoseFunctionsMixin,MayaDrivingEditMixin
     def mirror_original_driving_attribute(self, left_control, attribute):
         self._require_transaction();self._transaction_changed=True
         c=self._cmds;raw=self._corrective_raw()
-        if left_control.endswith("_L"):
-            right_control=left_control[:-2]+"_R"
+        left_role=source_control_name(self,left_control)
+        if left_role.endswith("_L"):
+            right_control=source_mirror_control(self,left_control,'R')
             if not c.objExists(right_control):return 0
-        elif left_control.endswith("_M"):right_control=left_control
+        elif left_role.endswith("_M"):right_control=left_control
         else:raise ValueError("请选择左侧或中心驱动控制器")
         mirrored=0
         for right_curve in self.original_driving_curves(right_control,attribute):
             leaf=self._original_restore_leaf(right_curve)
-            if left_control.endswith("_M") and "_R" not in leaf:continue
-            left_curve=right_curve.replace("_R_","_L_")
+            if left_role.endswith("_M") and "_R" not in leaf:continue
+            left_curve=right_curve.replace("_R_","_L_",1)
+            if leaf.startswith('SDK'):
+                target=original_sdk_control(leaf)
+                mirror=source_mirror_control(self,target,'L')
+                if target!=mirror:
+                    left_curve='SDK'+mirror+leaf[len('SDK'+target):]
             if not c.objExists(left_curve):continue
             raw.copyKey(self.scene_address(right_curve),hierarchy="none",controlPoints=False,shape=False)
             raw.pasteKey(self.scene_address(left_curve),option="replaceCompletely",copies=1,connect=False,timeOffset=0,floatOffset=0,valueOffset=0)

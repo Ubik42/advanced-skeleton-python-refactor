@@ -11,6 +11,9 @@ from .maya_corrective_curves import MayaCorrectiveCurvesMixin
 from .maya_corrective_identity import MayaCorrectiveIdentityMixin
 
 
+from .maya_original_transform_channels import lock_original_transform_channels
+from .maya_original_control_identity import source_control_name
+
 class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesMixin,MayaCorrectiveApplyMixin,MayaCorrectiveSoftModsMixin,
                                MayaCorrectiveCatalogMixin,MayaOriginalFaceBuildHost):
     def _corrective_raw(self):
@@ -76,7 +79,7 @@ class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesM
             node,attr=plug.rsplit(".",1)
             attr=c.attributeQuery(attr,node=node,longName=True)
             node=self._original_restore_leaf(node)
-            if node.startswith(("FKExtra","FKIK")) or node in excluded:
+            if source_control_name(self,node).startswith(("FKExtra","FKIK")) or node in excluded:
                 continue
             if abs(float(c.getAttr(plug))-neutral)>.001:
                 drivers.append(node+"."+attr)
@@ -88,9 +91,10 @@ class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesM
         if not drivers:
             raise FitSkeletonValidationError("没有驱动属性，当前仍是构建姿态")
         if not c.objExists("CustomOrientsDisabled"):
+            from .maya_original_control_identity import original_custom_orient_node
             for plug in drivers:
                 node=plug.split(".",1)[0]
-                if c.objExists("CustomOrient"+node):
+                if original_custom_orient_node(self, node):
                     raise FitSkeletonValidationError("请先禁用控制器自定义朝向："+node)
         q_rotations=options.q_rotations
         if not q_rotations and (drivers[0].endswith(".rotateX") or len(drivers)>1):
@@ -208,10 +212,7 @@ class MayaCorrectiveShapesHost(MayaCorrectiveIdentityMixin,MayaCorrectiveCurvesM
         c.duplicate(copied,name=name)
         if soft and c.objExists(bs):
             c.setAttr(bs+".envelope",1)
-        for kind in ("t","r","s"):
-            for axis in "xyz":
-                c.setAttr(name+"."+kind+axis,lock=False,keyable=True)
-        c.setAttr(name+".v",lock=False,keyable=True)
+        lock_original_transform_channels(c, name)
         c.setAttr(name+".v",1)
         if c.listRelatives(name,parent=True):
             c.parent(name,world=True)

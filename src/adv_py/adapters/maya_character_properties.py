@@ -4,7 +4,7 @@ from adv_py.core.character_registry import CharacterRegistryError
 from .maya_character_preservation import capture_extension
 
 
-def plan(host,original,namespace):
+def plan(host,original,namespace,*,derived_plugs=frozenset()):
     from .maya_body import MayaBodyBuildHost
     target=MayaBodyBuildHost(namespace=namespace)
     c=target._cmds
@@ -20,6 +20,11 @@ def plan(host,original,namespace):
             def equivalent(name):
                 left=source[name];right=actual.get(name)
                 if right is None:return False
+                if row.path+'.'+name in derived_plugs:
+                    # Native SDK outputs evaluate from the copied graph;
+                    # preserve the definition without writing a sampled value.
+                    # The separate ownership audit still compares all edges.
+                    return (*left[:2],*left[3:])==(*right[:2],*right[3:])
                 if row.path+'.'+name not in animator:return left==right
                 # Values and Lock/Hide are authored state, not attribute
                 # definitions. A fresh default is expected to differ from an
@@ -33,9 +38,10 @@ def plan(host,original,namespace):
                     '目标 Rig 同名用户属性与原角色不同：'+row.path+' '+repr(differences))
         attributes=tuple(a for a in row.attributes
                          if a[0]!='lockInfluenceWeights'
+                         and row.path+'.'+a[0] not in derived_plugs
                          and (not c.objExists(row.path+'.'+a[0])
                               or row.path+'.'+a[0] in animator))
-        if not attributes:continue
+        if not attributes and not existing:continue
         pending={item[0] for item in attributes}
         for name,datatype,value,locked,keyable,metadata in attributes:
             parent=tuple(dict(metadata).get('parent') or ())
@@ -43,8 +49,15 @@ def plan(host,original,namespace):
                     row.path+'.'+parent[0]):
                 raise CharacterRegistryError(
                     '控制器复合自定义属性缺少父级：'+row.path+'.'+name)
+        # SDK staging can already have installed an identical definition.
+        # Its authored connections still need handoff, including external
+        # readers of a generated qRotate output. Empty-definition rows carry
+        # those explicit edges without overwriting an evaluated rig value.
         plugs={row.path+'.'+a[0] for a in attributes}
-        rows.append(replace(row,attributes=attributes,connections=tuple((a,b) for a,b in row.connections if a in plugs or b in plugs)))
+        plugs.update(row.path+'.'+name for name in existing)
+        links=tuple((a,b) for a,b in row.connections if a in plugs or b in plugs)
+        if attributes or links:
+            rows.append(replace(row,attributes=attributes,connections=links))
     return tuple(rows)
 
 

@@ -53,7 +53,7 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
         if "decomposeMatrix" not in raw.allNodeTypes():
             raise FitSkeletonValidationError("FaceSetup 需要启用 matrixNodes 插件")
         for mesh in all_head:
-            if not raw.objExists(self.scene_address(mesh)) or not self._original_pupil_skin(self.scene_address(mesh), exclude_prefix=False):
+            if not raw.objExists(self.scene_address(mesh)) or not self.original_face_bs_skin(mesh):
                 raise FitSkeletonValidationError("All Head 缺少网格或 Skin：" + mesh)
         for name in ("Nose_M", "Eye_R", "Eye1_R", "Eye_L", "Eye1_L"):
             if not rebuild and c.objExists(name):
@@ -181,7 +181,7 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
                 found = True
         if found:
             for mesh in source["all_head"]:
-                skin = self._original_pupil_skin(self.scene_address(mesh), exclude_prefix=False)
+                skin = self.original_face_bs_skin(mesh)
                 if skin:
                     raw.select(self.scene_address(mesh), replace=True)
                     raw.skinPercent(skin, normalize=True)

@@ -2,6 +2,20 @@
 
 
 class MayaFaceRestoreDriversMixin:
+    def prepare_original_face_restore_dependencies(self, options=None):
+        """Prepare native SDK swaps before opening the rebuild undo chunk."""
+        from adv_py.core.face_original_build import OriginalFaceKeepOptions
+        options = options or OriginalFaceKeepOptions()
+        if not (options.all or options.driving_systems):
+            return
+        c = self._cmds
+        # Restoring a missing user attribute creates a new *_tweaked marker
+        # later, even when the old rig had no edit-history node. Prepare for
+        # any existing Face rebuild, not just already recorded SDK edits.
+        if c.objExists("FaceGroup") or c.objExists("prefix_FaceGroup"):
+            from .maya_native_node_cast import prepare_native_node_cast
+            prepare_native_node_cast(self)
+
     def restore_original_face_driving_systems(self):
         c = self._cmds
         markers = c.listAttr("FaceSetupEditHistory", userDefined=True, string="*_tweaked") or [] if c.objExists("FaceSetupEditHistory") else []
@@ -22,11 +36,12 @@ class MayaFaceRestoreDriversMixin:
                         old_curve = c.rename(old_curve, "prefix_" + self._original_restore_leaf(old_curve))
                     curve = self._original_restore_leaf(old_curve).replace("prefix_", "", 1)
                     old_outputs = c.listConnections(old_curve + ".output", source=False, destination=True, type="blendWeighted") or []
-                    output_bw = self._original_restore_leaf(old_outputs[0]).replace("prefix_", "", 1)
+                    output_bw = self._original_restore_leaf(old_outputs[0] if old_outputs else "").replace("prefix_", "", 1)
                     if c.objExists(curve):
                         # Native nodeCast swaps the node payload/connections;
                         # copying only keys would lose curve type and settings.
-                        c.nodeCast(old_curve, curve, swapNames=True)
+                        from .maya_native_node_cast import native_node_cast
+                        native_node_cast(self, old_curve, curve, swap_names=True)
                     else:
                         c.duplicate(old_curve, name=curve)
                         c.sets(curve, remove="prefix_FaceAllSet")
@@ -39,8 +54,8 @@ class MayaFaceRestoreDriversMixin:
                         outputs = c.listConnections(old_curve + ".output", source=False, destination=True,
                                                      skipConversionNodes=True) or []
                         target = self._original_restore_leaf(outputs[0]).replace("prefix_", "", 1)
-                        destination = self.next_original_face_bw_input(target)
-                        c.connectAttr(curve + ".output", destination)
+                        destination = target + ".input[" + str(c.getAttr(target + ".input", size=True)) + "]"
+                        c.connectAttr(curve + ".output", destination, force=True)
                     count += 1
         return count
 
@@ -76,24 +91,4 @@ class MayaFaceRestoreDriversMixin:
 
     def original_face_input_bw(self, plug):
         """asEnsureBlendWeighted's driven direction (65647–65718)."""
-        c = self._cmds
-        node, attr = plug.split(".", 1)
-        if c.nodeType(node) == "blendWeighted":
-            return node
-        channels = {short + axis.lower(): long + axis for short, long in
-                    (("t", "translate"), ("r", "rotate"), ("s", "scale")) for axis in "XYZ"}
-        attr = channels.get(attr, attr)
-        driven = node + "." + attr
-        name = "bw" + driven.replace(".", "_").replace("[", "_").replace("]", "_")
-        if c.objExists(name):
-            return name
-        c.createNode("blendWeighted", name=name)
-        face = c.objExists("FaceBuildingSets") or (c.objExists("FaceAllSet") and c.sets(node, isMember="FaceAllSet"))
-        owner = "FaceAllSet" if face else "AllSet"
-        if c.objExists(owner) and c.sets(node, isMember=owner):
-            c.sets(name, add=owner)
-        previous = c.listConnections(driven, source=True, destination=False, plugs=True) or []
-        if previous:
-            c.connectAttr(previous[0], name + ".input[0]", force=True)
-        c.connectAttr(name + ".output", driven, force=True)
-        return name
+        return self.ensure_original_face_blend_weighted(plug)

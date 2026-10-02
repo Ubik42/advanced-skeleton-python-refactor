@@ -27,8 +27,6 @@ def plan_skin_cage_sliders(
         rows: tuple[tuple[str, str, str, int, str], ...]
         ) -> tuple[SkinCageSlider, ...]:
     """Rows contain profile, resolved joint, restore joint, bend axis, segment."""
-    if not rows:
-        raise ValueError("请选择 SkinCage 截面曲线")
     result = []
     seen = set()
     for profile, deform_joint, restore_joint, bend_axis, segment in rows:
@@ -52,7 +50,7 @@ def plan_skin_cage_sliders(
             raise ValueError("SkinCage 弯曲轴无效：" + leaf)
         key = (joint_stem, side, segment)
         if key in seen:
-            raise ValueError("多个截面会写入同名 Sliders：" + leaf)
+            continue
         seen.add(key)
         result.append(SkinCageSlider(profile, deform_joint, segment,
                                      joint_stem, side, restore_joint, indices,

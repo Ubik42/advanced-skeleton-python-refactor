@@ -1,21 +1,12 @@
 """Original ControlMeshes influence-to-control dispatch and registered FK identity."""
 import re
-from adv_py.core.character_registry import REGISTRY_NAME,decode_registration
+from .maya_original_control_identity import command_registration, fk_bindings
 
 class SourceGeometryControlMapping:
     def __init__(self,host):
         self.host=host;self.c=host.cmds;self.bindings={}
-        plug=host._name(REGISTRY_NAME)+'.advPyRegistryDocument'
-        if self.c.objExists(plug):
-            registration=decode_registration(self.c.getAttr(plug))
-            for channel in registration.channels:
-                if channel.key.startswith('generic.fk.') and '.extra.' not in channel.key:
-                    role=channel.key[len('generic.fk.'):].split('.',1)[0]
-                    if role.endswith('FK'):self.bindings[role[:-2]]=host._name(host._leaf(channel.node))
-            for spline in (registration.spine,*registration.additional_spines):
-                if spline:
-                    self.bindings.update({host._leaf(joint):host._name(host._leaf(control))
-                                          for joint,control in zip(spline.body_joints,spline.fk_controls)})
+        saved=command_registration(self.c,host.namespace)
+        self.bindings={joint:host._name(control) for joint,control in fk_bindings(saved).items()}
 
     def fk(self,joint):
         leaf=self.host._leaf(joint);candidate=self.host._name('FK'+leaf)

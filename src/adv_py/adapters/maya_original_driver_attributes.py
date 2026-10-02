@@ -95,10 +95,10 @@ class MayaOriginalDriverAttributesMixin:
         for node,pose_reader in (("buildPose",self.read_body_build_pose),("faceBuildPose",self.read_face_build_pose)):
             if not c.objExists(node):
                 continue
-            if c.objExists(node+".advPyPoseData"):
-                rows.extend((value.node+"."+value.attribute,value.value) for value in pose_reader().values)
-            elif c.objExists(node+".udAttr"):
+            if c.objExists(node+".udAttr"):
                 rows.extend(corrective_pose_command_rows(c.getAttr(node+".udAttr")))
+            elif c.objExists(node+".advPyPoseData"):
+                rows.extend((value.node+"."+value.attribute,value.value) for value in pose_reader().values)
             if c.objExists(node+".udExtraAttr"):
                 rows.extend(corrective_pose_command_rows(c.getAttr(node+".udExtraAttr")))
         overrides=[]
@@ -110,23 +110,66 @@ class MayaOriginalDriverAttributesMixin:
         return tuple((plug,replacements.get(plug,value)) for plug,value in rows)
 
     def _original_apply_pose_commands(self, text):
-        c=self._cmds
+        """Execute numeric pose commands in Python; retain full scene eval semantics."""
+        c = self._cmds
         for statement in (text or "").split(";"):
-            tokens=shlex.split(statement)
-            if not tokens:
+            if not statement.strip():
                 continue
-            if tokens[0]=="setAttr" and len(tokens)==3:
-                c.setAttr(tokens[1],float(tokens[2]))
-            elif tokens[0]=="xform":
-                options={}
-                for flags,key in ((("-t","-translation"),"translation"),(("-ro","-rotation"),"rotation"),(("-s","-scale"),"scale")):
-                    index=next((tokens.index(flag) for flag in flags if flag in tokens),None)
-                    if index is not None:
-                        options[key]=tuple(float(v) for v in tokens[index+1:index+4])
-                options["worldSpace" if "-ws" in tokens or "-worldSpace" in tokens else "objectSpace"]=True
-                c.xform(tokens[-1],**options)
+            try:
+                tokens = shlex.split(statement)
+            except ValueError:
+                tokens = []
+            numeric = None
+            if tokens and tokens[0] == "setAttr" and len(tokens) == 3 and not tokens[1].startswith("-"):
+                try:
+                    numeric = float(tokens[2])
+                except ValueError:
+                    pass
+                if numeric is not None:
+                    c.setAttr(tokens[1], numeric)
+                    continue
+            if tokens and tokens[0] == "xform":
+                # Decode every token, so unsupported flags cannot be silently
+                # discarded (relative, pivots, matrices and edit/query differ).
+                options = {}
+                index = 1
+                valid = True
+                switches = {"-os": "objectSpace", "-objectSpace": "objectSpace",
+                            "-ws": "worldSpace", "-worldSpace": "worldSpace",
+                            "-r": "relative", "-relative": "relative",
+                            "-a": "absolute", "-absolute": "absolute"}
+                vectors = {"-t": "translation", "-translation": "translation",
+                           "-ro": "rotation", "-rotation": "rotation",
+                           "-s": "scale", "-scale": "scale"}
+                while index < len(tokens) - 1:
+                    token = tokens[index]
+                    if token in switches:
+                        options[switches[token]] = True
+                        index += 1
+                    elif token in vectors and index + 3 < len(tokens) - 1:
+                        try:
+                            options[vectors[token]] = tuple(float(value) for value in tokens[index + 1:index + 4])
+                        except ValueError:
+                            valid = False
+                            break
+                        index += 4
+                    else:
+                        valid = False
+                        break
+                if valid and options and index == len(tokens) - 1 and not tokens[-1].startswith("-"):
+                    c.xform(tokens[-1], **options)
+                    continue
+            # User-authored run/udExtraAttr statements retain native eval;
+            # neither sourcing ADV nor pretending an ignored command succeeded.
+            from maya import mel
+            namespace = getattr(c, "_creation_namespace", None)
+            if namespace is None:
+                mel.eval(statement + ";")
+            else:
+                with namespace():
+                    mel.eval(statement + ";")
 
-    def go_to_original_corrective_build_pose(self):
+    def go_to_original_corrective_build_pose(self, *, face=None):
         """asGoToBuildPose catches each failed channel and continues the pose."""
         self._require_transaction();self._transaction_changed=True
         c=self._cmds;failed=[]
@@ -135,20 +178,22 @@ class MayaOriginalDriverAttributesMixin:
                 try:self._original_apply_pose_commands(statement)
                 except RuntimeError:failed.append(statement)
         for node,reader in (("buildPose",self.read_body_build_pose),("faceBuildPose",self.read_face_build_pose)):
+            if face is not None and (node=="faceBuildPose")!=face:continue
             if not c.objExists(node):continue
-            if c.objExists(node+".advPyPoseData"):
+            if c.objExists(node+".udAttr"):apply(c.getAttr(node+".udAttr"))
+            elif c.objExists(node+".advPyPoseData"):
                 for item in reader().values:
                     plug=item.node+"."+item.attribute
                     try:c.setAttr(plug,item.value)
                     except RuntimeError:failed.append(plug)
-            elif c.objExists(node+".udAttr"):apply(c.getAttr(node+".udAttr"))
             if c.objExists(node+".udExtraAttr"):apply(c.getAttr(node+".udExtraAttr"))
         for fit in ("FitSkeleton","FaceFitSkeleton"):
+            if face is not None and (fit=="FaceFitSkeleton")!=face:continue
             if c.objExists(fit+".run"):apply(c.getAttr(fit+".run"))
         if c.objExists("GRP_faceGUI"):
             for control in c.listRelatives("GRP_faceGUI",allDescendents=True,type="transform") or []:
                 leaf=self._original_restore_leaf(control)
-                if not leaf.startswith("CTRL_") or leaf in ("CTRL_faceTweakersGUI","CTRL_expressions","CTRL_GUIswitch"):continue
+                if not leaf.startswith("CTRL_") or "CTRL_faceGUI" in leaf:continue
                 for attr in c.listAttr(control,keyable=True) or []:
                     plug=control+"."+attr
                     if c.getAttr(plug,settable=True):c.setAttr(plug,1 if attr.startswith("scale") or attr=="visibility" else 0)
@@ -207,8 +252,9 @@ class MayaOriginalDriverAttributesMixin:
         with self.original_driver_animation_scope(pose):
             try:
                 self.go_to_original_corrective_build_pose()
-                name,side=joint.rsplit("_",1)
-                side="_"+side
+                tokens=[token for token in joint.split("_") if token]
+                name=tokens[0]
+                side="_"+tokens[1]
                 mm=c.createNode("multMatrix",name=name+"QRotateMMTwist"+side)
                 c.connectAttr(joint+".matrix",mm+".matrixIn[0]")
                 upstream=c.listConnections(joint+".offsetParentMatrix",source=True,destination=False,plugs=True) or []

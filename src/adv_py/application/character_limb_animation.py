@@ -118,12 +118,24 @@ class MatchSourceBodyLimbMode:
     """Single-pose asAlignFKIK/asSwitchFKIK on the final registered RP graph."""
     def __init__(self,host): self._host=host
 
-    def execute(self,limb,side,mode):
+    def execute(self,limb,side,mode,*,align_only=False,time_range=None):
         from adv_py.core.source_limb_animation import resolve_source_limb
         if mode not in ('fk','ik'):
             raise CharacterRegistryError('来源 RP 目标模式需要 fk / ik')
         registration=self._host.read_character_registration()
         binding=resolve_source_limb(registration,limb,FitBuildSide(side).value)
+        mode_channel=next(channel for channel in registration.channels
+                          if channel.key==binding.blend_key)
+        if mode_channel.attribute=='FKIKBlend':
+            self._host.preflight_character_keyframe(registration)
+            with self._host.transaction('Align source RP' if align_only else 'Switch source RP'):
+                if self._host.read_character_registration()!=registration:
+                    raise CharacterRegistryError('来源 RP 操作前角色发生变化')
+                if align_only:
+                    self._host.align_source_character_limb(registration,binding,mode)
+                    return True
+                return self._host.switch_source_character_limb(
+                    registration,binding,mode,time_range=time_range)
         self._host.preflight_character_pose(registration)
         before=self._host.capture_character_pose(registration)
         with self._host.transaction('Switch source RP '+binding.label+' '+binding.side):

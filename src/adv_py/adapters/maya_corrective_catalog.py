@@ -1,6 +1,7 @@
 """Original Corrective popup catalogue, graph, delete, batch edit and bake."""
 from adv_py.core.corrective_shapes import CorrectiveTarget,corrective_round,corrective_object_name
 from adv_py.core.fit_settings import FitSkeletonValidationError
+from .maya_original_control_identity import source_control_name
 
 class MayaCorrectiveCatalogMixin:
     def original_corrective_targets(self, *, edit=False):
@@ -13,7 +14,7 @@ class MayaCorrectiveCatalogMixin:
                 if len(parts)!=3:
                     continue
                 driver,attribute,_=parts
-                if edit and driver.endswith("_L"):
+                if edit and source_control_name(self,driver).endswith("_L"):
                     continue
                 inputs=c.listConnections(bs+"."+alias,source=True,destination=False) or []
                 if not inputs:

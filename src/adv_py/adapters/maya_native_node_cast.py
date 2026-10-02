@@ -7,6 +7,8 @@ def prepare_native_node_cast(host):
     raw = getattr(host._cmds, 'raw', host._cmds)
     plugin = Path(__file__).resolve().parents[1] / 'maya_plugins/native_node_cast.py'
     if not raw.pluginInfo(str(plugin), query=True, loaded=True):
+        if getattr(host, '_transaction_active', False):
+            raise RuntimeError('Mixed 原生依赖必须在打开绑定撤销事务前加载')
         raw.loadPlugin(str(plugin), quiet=True)
 
 

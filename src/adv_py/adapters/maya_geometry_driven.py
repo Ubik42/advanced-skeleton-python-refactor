@@ -1,6 +1,8 @@
 """Source geometry helpers shared by Boolean and Warp scene boundaries."""
 from .maya_geometry_poly_boxes import MayaPolyBoxesHost
 
+from .maya_original_transform_channels import lock_original_transform_channels
+
 class MayaDrivenGeometryHost(MayaPolyBoxesHost):
     def refresh_hidden_boxes(self, *, refresh_after_hide):
         c=self.cmds;plug=self._name('BoxesGeometry')+'.visibility'
@@ -21,10 +23,7 @@ class MayaDrivenGeometryHost(MayaPolyBoxesHost):
 
     def unlock_geometry_transform(self,node):
         c=self.cmds
-        for attribute in ('translate','rotate','scale'):
-            c.setAttr(node+'.'+attribute,lock=False,keyable=False)
-            for axis in 'XYZ':c.setAttr(node+'.'+attribute+axis,lock=False,keyable=True)
-        c.setAttr(node+'.visibility',lock=False,keyable=True)
+        lock_original_transform_channels(c, node)
 
     def capture_selected_meshes(self):
         c=self.cmds

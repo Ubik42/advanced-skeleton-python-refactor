@@ -5,6 +5,8 @@ by MayaFaceEyeLidOriginalMixin in the source order.
 """
 from math import dist
 
+from .maya_original_skin_history import bind_original_skin
+
 class MayaFaceEyeLidCurvesMixin:
     def create_original_eye_lid_fleshy_graph(self):
         """asFaceEyeLid 33528–33640: broad corner motion and blink targets.
@@ -48,8 +50,8 @@ class MayaFaceEyeLidCurvesMixin:
                 curve = arc + "LidCurveFleshy" + side
                 skin = arc + "LidCurveFleshySC" + side
                 influences = tuple(name + "LidFleshyAimEnd" + side for name in (arc, "inner", "outer"))
-                c.skinCluster(influences, curve, toSelectedBones=True, maximumInfluences=2,
-                              dropoffRate=4, removeUnusedInfluence=False, name=skin)
+                bind_original_skin(c, (curve, *influences), skin,
+                    namespace=self.namespace, maximum_influences=2)
                 for corner, index, weight in (("outer", 6, .867), ("outer", 5, .6), ("outer", 4, .2),
                                               ("inner", 3, .2), ("inner", 2, .6), ("inner", 1, .867)):
                     c.skinPercent(skin, curve + f".cv[{index}]",
@@ -72,7 +74,7 @@ class MayaFaceEyeLidCurvesMixin:
         sampler=c.createNode("nearestPointOnCurve",name="tempNearestPointOnCurve")
         for side,suffix in (("_R",""),("_L","Left")):
             for arc in ("upper","lower"):
-                c.addAttr("LidSetup"+side,longName=arc+"LidOut",attributeType="double",defaultValue=0,softMinValue=0,softMaxValue=1,keyable=True)
+                c.addAttr("LidSetup"+side,longName=arc+"LidOut",attributeType="double",defaultValue=0,softMinValue=0,hasSoftMinValue=True,softMaxValue=1,hasSoftMaxValue=True,keyable=True)
             c.createNode("transform",name="LidLocs"+side)
             c.setAttr("LidLocs"+side+".inheritsTransform",False); c.parent("LidLocs"+side,"LidSetup")
             c.createNode("transform",name="LidCurves"+side,parent="FaceDeformationSystem")
@@ -94,8 +96,8 @@ class MayaFaceEyeLidCurvesMixin:
                         for name in (arc+"LidCurveFleshy"+side,arc+"LidCurveBlink"+side,arc+"UnClosedLidCurve"+side,
                                      ("lower" if arc=="upper" else "upper")+"ClosedLidCurve"+side):
                             c.duplicate(curve,name=name,returnRootsOnly=True)
-                        c.skinCluster("EyeRegionJoint"+side,curve,toSelectedBones=True,maximumInfluences=3,
-                            dropoffRate=4,removeUnusedInfluence=False,name=arc+"LidMainSC"+side)
+                        bind_original_skin(c, ("EyeRegionJoint"+side, curve),
+                            arc+"LidMainSC"+side, namespace=self.namespace)
                     c.connectAttr(curve+".worldSpace[0]",sampler+".inputCurve",force=True)
                     for index in range(count):
                         if arc=="lower" and index in (0,count-1): continue
@@ -229,7 +231,7 @@ class MayaFaceEyeLidCurvesMixin:
                 self.add_original_face_follow(arc+"Lid"+str(index)+suffix+side,stem+side,corner+"Lid"+suffix+side,value)
         tweak=arc+"Lid"+part+"CurveTweak"+side; skin=arc+"Lid"+part+"CurveTweakSC"+side
         infs=("outerLid"+suffix+"Joint"+side,"innerLid"+suffix+"Joint"+side,*[arc+f"Lid{i}"+suffix+"Joint"+side for i in range(1,5)])
-        c.skinCluster(infs,tweak,toSelectedBones=True,maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False,name=skin)
+        bind_original_skin(c, (tweak,*infs), skin, namespace=self.namespace)
         for joint,index in (("innerLid"+suffix+"Joint"+side,0),("outerLid"+suffix+"Joint"+side,7),*[(arc+f"Lid{i-1}"+suffix+"Joint"+side,i) for i in range(2,6)]):
             c.skinPercent(skin,tweak+f".cv[{index}]",transformValue=((joint,1),))
         # Source balances Main CV 1/6 again even while processing Outer.

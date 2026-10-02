@@ -75,7 +75,11 @@ class MayaCharacterPoseMixin:
             raise CharacterRegistryError("全身写键要求 cm / degree、Undo 开启且无动画层")
         for channel in registration.channels:
             plug=channel.node+"."+channel.attribute
-            if c.getAttr(plug,lock=True) or not c.getAttr(plug,keyable=True):
+            # ADV intentionally exposes autoVis/noFlipAxis through Channel
+            # Box only. Explicit native setKeyframe can key these attributes
+            # without changing their authored keyable flag.
+            if c.getAttr(plug,lock=True) or not (
+                    c.getAttr(plug,keyable=True) or c.getAttr(plug,channelBox=True)):
                 raise CharacterRegistryError("全身写键目标锁定或不可写键："+channel.key)
             source=c.connectionInfo(plug,sourceFromDestination=True)
             if source:
@@ -237,12 +241,12 @@ class MayaCharacterPoseMixin:
             for source,plug in connections:
                 c.connectAttr(source,plug)
 
-    def match_character_limb_samples(self,registration,frames,limb,side,mode,pose_tolerance=1e-4):
+    def match_character_limb_samples(self,registration,frames,limb,side,mode,pose_tolerance=1e-4, *,baking_mocap=False):
         if registration.source_limbs:
             from .maya_source_limb_matching import samples
             self._require_transaction()
             self.preflight_character_keyframe(registration)
-            return samples(self,registration,frames,limb,side,mode,pose_tolerance)
+            return samples(self,registration,frames,limb,side,mode,pose_tolerance,baking_mocap=baking_mocap)
         from adv_py.application.body_arm_fk_to_ik import MatchBodyArmFkToIk
         from adv_py.application.body_arm_ik_to_fk import MatchBodyArmIkToFk
         from adv_py.application.body_leg_fk_to_ik import MatchBodyLegFkToIk
@@ -279,6 +283,14 @@ class MayaCharacterPoseMixin:
     def apply_source_character_limb_mode(self,registration,binding,mode):
         from .maya_source_limb_matching import apply
         apply(self,registration,binding,mode)
+
+    def align_source_character_limb(self,registration,binding,mode):
+        from .maya_source_limb_matching import apply
+        return apply(self,registration,binding,mode,align_only=True,force=True)
+
+    def switch_source_character_limb(self,registration,binding,mode,*,time_range=None):
+        from .maya_source_limb_matching import switch
+        return switch(self,registration,binding,mode,time_range=time_range)
 
     def write_source_character_limb_animation(self,registration,samples,binding,guard=None):
         """Key the selected original RP controls, preserving other systems."""

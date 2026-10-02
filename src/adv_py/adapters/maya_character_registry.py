@@ -1025,9 +1025,9 @@ class MayaCharacterRegistryMixin:
         return tuple(replace(capture_curve(self,curve),input='',outputs=())
                      for curve in sorted(curves))
 
-    def plan_character_property_transfer(self,original,namespace):
+    def plan_character_property_transfer(self,original,namespace,*,derived_plugs=frozenset()):
         from .maya_character_properties import plan
-        return plan(self,original,namespace)
+        return plan(self,original,namespace,derived_plugs=derived_plugs)
 
     def preflight_character_transfer(self,staged):
         from .maya_character_transfer import preflight
@@ -1472,6 +1472,11 @@ class MayaCharacterRegistryMixin:
             paths.update(side.target_offset for side in aim.sides if side.target_offset)
             paths.update(side.target_control for side in aim.sides)
         for limb in p.limbs:
+            paths.add(limb.blend.settings_path)
+            for mode in limb.mode_controls:
+                paths.update((mode.source_mode.control,mode.source_mode.frame,
+                              mode.source_mode.parent_source,*mode.body_joints,
+                              *(path for _,path in mode.visibility_targets)))
             if limb.foot is not None:
                 for side in limb.foot.sides:
                     paths.update(pivot.roll_roller_path for pivot in side.pivots if pivot.roll_roller_path)
@@ -1569,10 +1574,16 @@ class MayaCharacterRegistryMixin:
 
     def _validate_character_registration_graph(self, plan):
         c = self._cmds
+        from .maya_control_orient_registration import audit as audit_control_orient
+        audit_control_orient(self, plan)
+        from .maya_driving_registration import audit_registered_sdks
+        audit_registered_sdks(self,plan)
         from .maya_source_rp_dynamics import audit as audit_source_rp
         audit_source_rp(self,plan)
         from .maya_source_rp_follow import audit as audit_source_rp_follow
         audit_source_rp_follow(self,plan)
+        from .maya_source_limb_mode import audit_registered as audit_rp_modes
+        audit_rp_modes(self,plan)
         from .maya_source_limb_root_frame import audit_registered as audit_ik_frames
         audit_ik_frames(self,plan)
         from .maya_source_limb_effector import audit_registered as audit_ik_effectors

@@ -72,6 +72,7 @@ class SourceBodyLimbPlan:
     blend: BodyLimbBlendPlan
     foot: object | None = None
     root_frames: tuple = ()
+    mode_controls: tuple = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,8 +337,14 @@ def source_character_channels(rig):
                         tuple(kind+axis for kind in ('translate','rotate') for axis in 'XYZ')
                         if spec.source_aligned_graph else trs)
         for side in limb.blend.sides:
-            add(limb.label.lower() + "." + side.side.value,
-                limb.blend.settings_path, (side.attribute,))
+            key=limb.label.lower()+'.'+side.side.value
+            mode=next((mode for mode in limb.mode_controls if mode.side==side.side.value),None)
+            if mode:
+                rows.append(CharacterChannel(key+'.'+side.attribute,
+                    mode.source_mode.control,'FKIKBlend',0.,10.))
+                add(key+'.visibility',mode.source_mode.control,('autoVis','FKVis','IKVis'))
+            else:
+                add(key,limb.blend.settings_path,(side.attribute,))
     for spec in p.fit_follows:
         attributes = ("follow",) + (("followLeftRight",) if spec.opposite_target else ())
         attributes += (("followWorld",) if spec.world_target else ())
@@ -696,6 +703,17 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     from .source_body_hip_swing import build_source_hip_swing
     hip_swing=build_source_hip_swing(host,hip_selection,root,body,fk,
                                    inbetween_segments,build.fit_parts)
+    if generic_fk_policy is None or generic_fk_policy.source_rp_mode_controls is not False:
+        from adv_py.core.source_limb_mode import plan_source_limb_modes
+        limbs=[replace(limb,mode_controls=plan_source_limb_modes(limb,body,
+            build.symmetry.source.hierarchy,build.symmetry.instances,root.leg_lock_path,
+            options.use_offset_parent_matrix,fk)) for limb in limbs]
+        source_modes=[]
+        for limb in limbs:
+            for mode in limb.mode_controls:
+                limb=replace(limb,blend=host.create_source_limb_mode(mode,limb,fk))
+            source_modes.append(limb)
+        limbs=source_modes
     from adv_py.core.source_limb_ik_local import plan_source_internal_ik_local
     internal_ik_local=plan_source_internal_ik_local(body,fk,limbs,metadata,instances=build.symmetry.instances)
     for spec in internal_ik_local:
@@ -828,6 +846,10 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         scene_before=scene_before, fit_container=fit,
         create_sets=not defer_selection_sets,
         populate_all=not (defer_selection_sets or defer_all_set))
+    restore_driving = getattr(host, 'restore_body_driving_from_fit', None)
+    if restore_driving is not None and not defer_registration and not defer_selection_sets:
+        registration, rig = restore_driving(registration, rig, fit=fit,
+            scene_before=scene_before, populate_all=not defer_all_set)
     return RegisteredBodyBuildResult(skeleton, rig, registration,
         segment_influences=(tuple(part.name for part in build.fit_parts)
                             if part_result is not None else ()),

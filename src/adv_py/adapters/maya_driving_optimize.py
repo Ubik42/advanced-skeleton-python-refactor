@@ -2,26 +2,17 @@
 from dataclasses import replace
 from math import dist
 import json
-import shlex
 from adv_py.core.body_parent_constraint import plan_body_parent_constraint
-from adv_py.core.driving_systems import original_sdk_control
+from .maya_original_control_identity import source_fk_joint
+from .maya_original_transform_channels import lock_original_transform_channels
 
 class MayaDrivingOptimizeMixin:
     def _original_driving_rla_child(self, joint):
-        c=self._cmds
-        tolerance=.01*(c.getAttr("FitSkeleton.sx") if c.objExists("FitSkeleton") else 1.)
-        position=c.xform(joint,query=True,worldSpace=True,translation=True)
-        center=abs(position[0])<tolerance
-        for child in c.listRelatives(joint,children=True,type="joint") or []:
-            child_center=abs(c.xform(child,query=True,worldSpace=True,translation=True)[0])<tolerance
-            if center==child_center:return child
-        return ""
+        from .maya_original_rla_child import original_rla_child
+        return original_rla_child(self._cmds, joint)
 
     def _original_driving_lock_transform(self, control, locked):
-        c=self._cmds
-        for channel in "trs":
-            for axis in "xyz":c.setAttr(control+"."+channel+axis,lock=locked,keyable=not locked)
-        c.setAttr(control+".v",lock=True,keyable=False)
+        lock_original_transform_channels(self._cmds,control,locked,locked,locked,True)
 
     def optimize_original_driving_controllers(self):
         self._require_transaction();self._transaction_changed=True
@@ -34,23 +25,28 @@ class MayaDrivingOptimizeMixin:
             for control in c.listRelatives("DrivingSystem",children=True) or [] if c.objExists("DrivingSystem") else []:
                 if c.objExists(control+".optimizedDS"):continue
                 c.addAttr(control,longName="optimizedDS",attributeType="bool",defaultValue=True)
-                old=c.listConnections(control+".tx",source=True,destination=False,type="parentConstraint") or []
-                if old:c.delete(old[0])
+                old=c.listConnections(control+".tx",source=True,destination=False) or []
+                if old and c.nodeType(old[0])=="parentConstraint":c.delete(old[0])
                 self._original_driving_lock_transform(control,False)
                 curves=list(c.listConnections(control,source=False,destination=True,type="animCurve") or [])
                 for bw in c.listConnections(control,source=False,destination=True,type="blendWeighted") or []:
                     curves.extend(c.listConnections(bw,source=False,destination=True,skipConversionNodes=True,type="animCurve") or [])
                 joints=[]
                 for curve in curves:
-                    node=original_sdk_control(curve)
+                    # asDsOptimizeControllers intentionally resolves SDK*
+                    # names only. asGetControlNameFromDSAnimCurve additionally
+                    # unwraps bw* names, changing which ancestors are used.
+                    leaf=self._original_restore_leaf(curve)
+                    node=leaf[3:].rsplit("_",1)[0] if leaf.startswith("SDK") else leaf
                     if node[:1].isdigit():node=node[1:]
                     if not c.objExists(node) or c.nodeType(node) not in ("joint","transform"):continue
-                    deform=node.removeprefix("FK")
+                    deform=source_fk_joint(self,node)
                     if c.objExists(deform) and deform not in joints:joints.append(deform)
-                joint_paths=[];aims=[]
+                joint_paths=[]
                 for joint in joints:
                     if c.nodeType(joint)=="joint":joint_paths.append(c.ls(joint,long=True)[0])
-                    aims.extend(c.aimConstraint(joint,control,offset=(0,0,0),weight=1,aimVector=(1,0,0),upVector=(0,0,1),worldUpType="vector",worldUpVector=(0,1,0)))
+                    c.select(control,replace=True)
+                    c.aimConstraint(joint,control,offset=(0,0,0),weight=1,aimVector=(1,0,0),upVector=(0,0,1),worldUpType="vector",worldUpVector=(0,1,0))
                 common=""
                 if joint_paths:
                     for candidate in reversed(joint_paths[0].split("|")[1:-1]):
@@ -68,7 +64,8 @@ class MayaDrivingOptimizeMixin:
                     c.delete(c.pointConstraint(end,"tempSampler"))
                 if maximum<.01:maximum=.5
                 c.delete(c.pointConstraint(common,control))
-                if aims:c.delete(list(dict.fromkeys(aims)))
+                aim=control+"_aimConstraint1"
+                if c.objExists(aim):c.delete(aim)
                 c.setAttr(control+".s",maximum*1.2,maximum*.5,1,type="float3")
                 c.makeIdentity(control,apply=True,translate=False,rotate=False,scale=True,normal=0)
                 source=c.ls(common,long=True)[0];target=c.ls(control,long=True)[0]
@@ -89,19 +86,15 @@ class MayaDrivingOptimizeMixin:
     def update_original_driving_pose_attributes(self):
         self._require_transaction();self._transaction_changed=True
         c=self._cmds;removed=0
-        pose=self.capture_original_control_pose()
+        pose=self._capture_original_driving_restore_pose()
         try:
             for plug in ("buildPose.udAttr","faceBuildPose.udAttr","FitSkeleton.run","FaceFitSkeleton.run","buildPose.udExtraAttr","faceBuildPose.udExtraAttr"):
                 if not c.objExists(plug):continue
                 statements=[]
                 for statement in (c.getAttr(plug) or "").split(";"):
-                    tokens=shlex.split(statement)
-                    if not tokens:continue
-                    if tokens[0] in ("setAttr","xform"):
-                        target=tokens[1] if tokens[0]=="setAttr" else tokens[-1]
-                        if not c.objExists(target):removed+=1;continue
-                        try:self._original_apply_pose_commands(statement)
-                        except RuntimeError:removed+=1;continue
+                    if not statement.strip():continue
+                    try:self._original_apply_pose_commands(statement)
+                    except RuntimeError:removed+=1;continue
                     statements.append(statement)
                 c.setAttr(plug,";".join(statements)+(";" if statements else ""),type="string")
             for node in ("buildPose","faceBuildPose"):

@@ -11,7 +11,7 @@ class DrivingAttribute:
 
 
 def original_sdk_control(curve):
-    parts=curve.rsplit("|",1)[-1].rsplit(":",1)[-1].split("_")
+    parts=[part for part in curve.rsplit("|",1)[-1].rsplit(":",1)[-1].split("_") if part]
     name="_".join(parts[:-1])
     if name.startswith("SDK"):return name[3:]
     if name.startswith("bw"):return parts[0][2:]+"_"+parts[1]
@@ -19,7 +19,7 @@ def original_sdk_control(curve):
 
 
 def original_sdk_attribute(curve):
-    parts=curve.rsplit("|",1)[-1].rsplit(":",1)[-1].split("_")
+    parts=[part for part in curve.rsplit("|",1)[-1].rsplit(":",1)[-1].split("_") if part]
     return parts[2] if parts[0].startswith("bw") else re.sub(r"[0-9]+$","",parts[-1])
 
 

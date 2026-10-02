@@ -66,14 +66,12 @@ class MayaFaceSkinLayersHost(MayaFacePreHost):
         """Switch mesh and layer visibility exactly as asShowLayer does."""
         if not isinstance(layer, str) or not layer:
             raise ValueError("Face SkinLayer 名称无效")
-        if not self._mode_allows_layers():
-            raise FitSkeletonValidationError(
-                "当前 Face RigType 或 GameEngine 模式不提供 Skin Layers")
         c = self._maya
+        # RigType/GameEngine controls button availability, not asShowLayer's
+        # mutation rules. Internal paint/rebuild operations call it directly.
+        if not c.objExists(self._name("DeformationLayers")):
+            return ()
         group, children = self._group_and_children()
-        available = self._layers_from_children(children)
-        if layer != "Normal" and layer not in available:
-            raise FitSkeletonValidationError("Face SkinLayer 不存在：" + layer)
         normal = layer == "Normal"
         meshes = []
         for role in (FacePreRole.ALL_HEAD, FacePreRole.FACE):

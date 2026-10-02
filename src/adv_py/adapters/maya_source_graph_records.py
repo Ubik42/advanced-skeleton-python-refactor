@@ -1,14 +1,21 @@
 """Keep closed source graph records aligned with final native converter names."""
 from adv_py.core.character_registry import canonical, CharacterRegistryError
+from adv_py.core.character_identity import CharacterIdentity
 
 RECORDS=('advPySourceIkRootFrame','advPySourceRpDynamics','advPySourceFkMatrix',
-         'advPySourceBendyMatrix','advPySourceLocalScale','advPySourcePartPoint','advPySourceTwistPosition','advPySourceTwistReference','advPySourceInbetweenMatrix','advPySourceBendyMicroMatrix')
+         'advPySourceBendyMatrix','advPySourceLocalScale','advPySourcePartPoint',
+         'advPySourceTwistPosition','advPySourceTwistReference',
+         'advPySourceInbetweenMatrix','advPySourceBendyMicroMatrix',
+         'advPySourceBodyMatrix','advPySourceEndMatrix','advPySourceLegLockMatrix',
+         'advPySourceRpFollow','advPySourceRpScaleLayout','advPySourceRpModePlan',
+         'advPySourceLimbAim','advPySourceDrivingSDK','advPySourceControlOrient')
 
 
 def rename_addresses(host, renames):
     if not renames:return
     host._require_transaction()
     c=host._cmds
+    identity=CharacterIdentity(host.namespace or '')
     def rewrite(value):
         if isinstance(value,str):
             node,separator,attribute=value.partition('.')
@@ -19,6 +26,8 @@ def rename_addresses(host, renames):
         if isinstance(value,dict):return {key:rewrite(item) for key,item in value.items()}
         return value
     for node in c.ls(long=True) or []:
+        if not identity.owns(host.scene_address(node)):
+            continue
         for attribute in RECORDS:
             plug=node+'.'+attribute
             if not c.objExists(plug):continue

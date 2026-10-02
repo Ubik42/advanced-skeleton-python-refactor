@@ -230,47 +230,33 @@ def create_adv_icon(commands, *, name: str, parent: str,
     return control
 
 
-def original_fit_icon_axis_offset(commands, fit_joint_names: tuple[str, ...]
-                                  ) -> tuple[float, float, float]:
-    """Resolve asGetAxis(..., Main, 0) for a standard FK control."""
-    fit = commands.ls("|Group|FitSkeleton", long=True,
-                      type="transform") or ()
-    if len(fit) != 1:
-        raise ValueError("控制器图标找不到唯一 FitSkeleton")
-    worldmatch = (commands.attributeQuery("worldmatch", node=fit[0],
-                                         exists=True)
-                  and bool(commands.getAttr(fit[0] + ".worldmatch")))
-    primary, secondary = "X", "Y"
-    if worldmatch:
-        if (not fit_joint_names
-                or any(not isinstance(name, str) or not name
-                       for name in fit_joint_names)):
-            raise ValueError("FK 控制器缺少明确的 Fit 关节名称")
-        joints = commands.listRelatives(fit[0], allDescendents=True,
-                                        fullPath=True, type="joint") or ()
-        source = []
-        for candidate in fit_joint_names:
-            source = [joint for joint in joints
-                      if joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-                      == candidate]
-            if source:
+def original_fit_icon_axis_offset(commands, fit_joint_names: tuple[str, ...],
+                                  *, side: str = 'M') -> tuple[float,float,float]:
+    """asCreateController asks asGetAxis for fitJoint + side, not Fit itself.
+
+    New deform joints carry fat attributes, but do not inherit the legacy
+    Fit axis enums (MEL 79527–79541). In worldmatch, reading the Fit enum in
+    their place would introduce an orientation absent from the original.
+    The staged builder creates FK before Main; that stage keeps Main's
+    native X/Y defaults until an actual Main reference exists.
+    """
+    fit=commands.ls('|Group|FitSkeleton',long=True,type='transform') or ()
+    if len(fit)!=1:raise ValueError('控制器图标找不到唯一 FitSkeleton')
+    main=commands.ls('Main',long=True,type='transform') or commands.ls(
+        'AdvPy_Global',long=True,type='transform') or ()
+    if len(main)>1:raise ValueError('控制器图标的 Main 不唯一')
+    primary,secondary='X','Y'
+    if main and commands.objExists(main[0]+'.primaryAxis'):
+        primary=commands.getAttr(main[0]+'.primaryAxis',asString=True)
+        secondary=commands.getAttr(main[0]+'.secondaryAxis',asString=True)
+    if (commands.objExists(fit[0]+'.worldmatch')
+            and commands.getAttr(fit[0]+'.worldmatch')):
+        suffix='_'+side.removeprefix('_')
+        for fit_name in fit_joint_names:
+            # Preserve the MEL's literal address even with a build-name alias.
+            joint=fit_name.rsplit('|',1)[-1].rsplit(':',1)[-1]+suffix
+            if commands.objExists(joint+'.primaryAxis'):
+                primary=commands.getAttr(joint+'.primaryAxis',asString=True)
+                secondary=commands.getAttr(joint+'.secondaryAxis',asString=True)
                 break
-        if len(source) != 1:
-            raise ValueError("控制器图标找不到唯一 Fit 关节："
-                             + "／".join(fit_joint_names))
-        def axis(attribute: str, default: str) -> str:
-            if not commands.attributeQuery(attribute, node=source[0],
-                                           exists=True):
-                return default
-            names = commands.attributeQuery(attribute, node=source[0],
-                                            listEnum=True) or ()
-            if len(names) != 1:
-                raise ValueError("Fit 关节轴枚举无效：" + source[0])
-            options = names[0].split(":")
-            index = int(commands.getAttr(source[0] + "." + attribute))
-            if not 0 <= index < len(options):
-                raise ValueError("Fit 关节轴枚举越界：" + source[0])
-            return options[index]
-        primary = axis("primaryAxis", "X")
-        secondary = axis("secondaryAxis", "Y")
-    return icon_axis_offset(primary, secondary)
+    return icon_axis_offset(primary,secondary)

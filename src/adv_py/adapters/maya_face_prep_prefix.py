@@ -6,6 +6,9 @@ restores the captured graph through asFaceRebuildRestore's Python port.
 """
 
 
+from .maya_original_skin_history import bind_original_skin, remove_unused_for_skin
+
+
 class MayaFacePrepPrefixMixin:
     def capture_original_face_previous_rig(self, source):
         self._require_transaction()
@@ -24,44 +27,18 @@ class MayaFacePrepPrefixMixin:
         c.setAttr(prefix + ".version", c.getAttr("FaceGroup.version"), lock=True)
         holders = []
         number = 1
-        primary_ids=set()
         for geometry in source["all_head"]:
             if geometry == source["geometry"]:
                 name = "asFaceSkinWeightsHolder"
                 skin = source["skin"]
             else:
                 name = "asFaceSkinWeightsHolder" + str(number)
-                skin = self.original_face_head_part_skin(geometry,source["head"])
+                skin = self.original_face_bs_skin(geometry)
             self._capture_original_face_weight_holder(geometry,skin,name,prefix)
-            primary_ids.update(raw.ls(self.scene_address(skin),uuid=True) or [])
             holders.append(name)
             number += 1
-        # Every production mesh may have native Face layers: besides the main
-        # head's Lip/Cage/Jaw, original multi-Skin adds EyeBall, EyeBrow,
-        # EyeLash and UpMidLo layers to separate head parts. Preserve and detach
-        # all those layers before sampling the new graph, not just FaceMesh.
-        captured_layers=[]
-        captured_ids=set(primary_ids)
-        for geometry in source["all_head"]:
-            mesh=self.scene_address(geometry)
-            for skin in raw.listHistory(mesh,pruneDagObjects=True) or []:
-                if raw.nodeType(skin)!="skinCluster": continue
-                identities=set(raw.ls(skin,uuid=True) or [])
-                if identities & captured_ids: continue
-                influences=raw.skinCluster(skin,query=True,influence=True) or []
-                paths=raw.ls(influences,long=True) or []
-                if not any("FaceJoint_M" in tuple(part.rsplit(":",1)[-1]
-                    for part in path.split("|")[:-1]) for path in paths):
-                    continue
-                layer=skin.rsplit("|",1)[-1].rsplit(":",1)[-1]
-                name="asFaceSkinWeightsHolderLayer"+str(number)
-                self._capture_original_face_weight_holder(geometry,skin,name,prefix,layer=layer)
-                holders.append(name); number+=1
-                captured_layers.append(skin); captured_ids.update(identities)
-        # Old layers must not deform the mesh while the new graph samples Fit
-        # curves and creates its own layers. Their weights now live on holders;
-        # retain the old controllers/SDKs for the normal prefix restoration.
-        if captured_layers: raw.delete(captured_layers)
+        # MEL captures one holder per All Head object. Do not invent extra
+        # layer holders or delete upstream Skins while sampling the new rig.
         if (source["keep_all"] or source["keep_custom"]) and c.objExists("FaceCustomSystem"):
             c.parent("FaceCustomSystem", world=True)
         fit = self._fit(required=True)
@@ -85,17 +62,17 @@ class MayaFacePrepPrefixMixin:
             raw.skinPercent(skin, self.scene_address(source["geometry"]), transformValue=((head, 1),))
         except RuntimeError:
             pass
-        raw.skinCluster(skin, edit=True, removeUnusedInfluence=True)
+        remove_unused_for_skin(raw, skin)
         self._original_prefix_lock_joints(False)
         for geometry in source["all_head"]:
             if geometry == source["geometry"]:
                 continue
-            skin = self.original_face_head_part_skin(geometry,source["head"])
+            skin = self.original_face_bs_skin(geometry)
             try:
                 raw.skinPercent(skin, self.scene_address(geometry), transformValue=((head, 1),))
             except RuntimeError:
                 pass
-            raw.skinCluster(skin, edit=True, removeUnusedInfluence=True)
+            remove_unused_for_skin(raw, skin)
         if c.getAttr("FaceGroup.v"):
             c.setAttr(fit + ".v", lock=False)
             visible = c.getAttr(fit + ".v")
@@ -131,7 +108,7 @@ class MayaFacePrepPrefixMixin:
         self._transaction_changed = True
         return {"prefix_group": prefix, "weight_holders": tuple(holders), "renamed_nodes": tuple(renamed)}
 
-    def _capture_original_face_weight_holder(self,geometry,skin,name,prefix,*,layer=None):
+    def _capture_original_face_weight_holder(self,geometry,skin,name,prefix):
         """Native holder for one production Skin, retaining source joint names."""
         c=self._cmds; raw=getattr(c,"raw",c)
         c.polySphere(name=name,radius=1,subdivisionsX=20,subdivisionsY=20,
@@ -139,20 +116,17 @@ class MayaFacePrepPrefixMixin:
         shape=c.listRelatives(name,shapes=True,noIntermediate=True,fullPath=True)[0]
         mesh=self.scene_address(geometry); address=self.scene_address(skin)
         raw.connectAttr(mesh+".outMesh",self.scene_address(shape)+".inMesh")
-        c.polyEvaluate(name,vertex=True)
+        raw.refresh()
         raw.disconnectAttr(mesh+".outMesh",self.scene_address(shape)+".inMesh")
-        influences=raw.skinCluster(address,query=True,influence=True) or []
-        c.skinCluster(influences,name,toSelectedBones=True,maximumInfluences=3,
-                      dropoffRate=4,removeUnusedInfluence=False,name=name+"SC")
+        influences=raw.listConnections(address+".matrix",source=True,
+                                       destination=False,type="joint") or []
+        bind_original_skin(c, (*influences, name), name+"SC", namespace=self.namespace)
         c.parent(name,prefix)
         raw.copySkinWeights(sourceSkin=address,destinationSkin=self.scene_address(name+"SC"),
             noMirror=True,surfaceAssociation="closestPoint",
-            influenceAssociation="name" if layer else "closestJoint")
+            influenceAssociation="closestJoint")
         c.addAttr(name,longName="sourceObject",dataType="string")
         c.setAttr(name+".sourceObject",geometry,type="string")
-        if layer:
-            c.addAttr(name,longName="sourceSkin",dataType="string")
-            c.setAttr(name+".sourceSkin",layer,type="string")
 
     def _original_prefix_node_by_uuid(self, identity):
         c = self._cmds

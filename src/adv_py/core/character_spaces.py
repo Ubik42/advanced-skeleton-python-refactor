@@ -38,4 +38,8 @@ def validate_space_values(channels, spaces):
 
 
 def character_channel_tangent(key):
-    return 'step' if key.startswith('space.') else 'linear'
+    # Native booleans and the source noFlipAxis enum must hold their value
+    # until the next key; interpolating portable samples would invent states
+    # which Maya's source attributes cannot represent.
+    discrete = {'autoVis', 'FKVis', 'IKVis', 'firstJointFixed', 'noFlipAxis'}
+    return 'step' if key.startswith('space.') or key.rsplit('.', 1)[-1] in discrete else 'linear'

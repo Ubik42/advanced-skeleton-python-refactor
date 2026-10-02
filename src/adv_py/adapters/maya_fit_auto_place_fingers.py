@@ -193,13 +193,12 @@ def _straighten_fingers(s):
         mesh='CombinedSkin'+finger+'_R';c.duplicate('CombinedSkinUpper_M',name=mesh)
         c.parent(mesh,'asFitNCloth',absolute=True)
         c.select(mesh+'.vtx['+str(tip_index)+']',replace=True)
-        previous=[]
         for _ in range(99):
             c.polySelectConstraint(pp=1,type=1)
             expanded=c.ls(selection=True,flatten=True) or []
             if mesh+'.vtx['+str(base_index)+']' in expanded:break
-            previous=c.ls(selection=True) or []
-        finger_vertices=c.ls(selection=True) or [];c.select(previous,deselect=True)
+            s.previous_finger_selection=c.ls(selection=True) or []
+        finger_vertices=c.ls(selection=True) or [];c.select(s.previous_finger_selection,deselect=True)
         edge_vertices=c.ls(selection=True,flatten=True) or []
         # Source tempSet preserves membership while deleting other faces;
         # component strings alone become stale when Maya renumbers vertices.

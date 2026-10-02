@@ -6,6 +6,8 @@ from adv_py.core.skin_cage import plan_skin_cage_build, plan_skin_cage_width
 from adv_py.core.skin_cage_sliders import SkinCageSlider, plan_skin_cage_sliders
 from .maya_skin_cage_sliders import MayaSkinCageSliderHost
 from .maya_face_deformer_sets import original_face_deformer_sets
+from .maya_original_skin_history import bind_original_skin
+from .maya_original_transform_channels import lock_original_transform_channels
 
 
 class MayaCorrectiveCurvesMixin:
@@ -110,9 +112,10 @@ class MayaCorrectiveCurvesMixin:
                 specs=plan_skin_cage_sliders(slider_host.capture_slider_rows())
                 slider_host.preflight_sliders(specs,creating=True,include_controller=False)
                 self._cbd_ensure_partial_joints(specs)
-                for spec in specs:
-                    slider_host.create_slider(spec,include_controller=False)
-                    created_specs.append(asdict(spec))
+                with slider_host.slider_sampling_scope():
+                    for spec in specs:
+                        if slider_host.create_slider(spec,include_controller=False):
+                            created_specs.append(asdict(spec))
             elif segment!="middle":
                 for index in range(5):
                     original=slider_name("middle",index)
@@ -217,7 +220,8 @@ class MayaCorrectiveCurvesMixin:
         bindings=json.loads(self._cbd_data("advPyCurveBindings"))
         for row in bindings:
             skin=row["curve"]+"SC"
-            c.skinCluster(*row["influences"],row["curve"],name=skin,toSelectedBones=True,maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False)
+            bind_original_skin(c, (row["curve"],*row["influences"]), skin,
+                               namespace=self.namespace)
             for ordinal,joint in enumerate(row["weights"]):
                 c.skinPercent(skin,row["curve"]+".cv["+str(ordinal)+"]",transformValue=[(joint,1.)])
         c.setAttr("curveDeformationSetup.curvesBound",1)
@@ -273,15 +277,15 @@ class MayaCorrectiveCurvesMixin:
             c.setAttr(loft_shape+".curvePrecisionShaded",4)
             c.setAttr("deformationLoft.v",0);c.parent("deformationLoft","curveDeformationSetup")
             c.duplicate(mesh,name="Corrective")
-            for kind in "trs":
-                for axis in "xyz":c.setAttr("Corrective."+kind+axis,lock=False,keyable=True)
-            c.setAttr("Corrective.v",lock=False);c.setAttr("Corrective.v",1)
+            lock_original_transform_channels(c,"Corrective")
+            c.setAttr("Corrective.v",1)
             c.parent("Corrective","curveDeformationSetup")
             for shape in c.listRelatives("Corrective",shapes=True,fullPath=True) or []:
                 if c.getAttr(shape+".intermediateObject"):c.delete(shape)
             influences=raw.listConnections(skins[0]+".matrix",source=True,destination=False) or []
-            with self._corrective_creation_context(), original_face_deformer_sets(c):
-                skin=raw.skinCluster(*influences,self.scene_address("Corrective"),name=self.scene_address("CorrectiveSC"),toSelectedBones=True,maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False)[0]
+            with original_face_deformer_sets(c):
+                skin=bind_original_skin(raw, (self.scene_address("Corrective"),*influences),
+                    self.scene_address("CorrectiveSC"), namespace=self.namespace)
             self._cbd_rename_deformer_set(skin,"CorrectiveSCSet")
             raw.copySkinWeights(sourceSkin=skins[0],destinationSkin=skin,noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
             c.nurbsToPoly("deformationLoft",name="deformationMesh",mnd=1,ch=1,f=3,pt=0,pc=200,chr=.9,ft=.01,mel=.001,d=.1,ut=1,un=3,vt=1,vn=3,uch=0,ucr=0,cht=0,es=0,ntr=0,mrt=0,uss=1)
@@ -349,7 +353,9 @@ class MayaCorrectiveCurvesMixin:
         slider_host=self._cbd_slider_host()
         for row in json.loads(self._cbd_data("advPyCreatedSliders")):
             row["indices"]=tuple(row["indices"])
-            slider_host.delete_slider(SkinCageSlider(**row))
+            with slider_host.slider_delete_time_scope(), slider_host.slider_sampling_scope():
+                slider_host.delete_slider(SkinCageSlider(**row))
+            slider_host.finish_slider_delete()
         for node in json.loads(self._cbd_data("advPyDuplicateSliders")):
             if c.objExists(node):c.delete(node)
         if not self._cbd_data("haveSkinCage"):slider_host.delete_cage()

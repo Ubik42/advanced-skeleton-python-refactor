@@ -63,7 +63,7 @@ class MayaFaceBrowMixin:
         self._brow_squeeze(ctrl_scale)
         for side in ("_R","_L"):
             control="ctrlBrow"+side
-            c.addAttr(control,longName="outerUpDown",attributeType="double",softMaxValue=10,softMinValue=0,hasMinValue=True,keyable=True)
+            c.addAttr(control,longName="outerUpDown",attributeType="double",softMaxValue=10,hasSoftMaxValue=True,softMinValue=0,hasMinValue=True,keyable=True)
             self.original_face_output_bw(control+".outerUpDown")
             c.xform("EyeBrowOuter_R",worldSpace=True,translation=towards)
             position=self._lip_vector("EyeBrowOuter_R.translate"); c.setAttr("EyeBrowOuter_R.translate",0,0,0)
@@ -116,7 +116,7 @@ class MayaFaceBrowMixin:
         b=self._lip_node("transform","TempPos2"); c.connectAttr(b+".translate",nearest+".inPosition")
         try:
             for side in ("_R","_L"):
-                c.addAttr("ctrlBrow"+side,longName="squeeze",attributeType="double",softMaxValue=10,softMinValue=0,hasMinValue=True,keyable=True)
+                c.addAttr("ctrlBrow"+side,longName="squeeze",attributeType="double",softMaxValue=10,hasSoftMaxValue=True,softMinValue=0,hasMinValue=True,keyable=True)
                 self.original_face_output_bw("ctrlBrow"+side+".squeeze")
                 inner=self._lip_pos("EyeBrowInner_R")
                 for axis,factor in (("x",.5),("y",.25)): self.add_original_face_sdk("ctrlBrow"+side+".squeeze","SDKEyeBrowInner"+side+".t"+axis,10,inner[0]/ctrl_scale*factor)

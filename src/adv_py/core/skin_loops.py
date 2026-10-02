@@ -12,6 +12,7 @@ class SkinLoopSpec:
     edge_ids: tuple[int, ...]
     control: str
     deform_joint: str
+    components: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,62 +72,19 @@ def plan_skin_loop_cut_up(
     return SkinLoopCutUpPlan(layer, geometry_group, planned)
 
 
-def partition_skin_loop_face_regions(
-    face_edges: tuple[tuple[int, ...], ...],
-    blocked_edges: frozenset[int],
-) -> tuple[frozenset[int], ...]:
-    """Split polygon faces at the selected SkinLoop edges."""
-    if not face_edges or any(not edges for edges in face_edges):
-        raise ValueError("CutUp 需要有效的多边形面拓扑")
-    by_edge: dict[int, list[int]] = {}
-    for face, edges in enumerate(face_edges):
-        for edge in edges:
-            if edge < 0:
-                raise ValueError("CutUp 存在无效面边索引")
-            by_edge.setdefault(edge, []).append(face)
-    if not blocked_edges <= set(by_edge):
-        raise ValueError("CutUp 边环不属于目标网格")
-    neighbors = [set() for _ in face_edges]
-    for edge, faces in by_edge.items():
-        if edge in blocked_edges:
-            continue
-        for face in faces:
-            neighbors[face].update(other for other in faces if other != face)
-    remaining = set(range(len(face_edges)))
-    regions = []
-    while remaining:
-        seed = remaining.pop()
-        region = {seed}
-        stack = [seed]
-        while stack:
-            for neighbor in neighbors[stack.pop()]:
-                if neighbor in remaining:
-                    remaining.remove(neighbor)
-                    region.add(neighbor)
-                    stack.append(neighbor)
-        regions.append(frozenset(region))
-    return tuple(regions)
-
-
 def plan_skin_loop_cut_up_delete(
     layer: str | None, geometry_group: str | None,
 ) -> SkinLoopCutUpDeletePlan:
-    if not layer and not geometry_group:
-        raise ValueError("当前角色没有 CutUp 产物")
     return SkinLoopCutUpDeletePlan(layer, geometry_group)
 
 
 def plan_skin_loop_bind(
     inputs: tuple[SkinLoopBindSpec, ...],
 ) -> tuple[SkinLoopBindSpec, ...]:
-    if not inputs or len({item.mesh for item in inputs}) != len(inputs):
+    if len({item.mesh for item in inputs}) != len(inputs):
         raise ValueError("SkinLoop Bind 需要不重复的目标网格")
-    new_names = [item.new_skin_name for item in inputs
-                 if item.existing_skin is None]
-    if len(set(new_names)) != len(new_names):
-        raise ValueError("SkinLoop Bind 新 Skin 名称重复")
     for item in inputs:
-        if (not item.mesh or not item.root_joint or not item.new_skin_name
+        if (not item.mesh or not item.root_joint
                 or item.vertex_count < 3
                 or not item.edge_vertices or not item.loops
                 or len({loop.set_name for loop in item.loops}) != len(item.loops)):
@@ -141,36 +99,7 @@ def plan_skin_loop_bind(
                     or min(loop.vertices) < 0
                     or max(loop.vertices) >= item.vertex_count):
                 raise ValueError("SkinLoop Bind 边环顶点无效")
-        vertices = [vertex for loop in item.loops for vertex in loop.vertices]
-        if len(set(vertices)) != len(vertices):
-            raise ValueError("多个 SkinLoop 不能共用同一网格顶点")
     return inputs
-
-
-def partition_skin_loop_regions(
-    vertex_count: int,
-    edge_vertices: tuple[tuple[int, int], ...],
-    blocked_vertices: frozenset[int],
-) -> tuple[frozenset[int], ...]:
-    """Partition non-loop vertices without crossing any SkinLoop barrier."""
-    neighbors = [set() for _ in range(vertex_count)]
-    for a, b in edge_vertices:
-        neighbors[a].add(b)
-        neighbors[b].add(a)
-    remaining = set(range(vertex_count)) - blocked_vertices
-    regions = []
-    while remaining:
-        seed = remaining.pop()
-        region = {seed}
-        stack = [seed]
-        while stack:
-            for neighbor in neighbors[stack.pop()]:
-                if neighbor in remaining:
-                    remaining.remove(neighbor)
-                    region.add(neighbor)
-                    stack.append(neighbor)
-        regions.append(frozenset(region))
-    return tuple(regions)
 
 
 def plan_skin_loop_copy(
@@ -217,6 +146,8 @@ def plan_skin_loops(
     parent_set: str, mesh: str, control: str, deform_joint: str,
     edges: tuple[tuple[int, int, int], ...],
     mirrored: tuple[str, str, tuple[tuple[int, int, int], ...]] | None = None,
+    components: tuple[str, ...] = (),
+    mirrored_components: tuple[str, ...] = (),
 ) -> tuple[SkinLoopSpec, ...]:
     if not all((parent_set, mesh, control, deform_joint)):
         raise ValueError("SkinLoop 缺少网格或控制关节")
@@ -224,7 +155,7 @@ def plan_skin_loops(
     namespace = parent_set.rsplit(":", 1)[0] + ":" if ":" in parent_set else ""
     result = [SkinLoopSpec(namespace + "SkinLoops_" + suffix, parent_set,
                            mesh, validate_closed_loop(edges), control,
-                           deform_joint)]
+                           deform_joint, components)]
     if mirrored is not None:
         mirror_control, mirror_joint, mirror_edges = mirrored
         if not mirror_control or not mirror_joint:
@@ -233,7 +164,7 @@ def plan_skin_loops(
         result.append(SkinLoopSpec(
             namespace + "SkinLoops_" + mirror_suffix, parent_set, mesh,
             validate_closed_loop(mirror_edges), mirror_control,
-            mirror_joint))
+            mirror_joint, mirrored_components))
     if len({item.set_name for item in result}) != len(result):
         raise ValueError("SkinLoop 两侧名称重复")
     return tuple(result)

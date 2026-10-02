@@ -1,5 +1,5 @@
 """Original Face extra driving systems and Extras transfer (39792–39883)."""
-from contextlib import nullcontext
+from .maya_original_skin_history import new_original_skin_clusters, remove_unused_for_skin
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -8,10 +8,10 @@ class MayaFaceFinishMixin:
         self._require_transaction()
         c=self._cmds
         if not c.objExists("upperLipMainCurve"): return ()
-        c.addAttr("ctrlMouth_M",longName="jawForward",attributeType="double",softMaxValue=10,softMinValue=-10,hasMinValue=True,keyable=True)
+        c.addAttr("ctrlMouth_M",longName="jawForward",attributeType="double",softMaxValue=10,hasSoftMaxValue=True,softMinValue=-10,hasMinValue=True,keyable=True)
         self.original_face_output_bw("ctrlMouth_M.jawForward")
         self.add_original_face_sdk("ctrlMouth_M.jawForward","SDKJaw_M.tz",10,2)
-        c.addAttr("ctrlMouth_M",longName="jawSide",attributeType="double",softMaxValue=10,softMinValue=-10,hasMinValue=True,keyable=True)
+        c.addAttr("ctrlMouth_M",longName="jawSide",attributeType="double",softMaxValue=10,hasSoftMaxValue=True,softMinValue=-10,hasMinValue=True,keyable=True)
         self.original_face_output_bw("ctrlMouth_M.jawSide")
         self.add_original_face_sdk("ctrlMouth_M.jawSide","SDKJaw_M.ry",10,15)
         position=self._lip_pos("ChinCrease_M")
@@ -51,9 +51,9 @@ class MayaFaceFinishMixin:
             sc=self._original_face_skin_history(mesh)
             if sc and set(raw.ls(sc,uuid=True) or [])==set(raw.ls(self.scene_address(skin),uuid=True) or []): continue
             if not sc:
-                with c._creation_namespace() if hasattr(c,"_creation_namespace") else nullcontext():
-                    sc=raw.skinCluster(mesh,self.scene_address(head),toSelectedBones=True,maximumInfluences=1,
-                        dropoffRate=4,removeUnusedInfluence=False)[0]
+                raw.select((mesh,self.scene_address(head)),replace=True)
+                sc=new_original_skin_clusters(commands=raw,namespace=self.namespace,
+                                               maximum_influences=1)[0]
             existing={uid for inf in raw.listConnections(sc,source=True,destination=False,type="joint") or [] for uid in raw.ls(inf,uuid=True) or []}
             additions=[]
             for joint in joints:
@@ -62,9 +62,7 @@ class MayaFaceFinishMixin:
             if additions: raw.skinCluster(sc,edit=True,addInfluence=additions)
             raw.select((self.scene_address(geometry),mesh),replace=True)
             raw.copySkinWeights(noMirror=True,surfaceAssociation="closestPoint",influenceAssociation="closestJoint")
-            # Maya removeUnusedForSkin removes only exactly-zero influences.
-            if raw.skinCluster(sc,query=True,removeUnusedInfluence=True):
-                raw.skinCluster(sc,edit=True,removeUnusedInfluence=True)
+            remove_unused_for_skin(raw,sc)
             result.append(sc)
         c.select(clear=True)
         return tuple(result)

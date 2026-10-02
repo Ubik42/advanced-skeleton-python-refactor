@@ -97,7 +97,7 @@ class MayaFacePupilIrisMixin:
                 c.xform((stem+"Offset"+side,joint),worldSpace=True,translation=center)
                 c.parent(stem+"Offset"+side,"Eye"+side); c.setAttr(stem+"Offset"+side+".r",0,0,0)
                 if stem=="Pupil":
-                    for attr in ("iris","pupil"): c.addAttr(eye_control,longName=attr,attributeType="double",softMinValue=-10,softMaxValue=10,defaultValue=0,keyable=True)
+                    for attr in ("iris","pupil"): c.addAttr(eye_control,longName=attr,attributeType="double",softMinValue=-10,hasSoftMinValue=True,softMaxValue=10,hasSoftMaxValue=True,defaultValue=0,keyable=True)
                 raw.skinCluster(skin,edit=True,addInfluence=self.scene_address(joint),lockWeights=False,weight=0)
                 raw.select(source["eyes"][side],replace=True)
                 raw.skinPercent(skin,transformValue=((self.scene_address("EyeJoint"+side),1),))

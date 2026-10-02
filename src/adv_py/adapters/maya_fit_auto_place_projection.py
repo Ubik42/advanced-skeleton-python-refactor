@@ -1,4 +1,5 @@
 """Native projected scan curves, handles and pivots; MEL 53534–53784."""
+from .maya_original_transform_channels import lock_original_transform_channels
 from adv_py.core.fit_auto_place import FitProjectionBounds,choose_fit_projected_curve
 
 
@@ -33,9 +34,7 @@ def width_min(host,curve):
 
 
 def lock_trs(c,node,translate=True,rotate=True,scale=True,visibility=False):
-    for channel,locked in (('translate',translate),('rotate',rotate),('scale',scale)):
-        for axis in 'XYZ':c.setAttr(node+'.'+channel+axis,lock=locked,keyable=not locked)
-    c.setAttr(node+'.visibility',lock=visibility,keyable=not visibility)
+    lock_original_transform_channels(c,node,translate,rotate,scale,visibility)
 
 
 def save_projection(host,name,axis,skin,find,keep_history):

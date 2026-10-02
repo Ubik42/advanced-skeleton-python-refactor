@@ -1,5 +1,6 @@
 """Native asFaceAttachEyeLashes transfer cages, MEL 42254–42393."""
 from contextlib import nullcontext
+from .maya_original_skin_history import bind_original_skin
 
 
 class MayaFaceEyeLashesMixin:
@@ -11,11 +12,11 @@ class MayaFaceEyeLashesMixin:
         if not selection:
             raise ValueError("EyeLashes 需要所选网格")
         cages = []
+        count = 0  # MEL numLid lives across both the cage and influence loops.
         for side, factor in (("_R", 1), ("_L", -1)):
             if source["cyclops"] and side == "_R":
                 continue
             for arc in ("upper", "lower"):
-                count = 0
                 for index in range(1, 99):
                     if not c.objExists(arc + "LidMain" + str(index) + side):
                         break
@@ -35,8 +36,7 @@ class MayaFaceEyeLashesMixin:
                     c.scale(4, 4, 4, cage + f".vtx[{index - 1 + count}]", relative=True,
                             pivot=(eye[0] * factor, eye[1], eye[2]))
                 skin = arc + "EyeLidCageSC" + side
-                c.skinCluster(joints, cage, toSelectedBones=True, maximumInfluences=3,
-                              dropoffRate=4, removeUnusedInfluence=False, name=skin)
+                bind_original_skin(c, (cage, *joints), skin, namespace=self.namespace)
                 self._cage_copy_selected((source["geometry"],), (cage,))
                 for index in range(count):
                     near = self.scene_address(cage) + f".vtx[{index}]"
@@ -62,7 +62,6 @@ class MayaFaceEyeLashesMixin:
             influences = []
             for side in ("_R", "_L"):
                 for arc in ("upper", "lower"):
-                    count = 0
                     for index in range(1, 99):
                         if not c.objExists(arc + "LidMain" + str(index) + side):
                             break

@@ -113,8 +113,9 @@ def plan_body_controller_appearance(
         raise ValueError("Body 控制器曲线尺寸须大于零")
     ordered = (layers.kind in _ORIENTED_ORDER_TYPES
                or source.fit_ik_local_type2)
-    oriented = (layers.kind in _ORIENTED_SHAPE_TYPES
-                or source.fit_ik_local_type2)
+    # ikLocal=localOrient changes rotation order, but MEL's separate
+    # CV-orientation branch does not include that flag.
+    oriented = layers.kind in _ORIENTED_SHAPE_TYPES
     return BodyControllerAppearancePlan(
         layers=layers, icon_template=icon, icon_curve_scale=radius,
         control_local_scale=(1.0, 1.0, 1.0),

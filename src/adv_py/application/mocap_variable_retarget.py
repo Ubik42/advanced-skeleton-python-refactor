@@ -202,7 +202,8 @@ class RetargetMocapVariableSplineIkToCharacter(RetargetMocapVariableFullFkToChar
             for limb,side in self._ik_limbs:
                 keys=host.capture_character_key_state(reg)
                 samples=host.match_character_limb_samples(reg,plan.root.frames,limb,
-                    FitBuildSide(side),'ik',pose_tolerance=1e-3)
+                    FitBuildSide(side),'ik',pose_tolerance=1e-3,
+                    **({'baking_mocap':True} if reg.source_limbs else {}))
                 if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
                     raise RuntimeError('可变脊柱动捕四肢匹配采样改变了原曲线或时间')
                 conversion=CharacterAnimation(unit,samples)
@@ -352,7 +353,8 @@ class RetargetMocapVariableScheduledToCharacter(RetargetMocapVariableFullFkToCha
                 keys=host.capture_character_key_state(reg)
                 samples=(host.match_character_spine_samples(reg,ik_frames,'ik')
                     if limb=='spine' else host.match_character_limb_samples(
-                        reg,ik_frames,limb,FitBuildSide(side),'ik',pose_tolerance=1e-3))
+                        reg,ik_frames,limb,FitBuildSide(side),'ik',pose_tolerance=1e-3,
+                        **({'baking_mocap':True} if reg.source_limbs else {})))
                 if host.capture_character_key_state(reg)!=keys or host.character_time_unit()!=unit:
                     raise RuntimeError('事件模式匹配采样改变了原曲线或时间')
                 conversion=CharacterAnimation(unit,samples)

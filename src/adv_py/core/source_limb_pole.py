@@ -13,7 +13,7 @@ def source_limb_build_pole(points,middle_index,start_axes):
         raise ValueError('来源 RP Pole 定位需要完整的 Fit 骨链')
     def length(v):return sqrt(sum(x*x for x in v))
     def sub(a,b):return tuple(x-y for x,y in zip(a,b))
-    total=sum(length(sub(b,a)) for a,b in zip(points,points[1:]))
+    total=sum(length(sub(b,a)) for a,b in reversed(tuple(zip(points,points[1:]))))
     if total<=1e-8:
         raise ValueError('来源 RP Pole 骨链长度退化')
     start,middle,end=points[0],points[middle_index],points[-1]

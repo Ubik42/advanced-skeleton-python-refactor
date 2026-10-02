@@ -1,5 +1,4 @@
 """Original CageLayer transfer/smoothing/removal, source 36479–36772."""
-from contextlib import nullcontext
 
 class MayaFaceCageWeightsMixin:
     def _cage_add_set_vertices(self,name,vertices):
@@ -13,10 +12,8 @@ class MayaFaceCageWeightsMixin:
 
     def _cage_bind_layer(self,name,joints,geometry):
         c=self._cmds; raw=getattr(c,"raw",c)
-        with c._creation_namespace() if hasattr(c,"_creation_namespace") else nullcontext():
-            return raw.skinCluster([self.scene_address(j) for j in joints]+[self.scene_address(geometry)],
-                name=self.scene_address(name),toSelectedBones=True,maximumInfluences=3,
-                dropoffRate=4,removeUnusedInfluence=False)[0]
+        from .maya_original_skin_history import bind_original_skin
+        return bind_original_skin(c, (*joints, geometry), name, namespace=self.namespace)
 
     def _cage_copy_selected(self,source_vertices,target_vertices,*,source_skin=None,target_skin=None):
         c=self._cmds; raw=getattr(c,"raw",c)

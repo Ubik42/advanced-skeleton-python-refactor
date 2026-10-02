@@ -6,11 +6,21 @@ class EditOriginalDrivingSystems:
     def catalog(self):return self.host.original_driving_catalog()
 
     def apply(self,action,*,control="",attribute="",driver="",driven="",driver_value=10.,driven_value=1.,
-              mirror=True,q_rotations=True,test_symmetry=True,show_only_affected=False,drive_from_selected=False):
+              mirror=True,q_rotations=True,test_symmetry=True,show_only_affected=False,
+              drive_from_selected=False,curve_name="",curve_text=""):
         allowed=("create","edit","auto_edit","apply_edit","cancel_edit","delete","optimize","upgrade_curves",
-                 "graph","range","mirror","sdk_layer","sdk_key","remove_preview","mute","unmute")
+                 "graph","range","mirror","sdk_layer","sdk_key","remove_preview","mute","unmute","reuse","restore_fit")
         if action not in allowed:raise ValueError("Driving Systems 操作无效")
+        if action=='reuse':
+            from adv_py.core.original_anim_curve_text import parse_original_curve_text
+            if not control or not attribute or not curve_name:raise ValueError('复用驱动需要控制器、属性和曲线名')
+            parse_original_curve_text(curve_text)
+            from adv_py.adapters.maya_native_node_cast import prepare_native_node_cast
+            prepare_native_node_cast(self.host)
         with self.host.transaction("原版 Driving Systems："+action):
+            if action=='restore_fit':return self.host.restore_original_driving_from_fit()
+            if action=='reuse':
+                return self.host.reuse_original_driving_system(control,attribute,curve_name,curve_text)
             if action=="create":
                 self.host._transaction_changed=True
                 self.host.remove_original_driving_symmetry_preview()

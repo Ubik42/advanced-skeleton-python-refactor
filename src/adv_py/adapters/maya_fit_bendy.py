@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from adv_py.core.fit_bendy import FitBendyChainSpec, FitBendyFkScaleSpec
 from .maya_adv_icons import create_adv_icon, original_fit_icon_axis_offset
 from .maya_source_parent_inverse import parent_world_inverse
+from .maya_original_skin_history import bind_original_skin
 
 if TYPE_CHECKING:
     from adv_py.application.fit_bendy import FitBendyFollowSpec, FitBendyWorldSource
@@ -346,13 +347,8 @@ class MayaFitBendyMixin:
                                           maintainOffset=False,
                                           name=follow_name + "Scale")
             influences.append(joint)
-        skin = c.skinCluster(*(influences + [curve]),
-                             name=spec.secondary_skin_name,
-                             maximumInfluences=2,
-                             dropoffRate=4.0,
-                             removeUnusedInfluence=False,
-                             normalizeWeights=1,
-                             toSelectedBones=True)[0]
+        skin = bind_original_skin(c, (curve,*influences), spec.secondary_skin_name,
+            namespace=self.namespace, maximum_influences=2)
         if int(c.getAttr(shapes[0] + ".controlPoints", size=True)) != 5:
             raise RuntimeError("Bendy 第二曲线 CV 数量不正确")
         for index in range(5):
@@ -1000,7 +996,7 @@ class MayaFitBendyMixin:
         c = self._cmds
         self._ensure_fit_bendy_groups(spec.scale_guide_group)
         axis_offset = original_fit_icon_axis_offset(
-            c, (spec.source_joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1],))
+            c, (spec.source_joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1],),side=spec.side)
         start, end = spec.start_position, spec.end_position
         curve = c.curve(name=spec.curve_name, degree=1,
                         point=(start, end))
@@ -1178,13 +1174,8 @@ class MayaFitBendyMixin:
                                       maintainOffset=False,
                                       name=follow_name + "Scale")
             influences.append(joint)
-        skin = c.skinCluster(*(influences + [curve]),
-                             name=spec.skin_name,
-                             maximumInfluences=2,
-                             dropoffRate=4.0,
-                             removeUnusedInfluence=False,
-                             normalizeWeights=1,
-                             toSelectedBones=True)[0]
+        skin = bind_original_skin(c, (curve,*influences), spec.skin_name,
+            namespace=self.namespace, maximum_influences=2)
         cv_count = int(c.getAttr(shapes[0] + ".controlPoints",
                                  size=True))
         if cv_count < len(influences) + 1:

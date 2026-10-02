@@ -5,6 +5,8 @@ from adv_py.core.face_blendshape_edit import BLENDED_FACE_TARGETS, original_face
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 
+from .maya_original_transform_channels import lock_original_transform_channels
+
 class MayaFaceBSEditMixin:
     def original_face_bs_aliases(self, node="asFaceBS"):
         c = self._cmds
@@ -74,10 +76,7 @@ class MayaFaceBSEditMixin:
         raw.refresh()
         raw.disconnectAttr(input_shape + ".outMesh", self.scene_address(shape) + ".inMesh")
         raw.sets(self.scene_address(transform), edit=True, forceElement=":initialShadingGroup")
-        for kind in ("t", "r", "s"):
-            for axis in "xyz":
-                c.setAttr(transform + "." + kind + axis, lock=False, keyable=True)
-        c.setAttr(transform + ".v", lock=False, keyable=True)
+        lock_original_transform_channels(c, transform)
         c.parent(transform, parent)
         return name
 

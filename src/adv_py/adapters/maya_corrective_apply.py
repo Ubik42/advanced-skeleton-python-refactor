@@ -3,6 +3,9 @@ from adv_py.core.corrective_shapes import corrective_alias,corrective_round
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_corrective_legacy import MayaCorrectiveLegacyMixin
 
+from .maya_original_transform_channels import lock_original_transform_channels
+from .maya_original_control_identity import source_control_name, source_mirror_control
+
 class MayaCorrectiveApplyMixin(MayaCorrectiveLegacyMixin):
     def _corrective_front_blendshape(self, inputs, name):
         raw=self._corrective_raw()
@@ -66,10 +69,7 @@ class MayaCorrectiveApplyMixin(MayaCorrectiveLegacyMixin):
     def _corrective_delta_duplicate(self, geometry, name, value, inbetween):
         c=self._cmds
         c.duplicate(geometry,name=name)
-        for kind in ("t","r","s"):
-            for axis in "xyz":
-                c.setAttr(name+"."+kind+axis,lock=False,keyable=True)
-        c.setAttr(name+".v",lock=False,keyable=True)
+        lock_original_transform_channels(c, name)
         if c.listRelatives(name,parent=True):
             c.parent(name,world=True)
         for attr,amount in (("driverValue",value),("inbetweenValue",inbetween)):
@@ -91,31 +91,34 @@ class MayaCorrectiveApplyMixin(MayaCorrectiveLegacyMixin):
 
     def _corrective_mirror_drivers(self, driver, attribute, value, options):
         c=self._cmds
-        side="_L" if driver.endswith("_L") else "_R"
+        role=source_control_name(self,driver)
+        side="_L" if role.endswith("_L") else "_R"
         opposite="_R" if side=="_L" else "_L"
-        mirror_driver=driver.replace(side,opposite,1)
+        mirror_driver=source_mirror_control(self,driver,opposite[-1])
         lips_case=driver=="ctrlLips_M" and attribute in ("tx","translateX")
         if not options.mirror or (not lips_case and (mirror_driver==driver or not c.objExists(mirror_driver))):
             return None
         path=(c.ls(driver,long=True) or [driver])[0]
         joystick="|ctrlBox|" in path or "|ctrlBox|" in path.replace(self.namespace+":" if self.namespace else "","")
         mirror_value=value
-        if (attribute=="translateX" and not joystick) or (driver.startswith("FK") and attribute.startswith("translate")) or lips_case:
+        if (attribute=="translateX" and not joystick) or (role.startswith("FK") and attribute.startswith("translate")) or lips_case:
             mirror_value=-value
         mirror_attribute=self.original_opm_compatible_driver_attr(mirror_driver,attribute)
         if attribute.startswith("qRotate") and not c.objExists(mirror_driver+".qRotateX"):
             self.create_original_q_rotate_attrs(mirror_driver)
         if "_" in attribute:
             drivers=self.set_original_blended_attribute(driver,attribute,0,drivers_only=True)
-            pose=self.capture_original_control_pose()
-            mirrored=[]
+            mirrored=[];driver_values=[];rotation=None
             for index,plug in enumerate(drivers):
-                mirror_plug=plug.replace(side,opposite,1)
+                obj,attr=plug.rsplit(".",1)
+                mirror_plug=source_mirror_control(self,obj,opposite[-1])+"."+attr
                 amount=c.getAttr(plug)
+                driver_values.append(amount)
                 if attribute.startswith("qRotate"):
-                    obj=plug.rsplit(".",1)[0]
-                    fk=self.original_corrective_fk_for_joint(obj)
-                    other=fk.replace(side,opposite,1)
+                    # MEL uses the original driving object's FK, including
+                    # blended QRotate attributes containing multiple objects.
+                    fk=self.original_corrective_fk_for_joint(driver)
+                    other=source_mirror_control(self,fk,opposite[-1])
                     if index==0:
                         rotation=c.getAttr(fk+".r")[0]
                         c.setAttr(fk+".r",0,0,0,type="float3")
@@ -127,7 +130,17 @@ class MayaCorrectiveApplyMixin(MayaCorrectiveLegacyMixin):
                     c.setAttr(mirror_plug,amount)
                 mirrored.append(mirror_plug)
             mirror_attribute=self.create_original_blended_attribute(mirrored,"")
-            self.restore_original_control_pose(pose)
+            # MEL restores just these blended drivers and zeros their
+            # mirrored pose; restoring a scene-wide snapshot changes that
+            # behavior when the opposite controller was already posed.
+            if attribute.startswith("qRotate"):
+                if rotation is not None:
+                    c.setAttr(other+".r",0,0,0,type="float3")
+                    c.setAttr(fk+".r",*rotation,type="float3")
+            else:
+                for plug,mirror_plug,amount in zip(drivers,mirrored,driver_values):
+                    c.setAttr(mirror_plug,0)
+                    c.setAttr(plug,amount)
         return mirror_driver,mirror_attribute,mirror_value
 
     def connect_original_corrective_shape(self, options):

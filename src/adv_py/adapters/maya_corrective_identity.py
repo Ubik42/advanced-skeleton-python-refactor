@@ -10,21 +10,8 @@ class MayaCorrectiveIdentityMixin:
 
     def original_corrective_fk_bindings(self):
         """Return source joint -> actual primary FK, excluding Extra layers."""
-        registration=self.original_corrective_body_registration()
-        if registration is None:
-            return {}
-        bindings={}
-        for channel in registration.channels:
-            if not channel.key.startswith("generic.fk.") or ".extra." in channel.key:
-                continue
-            role=channel.key[len("generic.fk."):].split(".",1)[0]
-            if role.endswith("FK"):
-                bindings[role[:-2]]=self._original_restore_leaf(channel.node)
-        for spline in (registration.spine,*registration.additional_spines):
-            if spline is not None:
-                for joint,control in zip(spline.body_joints,spline.fk_controls):
-                    bindings[self._original_restore_leaf(joint)]=self._original_restore_leaf(control)
-        return bindings
+        from .maya_original_control_identity import fk_bindings
+        return fk_bindings(self.original_corrective_body_registration())
 
     def original_corrective_fk_for_joint(self, joint):
         original="FK"+joint

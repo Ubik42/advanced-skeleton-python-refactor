@@ -1,15 +1,22 @@
 """Original Preparation One Joint Prop through the shared source Body graph."""
 from __future__ import annotations
-from contextlib import nullcontext
 
 from .maya_body import MayaBodyBuildHost
 
 
 class MayaOneJointPropHost(MayaBodyBuildHost):
-    def capture_body_mesh_bind_source(self, mesh_path):
-        # Explicit Preparation inputs may belong to an external model namespace.
-        return MayaBodyBuildHost().capture_body_mesh_bind_source(
-            self.scene_address(mesh_path))
+    def preflight_one_joint_prop(self, skin_objects, all_objects):
+        """Original inputs are objects, including geometry hierarchies."""
+        from adv_py.core.fit_settings import FitSkeletonValidationError
+        c = self._cmds
+        for role, objects in (("Skin", skin_objects), ("All", all_objects)):
+            for node in objects:
+                if not c.objExists(node):
+                    raise FitSkeletonValidationError(
+                        f'Choosen {role} object:"{node}" not found')
+        for node in ("FitSkeleton", "|Group", "Root"):
+            if c.objExists(node):
+                raise FitSkeletonValidationError(node + " already exists")
 
     def create_one_joint_prop_rig(self, first_skin_mesh, *, skin_meshes,
                                   all_meshes, build_options=None):
@@ -20,6 +27,7 @@ class MayaOneJointPropHost(MayaBodyBuildHost):
         from .maya_preparation_objects import MayaPreparationObjectsHost, _ATTRIBUTES
         from adv_py.core.preparation_objects import PreparationObjectRole
         from adv_py.core.one_joint_prop import plan_one_joint_prop_fit
+        from .maya_original_fit_attributes import ensure_original_fit_joint_attributes
 
         c = self._cmds
         raw = getattr(c, 'raw', c)
@@ -32,6 +40,11 @@ class MayaOneJointPropHost(MayaBodyBuildHost):
         c.select(clear=True)
         root = c.joint(name='Root', position=plan.position)
         c.setAttr(root + '.jointOrient', *plan.joint_orient, type='double3')
+        # asOneJointProp initializes Root before the Fit container exists.
+        # Moving this behind CreateFitSkeleton changes the initial scale/axis
+        # lookup and the default fat attribute on this special preparation path.
+        ensure_original_fit_joint_attributes(c, root, 'FitSkeleton', lambda node: '')
+        c.setAttr(root + '.fat', fat)
         joined = _JoinedTransactionHost(self)
         gap = raw.optionVar(query='asFitSkeletonGap') if raw.optionVar(exists='asFitSkeletonGap') else .75
         fit = CreateFitSkeleton(joined).apply(vis_gap_default=gap).state.path
@@ -39,8 +52,6 @@ class MayaOneJointPropHost(MayaBodyBuildHost):
         c.xform(fit + '.cv[0:7]', scale=(plan.fit_cv_scale,) * 3)
         root = c.parent(root, fit, absolute=True)[0]
         root = c.ls(root, long=True, type='joint')[0]
-        self.write_missing_fit_deform_profiles(fit, (root,))
-        c.setAttr(root + '.fat', fat)
 
         records = MayaPreparationObjectsHost(self.namespace or ':')
         inputs = {
@@ -68,25 +79,26 @@ class MayaOneJointPropHost(MayaBodyBuildHost):
                 result.skeleton.snapshot.root,
                 result.rig.plan.global_control.control_path)
 
-    def bind_one_joint_prop_meshes(self, meshes, joint, skin_names):
-        """Source newSkinCluster flags, independent of Smooth Bind preferences."""
+    def bind_one_joint_prop_meshes(self, meshes, joint, skin_names=()):
+        """One native newSkinCluster batch, asOneJointProp 77154–77162.
+
+        skin_names is accepted for older callers but does not override Maya's
+        source naming. All selected descendant deformable shapes participate.
+        """
         self._require_transaction()
+        from .maya_original_skin_history import new_original_skin_clusters
         raw = getattr(self._cmds, 'raw', self._cmds)
         physical = tuple(self.scene_address(mesh) for mesh in meshes)
         self._transaction_changed = True
-        if not self._cmds.objExists('Hi'):
-            raw.select(physical, replace=True)
-            raw.createDisplayLayer(name=self.scene_address('Hi'), number=1,
-                                   noRecurse=True)
-        skins = []
-        scope = self._cmds._creation_namespace() if self.namespace is not None else nullcontext()
-        with scope:
-            for mesh, name in zip(physical, skin_names):
-                skins.append(raw.skinCluster(self.scene_address(joint), mesh,
-                    toSelectedBones=True, maximumInfluences=3, dropoffRate=4,
-                    removeUnusedInfluence=False, name=self.scene_address(name))[0])
         raw.select(clear=True)
-        return tuple(skins)
+        if physical:
+            raw.select(physical, add=True)
+        if not self._cmds.objExists('Hi'):
+            raw.createDisplayLayer(name=self.scene_address('Hi'), number=1, noRecurse=True)
+        raw.select(self.scene_address(joint), add=True)
+        skins = new_original_skin_clusters(commands=raw, namespace=self.namespace or "")
+        raw.select(clear=True)
+        return skins
 
     def finalize_one_joint_prop_geometry(self, meshes, first_skin_mesh):
         self._require_transaction()

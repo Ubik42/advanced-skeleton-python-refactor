@@ -2027,6 +2027,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     "locator", name=arrow.locator_name + "Shape",
                     parent=locator, skipSelect=True)
                 self._cmds.setAttr(locator + ".visibility", False)
+                from .maya_original_transform_channels import lock_original_transform_channels
+                lock_original_transform_channels(self._cmds,locator,True,True,True,True)
                 annotation = self._cmds.createNode(
                     "transform", name=arrow.annotation_name,
                     parent=arrow.middle_joint, skipSelect=True)
@@ -4635,19 +4637,18 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         self._create_body_limb_blend(plan, "Leg")
 
     def set_body_leg_initial_ik(self, plan: BodyLegBlendPlan) -> None:
-        """Match ADV's final Foot default after the complete IK graph exists."""
+        """Match ADV's final Foot default through its public source control."""
         self._require_transaction()
+        from .maya_source_limb_mode import public_mode_plug
         for side in plan.sides:
-            plug = f"{plan.settings_path}.{side.attribute}"
-            if not self._cmds.objExists(plug):
-                raise FitSkeletonValidationError("Leg IK/FK 默认模式属性缺失：" + plug)
-            if self._cmds.listConnections(plug, source=True,
-                                          destination=False, plugs=True):
-                raise FitSkeletonValidationError("Leg IK/FK 默认模式已被驱动：" + plug)
-            self._cmds.setAttr(plug, 1.0)
-            if abs(float(self._cmds.getAttr(plug)) - 1.0) > 1e-6:
-                raise RuntimeError("Leg IK/FK 默认 IK 写后读回失败：" + plug)
-        self._transaction_changed = True
+            normalized=f'{plan.settings_path}.{side.attribute}'
+            if not self._cmds.objExists(normalized):
+                raise FitSkeletonValidationError('Leg IK/FK 默认模式属性缺失：'+normalized)
+            plug,value=public_mode_plug(self._cmds,normalized)
+            self._cmds.setAttr(plug,value)
+            if abs(float(self._cmds.getAttr(normalized))-1.)>1e-6:
+                raise RuntimeError('Leg IK/FK 默认 IK 写后读回失败：'+normalized)
+        self._transaction_changed=True
 
     def _create_body_limb_blend(
         self,
@@ -4808,7 +4809,19 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     translation_weights[1],
                     translation_driven,
                 ))
-            side_states.append(BodyArmBlendSideState(side.side, plug, float(self._cmds.getAttr(plug)), reverse, normalized_plug(reverse_sources[0]) if len(reverse_sources) == 1 else None, tuple(joint_states)))
+            reverse_source=normalized_plug(reverse_sources[0]) if len(reverse_sources)==1 else None
+            if reverse_source and reverse_source!=plug:
+                # Fresh source RP uses the original 0.1 unitConversion for
+                # both the internal normalized switch and the native reverse.
+                # Keep this earlier-stage blend snapshot's normalized API.
+                unit=reverse_source.rsplit('.',1)[0]
+                from .maya_source_limb_mode import UNIT_MARKER
+                if (self._cmds.objExists(unit+'.'+UNIT_MARKER)
+                        and self._cmds.getAttr(unit+'.'+UNIT_MARKER)
+                        and self._cmds.getAttr(unit+'.'+UNIT_MARKER,lock=True)
+                        and self._cmds.isConnected(reverse_source,plug)):
+                    reverse_source=plug
+            side_states.append(BodyArmBlendSideState(side.side, plug, float(self._cmds.getAttr(plug)), reverse, reverse_source, tuple(joint_states)))
         return BodyArmBlendSnapshot(settings, tuple(side_states))
 
     def create_body_arm_visibility(self, plan: BodyArmVisibilityPlan) -> None:
@@ -8007,7 +8020,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             wrist_offset = self._cmds.createNode("transform", name=spec.wrist_offset_name, parent=spec.root_path, skipSelect=True)
             wrist_offset = (self._cmds.ls(wrist_offset, long=True) or [wrist_offset])[0]
             x_axis, y_axis, z_axis = spec.wrist_axes
-            if spec.source_aligned_graph and spec.ik_local_mode!='localOrient':
+            if spec.source_aligned_graph:
                 x_axis,y_axis,z_axis=(1.,0.,0.),(0.,1.,0.),(0.,0.,1.)
             matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *spec.wrist_position, 1.0)
             self._cmds.xform(wrist_offset, worldSpace=True, matrix=matrix)
@@ -8035,7 +8048,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 fallback_normal=(0.0, 0.0, 1.0),
                 mirror_left=spec.side is FitBuildSide.LEFT)
             pole = (self._cmds.ls(pole, long=True) or [pole])[0]
+            if spec.source_aligned_graph and spec.ik_local_mode=='localOrient':
+                for node in (wrist_offset,wrist_extra,wrist,pole_offset,pole_extra,pole):
+                    self._cmds.setAttr(node+'.rotateOrder',spec.source_rotation_order)
             if spec.source_original_pole:
+                from .maya_original_transform_channels import lock_original_transform_channels
+                lock_original_transform_channels(self._cmds,pole,False,True,True,True)
                 self._cmds.addAttr(pole,longName='advPySourceRpPolePlacement',attributeType='bool',defaultValue=True)
                 self._cmds.setAttr(pole+'.advPySourceRpPolePlacement',True,lock=True)
             if wrist != spec.wrist_control_path or pole != spec.pole_control_path:
@@ -8049,25 +8067,41 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 self._create_body_sub_control(
                     wrist, spec.wrist_sub_name, spec.wrist_sub_path)
             if spec.wrist_align_name is not None:
-                aligned = self._cmds.createNode(
-                    "transform", name=spec.wrist_align_name,
-                    parent=spec.wrist_align_parent_path, skipSelect=True)
-                aligned = (self._cmds.ls(aligned, long=True) or [aligned])[0]
+                if spec.source_aligned_graph:
+                    from .maya_original_transform_channels import align_original_transform
+                    # MEL 80048: the helper starts at world origin with world
+                    # rotation zero; only translation aligns to the Body joint.
+                    aligned=self._cmds.createNode('transform',name=spec.wrist_align_name,skipSelect=True)
+                    self._cmds.setAttr(aligned+'.rotateOrder',spec.source_rotation_order)
+                    aligned=align_original_transform(self._cmds,aligned,
+                        spec.source_align_joint_path or wrist,True,False)
+                    aligned=self._cmds.parent(aligned,spec.wrist_align_parent_path,absolute=True)[0]
+                else:
+                    aligned=self._cmds.createNode('transform',name=spec.wrist_align_name,
+                        parent=spec.wrist_align_parent_path,skipSelect=True)
+                    self._cmds.xform(aligned,worldSpace=True,matrix=matrix)
+                aligned=(self._cmds.ls(aligned,long=True) or [aligned])[0]
                 if aligned != spec.wrist_align_path:
-                    raise RuntimeError("Wrist AlignIKTo 路径漂移")
-                self._cmds.xform(aligned, worldSpace=True, matrix=matrix)
+                    raise RuntimeError('Wrist AlignIKTo 路径漂移')
                 self._cmds.addAttr(aligned,longName='advPyIkAlignOwner',dataType='string')
                 self._cmds.setAttr(aligned+'.advPyIkAlignOwner',
                     'adv_py.ik_align.v1',type='string',lock=True)
-            if spec.source_aligned_graph and spec.source_straight_chain:
+            if (spec.source_aligned_graph and spec.source_straight_chain
+                    and not spec.source_pole_joint_paths):
                 self._cmds.setAttr(spec.chain[1]+'.preferredAngle',0.,0.,-90.,type='double3')
             if spec.source_native_effector and self.find_name_collisions(spec.source_effector_name):
                 raise FitSkeletonValidationError('来源 IK Effector 名称冲突：'+spec.source_effector_name)
-            handle, effector = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver",numSpans=2 if spec.source_native_effector else 1)
+            handle, effector = self._cmds.ikHandle(name=spec.handle_name,
+                startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver",
+                numSpans=2 if spec.source_native_effector else 1,
+                **({"createCurve": False} if spec.source_native_effector else {}))
             if spec.source_native_effector:
                 from .maya_source_limb_effector import configure
                 configure(self,spec,handle,effector)
             self._cmds.parent(handle, wrist, absolute=True)
+            if spec.source_original_pole and spec.source_pole_joint_paths:
+                from .maya_source_limb_pole import place_original_limb_pole
+                place_original_limb_pole(self, spec)
             self._cmds.poleVectorConstraint(pole, handle, name=spec.pole_constraint_name)
             if spec.source_original_pole and len(spec.solver_joint_list or spec.chain[:2])>2:
                 position=self._cmds.xform(spec.chain[1],query=True,worldSpace=True,translation=True)
@@ -8984,7 +9018,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 radius=spec.toe_control_radius,
                 fallback_normal=(0.0, 1.0, 0.0),
                 axis_offset=(original_fit_icon_axis_offset(
-                    self._cmds, (spec.source_toe_fit_name,)) if spec.source_toe_icon
+                    self._cmds, (spec.source_toe_fit_name,),side=spec.side.value) if spec.source_toe_icon
                     else (0.0, 0.0, 0.0)),
                 mirror_left=spec.side is FitBuildSide.LEFT)
             toe_control = (
@@ -10214,6 +10248,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_body_root import connect_outputs
         connect_outputs(self,plan,body,fk,splines,generated_sources)
 
+    def create_source_limb_mode(self, plan, limb, fk) -> BodyArmBlendPlan:
+        from .maya_source_limb_mode import create,connect_visibility,connect_source_fk_weight
+        create(self,plan)
+        connect_visibility(self,plan,limb,fk)
+        return connect_source_fk_weight(self,plan,limb)
+
     def create_source_internal_ik_local(self, spec) -> None:
         from .maya_source_internal_ik_local import create
         create(self,spec)
@@ -11403,7 +11443,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 radius=spec.radius,
                 fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
                 axis_offset=original_fit_icon_axis_offset(
-                    self._cmds, spec.fit_joint_names),
+                    self._cmds, spec.fit_joint_names,side=spec.side.value),
                 mirror_left=spec.side is FitBuildSide.LEFT)
             control = (self._cmds.ls(control, long=True) or [control])[0]
             if offset != spec.offset_path or control != spec.control_path:

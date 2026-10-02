@@ -386,8 +386,16 @@ from .control_orientation import (
     DetachCustomControlOrientations,
     AttachCustomControlOrientations,
 )
+from .original_control_orientation import (
+    OriginalControlOrientationHost, SetOriginalControlOrientations,
+    DetachOriginalControlOrientations, AttachOriginalControlOrientations,
+)
 
 __all__ = [
+    "OriginalControlOrientationHost",
+    "SetOriginalControlOrientations",
+    "DetachOriginalControlOrientations",
+    "AttachOriginalControlOrientations",
     "ControlOrientationHost",
     "ControlOrientationResult",
     "SetControlOrientationAxis",

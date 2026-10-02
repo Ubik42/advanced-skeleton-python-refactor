@@ -12,7 +12,7 @@ class MayaFaceSpeechMixin:
     def _original_face_speech_attributes(self,control,names):
         c=self._cmds
         for name in names:
-            c.addAttr(control,longName=name,attributeType="double",softMinValue=0,softMaxValue=10,keyable=True)
+            c.addAttr(control,longName=name,attributeType="double",softMinValue=0,hasSoftMinValue=True,softMaxValue=10,hasSoftMaxValue=True,keyable=True)
             self.original_face_output_bw(control+"."+name)
 
     def create_original_face_phonemes(self):
@@ -33,7 +33,7 @@ class MayaFaceSpeechMixin:
         c.addAttr("ctrlPhonemes_M",longName="multipliers",keyable=True)
         c.setAttr("ctrlPhonemes_M.multipliers",lock=True)
         for name in ("jaw","lip"):
-            c.addAttr("ctrlPhonemes_M",longName=name,attributeType="double",softMinValue=0,softMaxValue=2,defaultValue=1,keyable=True)
+            c.addAttr("ctrlPhonemes_M",longName=name,attributeType="double",softMinValue=0,hasSoftMinValue=True,softMaxValue=2,hasSoftMaxValue=True,defaultValue=1,keyable=True)
             self.original_face_output_bw("ctrlPhonemes_M."+name)
         # Original computes this closest vertex even though later poses do not use it.
         for node in ("tempNearestPointOnCurve","closestSampler"):
@@ -131,11 +131,14 @@ class MayaFaceSpeechMixin:
         for emotion in EMOTIONS:
             driver="ctrlEmotions_M."+emotion
             for side in ("_R","_L"):
-                for target,value in bilateral[emotion]: self.add_original_face_sdk(driver,target.format(side=side),10,value)
+                for target,value in bilateral[emotion]:
+                    # The optional outer-lid key precedes the main lids in
+                    # asFaceEmotions, so preserve blendWeighted input order.
+                    if emotion=="fear" and target=="SDKupperLid{side}.ty" and c.objExists("lowerLidOuter_R"):
+                        self.add_original_face_sdk(driver,"SDKlowerLidOuter"+side+".ty",10,-.1)
+                    self.add_original_face_sdk(driver,target.format(side=side),10,value)
                 if emotion=="angry" and c.objExists("Nostril_R"): self.add_original_face_sdk(driver,"SDKNostril"+side+".tx",10,.2)
-                if emotion=="fear" and c.objExists("lowerLidOuter_R"): self.add_original_face_sdk(driver,"SDKlowerLidOuter"+side+".ty",10,-.1)
             for target,value in center.get(emotion,()): self.add_original_face_sdk(driver,target,10,value)
-            # Original refresh here is a visual demonstration, not a build input.
-            c.setAttr(driver,10); c.setAttr(driver,0)
+            c.setAttr(driver,10); getattr(c,"raw",c).refresh(); c.setAttr(driver,0)
         c.select(clear=True)
         return {"controls":("ctrlEmotions_M",)}

@@ -14,20 +14,11 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
         return tuple(float(value) for value in values)
 
     def next_original_face_bw_input(self,bw):
-        """Append an additive input without replacing an existing driver.
-
-        Maya may report size zero for a connected, unevaluated multi. Include
-        the actual connection plugs as well as materialized logical indices.
-        This preserves asDsSdk's append behavior with sparse native arrays.
-        """
-        c=self._cmds
-        indices=list(c.getAttr(bw+".input",multiIndices=True) or [])
-        pairs=c.listConnections(bw+".input",source=True,destination=False,
-            plugs=True,connections=True) or []
-        for plug in pairs[::2]:
-            match=re.search(r"\.input\[(\d+)\]$",plug)
-            if match: indices.append(int(match.group(1)))
-        return bw+f".input[{max(indices,default=-1)+1}]"
+        """asDsSdk: evaluate the input array, then append at Maya's size."""
+        raw=getattr(self._cmds,"raw",self._cmds)
+        plug=self.scene_address(bw)+".input"
+        raw.dgeval(plug)
+        return bw+f".input[{raw.getAttr(plug,size=True)}]"
 
     def face_use_offset_parent_matrix(self):
         c=self._cmds
@@ -318,85 +309,55 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
         c.rotate(0,0,rotation,control+".cv[*]",relative=True,objectSpace=True,pivot=pivot)
 
     def original_face_output_bw(self,plug):
-        c=self._cmds
-        node,attr=plug.split(".",1)
-        attr=c.attributeQuery(attr,node=node,longName=True)
-        plug=node+"."+attr
-        bw="bw"+node+"_"+attr
-        if not c.objExists(bw):
-            c.createNode("blendWeighted",name=bw)
-            face=(c.objExists("FaceAllSet") and c.sets(node,isMember="FaceAllSet")) or c.objExists("FaceBuildingSets")
-            group="FaceAllSet" if face else "AllSet"
-            if c.objExists(group) and c.sets(node,isMember=group):c.sets(bw,add=group)
-        if not c.isConnected(plug,bw+".input[0]",ignoreUnitConversion=True):
-            c.connectAttr(plug,bw+".input[0]",force=True)
-        return bw+".output"
+        return self.ensure_original_face_blend_weighted(plug,output=True)+".output"
 
     def add_original_face_sdk(self,driver,driven,driver_value,driven_value):
         """asDsSdk additive keys, scale baseline, output BW and cycle infinity."""
+        from adv_py.core.corrective_shapes import corrective_round
         c=self._cmds
         start=1. if driven.rsplit(".",1)[-1] in ("sx","sy","sz","scaleX","scaleY","scaleZ") else 0.
-        value=round(float(driven_value),3)
-        if value==start or not c.objExists(driven): return
-        node,attr=driven.split(".",1)
-        driver_node,driver_attr=driver.split(".",1)
-        driver_attr=self.original_face_sdk_attribute(driver_node,driver_attr)
-        attr_root=attr.split("[",1)[0]
-        attr=c.attributeQuery(attr_root,node=node,longName=True)+attr[len(attr_root):]
-        driver=driver_node+"."+driver_attr
-        driver_bw="bw"+driver_node+"_"+driver_attr
-        if c.objExists(driver_bw): driver=driver_bw+".output"
-        direct_bw=c.nodeType(node)=="blendWeighted"
-        bw=node if direct_bw else "bw"+node+"_"+attr
-        if not direct_bw and not c.objExists(bw):
-            incoming=c.listConnections(driven,source=True,destination=False,plugs=True) or []
-            c.createNode("blendWeighted",name=bw)
-            if incoming:
-                c.disconnectAttr(incoming[0],driven)
-                c.connectAttr(incoming[0],bw+".input[0]")
-            c.connectAttr(bw+".output",driven,force=True)
-        # Source asDsSdk redirects a non-SDK control through its output BW
-        # and allocates a fresh input on each call. SDK transforms retain
-        # same-driver curve updates on their driven channel.
-        if not direct_bw and not node.rsplit("|",1)[-1].rsplit(":",1)[-1].startswith("SDK"):
-            direct_bw=True
-            attr="input"
-        indices=c.getAttr(bw+".input",multiIndices=True) or []
-        curves=c.listConnections(bw+".input",source=True,destination=False,type="animCurve",skipConversionNodes=True) or []
-        existing=None
-        for curve in curves:
-            sources=c.listConnections(curve+".input",source=True,destination=False,plugs=True,skipConversionNodes=True) or []
-            if driver in sources: existing=curve; break
-        if direct_bw and "[" not in attr:
-            destination=self.next_original_face_bw_input(bw)
-        elif direct_bw:
-            destination=driven
-        elif existing:
-            destination=(c.listConnections(existing+".output",source=False,destination=True,plugs=True) or [None])[0]
-        else:
-            destination=self.next_original_face_bw_input(bw)
-            if start and not destination.endswith("[0]"): value-=1; start-=1
-        if c.objExists("ARKitQuickConnecting"):
-            destination=driven
+        value=corrective_round(float(driven_value),3)
+        if value==start: return
+        if not c.objExists(driven):
+            getattr(c,"raw",c).warning("Driven object: "+driven+" not found, skipping.")
+            return
+        bw=self.ensure_original_face_blend_weighted(driven)
+        driver_bw=self.original_face_control_bw_name(driver)
+        source=driver_bw+".output" if c.objExists(driver_bw) else driver
+        driven_bw=self.original_face_control_bw_name(driven)
+        node=driven.split(".",1)[0]
+        leaf=node.rsplit("|",1)[-1].rsplit(":",1)[-1]
+        quick=c.objExists("ARKitQuickConnecting")
+        destination=driven
+        if c.objExists(driven_bw) and not leaf.startswith("SDK") and not quick:
+            destination=driven_bw+".input"
+        destination_node,destination_attr=destination.split(".",1)
+        destination_leaf=destination_node.rsplit("|",1)[-1].rsplit(":",1)[-1]
+        if destination_leaf.startswith("bw") and destination_attr=="input" and c.nodeType(destination_node)=="blendWeighted":
+            destination=self.next_original_face_bw_input(destination_node)
+        # Preserve source's check AFTER control→BW redirection. Only a still
+        # directly driven scale channel receives the additive baseline shift.
+        attr=destination.rsplit(".",1)[-1]
+        if re.match(r"(?:s[xyz]|scale[XYZ])",attr):
+            inputs=c.listConnections(bw+".input",source=True,destination=False,skipConversionNodes=True) or []
+            if inputs:
+                drivers=c.listConnections(inputs[0],source=True,destination=False,skipConversionNodes=True) or []
+                if (drivers[0] if drivers else "")!=driver_bw:
+                    start-=1; value-=1
         before=set(c.listConnections(bw+".input",source=True,destination=False,
                                      type="animCurve",skipConversionNodes=True) or [])
         keys=((0,start),(driver_value,value))
-        if c.objExists("ARKitQuickConnecting"):
-            self.set_original_face_sdk_keys(driver,destination,keys)
+        if quick:
+            self.set_original_face_sdk_keys(source,destination,keys)
         else:
             for dv,v in keys:
-                c.setDrivenKeyframe(destination,currentDriver=driver,driverValue=dv,value=v,
+                c.setDrivenKeyframe(destination,currentDriver=source,driverValue=dv,value=v,
                                     inTangentType="linear",outTangentType="linear")
-        # asDsSdk compares curves on the ensured BW, not the target channel.
-        # Quick SDK transforms may be behind an existing BW/unitConversion;
-        # querying the target would miss their new curves and infinity flags.
+        self.name_original_face_sdk_curves()
         after=c.listConnections(bw+".input",source=True,destination=False,
                                 type="animCurve",skipConversionNodes=True) or []
         for curve in after:
             if curve not in before:
-                leaf=node.rsplit("|",1)[-1].rsplit(":",1)[-1]
-                if leaf.startswith("SDK"):
-                    curve=c.rename(curve,leaf+"_"+attr)
                 c.setAttr(curve+".preInfinity",4); c.setAttr(curve+".postInfinity",4)
         self._transaction_changed=True
 
@@ -409,7 +370,9 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
         raw.showHidden(self.scene_address(node),above=True)
         if "." in object_attr:
             attr=object_attr.rsplit(".",1)[1]
-            default=1 if attr in ("sx","sy","sz","scaleX","scaleY","scaleZ") else 0
+            # asFaceFitAnim matches only the short .s[a-z] spelling. Long
+            # scale names deliberately retain the source's default of zero.
+            default=1 if re.fullmatch(r"s[a-z]",attr) else 0
             for frame,target in ((0,default),(30,value)):
                 c.setKeyframe(object_attr,shape=False,time=frame,value=target)
         else:
@@ -425,7 +388,7 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
         for offset in nodes:
             name=offset.rsplit("|",1)[-1]
             if "Offset_" not in name: continue
-            control=name.replace("Offset","")
+            control=name.replace("Offset","",1)
             if not c.objExists(control): continue
             curves=c.listConnections(control,source=True,destination=False,type="animCurve") or []
             if curves: c.delete(tuple(dict.fromkeys(curves)))
@@ -434,73 +397,82 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
                 if re.search(r"Values_[A-Z]$",node)]
         if values: c.delete(values)
 
-    def finish_original_face_sdk(self,driver_name,driver_side,driver_attr,driver_value):
-        """asFaceDsFinish + asFaceStoreAsDsSdk, source 40868–41015.
-
-        Capture right/center fitting channels at frame 30, mirror the source
-        rules into SDK transforms or custom-attribute BWs, then remove fitting
-        animation. This is shared by subsequent original Face stages.
-        """
-        self._require_transaction()
+    def store_original_face_sdk(self, controls, controls_side, driver_name, driver_side, driver_attr, driver_value):
+        """asFaceStoreAsDsSdk, 40899–41009, including procedure-array lifetime."""
         c=self._cmds; raw=getattr(c,"raw",c)
         auto=bool(raw.autoKeyframe(query=True,state=True))
-        groups={"_RL":[],"_M":[]}
-        for shape in c.listRelatives("OnFacecontrols",allDescendents=True,fullPath=True,type="nurbsCurve") or []:
-            parents=c.listRelatives(shape,parent=True,fullPath=True) or []
-            if not parents: continue
-            control=parents[0].rsplit("|",1)[-1]
-            if control.endswith("_L"): continue
-            if not c.listConnections(control,source=True,destination=False,type="animCurve"): continue
-            group="_RL" if control.endswith("_R") else "_M"
-            stem=control[:-2]
-            if stem not in groups[group]: groups[group].append(stem)
+        values={}; animated={}
         if auto: raw.autoKeyframe(state=False)
         try:
-            for group,stems in groups.items():
-                for stem in stems:
-                    sides=("_R","_L") if group=="_RL" else (("_M",) if driver_side=="_M" else ("_R","_L"))
-                    value_node=stem+"Values"+("_R" if group=="_RL" else "_M")
-                    c.currentTime(30)
-                    for side in sides:
-                        control=stem+(side if group=="_RL" else "_M")
-                        if not c.objExists(control): continue
-                        if not c.objExists(value_node):
-                            self_parent=(c.listRelatives(control,parent=True) or [None])[0]
-                            c.createNode("transform",name=value_node,parent=control)
-                            c.parent(value_node,self_parent,absolute=True)
-                    c.currentTime(0)
-                    first_control=stem+("_R" if group=="_RL" else "_M")
-                    if not c.objExists(first_control): continue
-                    c.delete(first_control,staticChannels=True)
-                    channels=[]
-                    for attr in c.listAttr(first_control,keyable=True) or []:
-                        animated=bool(c.listConnections(first_control+"."+attr,source=True,destination=False,type="animCurve"))
-                        if not animated: continue
-                        standard=c.attributeQuery(attr,node=value_node,exists=True)
-                        value=c.getAttr(value_node+"."+attr) if standard else c.getAttr(first_control+"."+attr,time=30)
-                        channels.append((attr,standard,value))
-                    for side in sides:
-                        control=stem+(side if group=="_RL" else "_M")
-                        if not c.objExists(control): continue
-                        driven_driver=driver_name+("_M" if driver_side=="_M" else side)+"."+driver_attr
-                        drive_value=1 if driver_name=="ctrlLips" and driver_side=="_M" and driver_attr=="tx" and side=="_L" else driver_value
-                        for attr,standard,value in channels:
-                            current=value
-                            if group=="_M" and side=="_L" and attr in ("translateX","rotateY","rotateZ"): current=-current
-                            c.setAttr(control+"."+attr,1 if attr in ("scaleX","scaleY","scaleZ") else 0)
-                            if driver_name.startswith("ctrlMouth") and driver_name+"_M."+driver_attr!="ctrlMouth_M.ty":
-                                vertical=attr in ("translateY","rotateZ")
-                                if driver_attr=="tx" and vertical or driver_attr=="ty" and not vertical: continue
-                            if standard:
-                                self.add_original_face_sdk(driven_driver,"SDK"+control+"."+attr,drive_value,current)
-                            else:
-                                bw="bw"+control+"_"+attr
-                                if c.objExists(bw):
-                                    self.add_original_face_sdk(driven_driver,control+"."+attr,drive_value,current)
-            self.remove_original_face_fit_animations()
+            for stem in controls:
+                if c.currentTime(query=True)!=30: c.currentTime(30)
+                skip=False
+                for sign,side in ((1,"_R"),(-1,"_L")):
+                    if controls_side=="_M": side="_M"
+                    if controls_side=="_M" and driver_side=="_M" and sign==-1: continue
+                    value_node=stem+"Values"+("_M" if side=="_M" else "_R")
+                    control=stem+side
+                    if not c.objExists(control):
+                        raw.warning("control: "+control+" not found, skipping.")
+                        skip=True
+                    if not c.objExists(value_node) and not skip:
+                        c.createNode("transform",name=value_node,parent=control)
+                        c.parent(value_node,c.listRelatives(control,parent=True)[0])
+                if c.currentTime(query=True)!=0: c.currentTime(0)
+                if skip: continue
+                for sign,side in ((1,"_R"),(-1,"_L")):
+                    if controls_side=="_M" and driver_side=="_M" and sign==-1: continue
+                    control=stem+("_M" if controls_side=="_M" else side)
+                    value_node=stem+"Values"+("_M" if controls_side=="_M" else "_R")
+                    c.delete(control,staticChannels=True)
+                    driver_control=driver_name+(side if driver_side=="_RL" else "_M")
+                    in_loop_value=driver_value
+                    for index,attribute in enumerate(c.listAttr(control,keyable=True) or []):
+                        standard=c.attributeQuery(attribute,node=value_node,exists=True)
+                        if sign==1:
+                            values[index]=(c.getAttr(value_node+"."+attribute) if standard
+                                           else c.getAttr(control+"."+attribute,time=30))
+                            animated[index]=bool(c.listConnections(control+"."+attribute,
+                                source=True,destination=False,type="animCurve"))
+                        if not animated.get(index,False): continue
+                        if controls_side=="_M" and side=="_L" and attribute in ("translateX","rotateY","rotateZ"):
+                            values[index]*=-1
+                        if driver_name=="ctrlLips" and driver_side=="_M" and driver_attr=="tx" and side=="_L":
+                            in_loop_value=1
+                        c.setAttr(control+"."+attribute,1 if attribute in ("scaleX","scaleY","scaleZ") else 0)
+                        if driver_name.startswith("ctrlMouth") and driver_name+"_M."+driver_attr!="ctrlMouth_M.ty":
+                            vertical=attribute in ("translateY","rotateZ")
+                            if driver_attr=="tx" and vertical: continue
+                            if driver_attr=="ty" and not vertical: continue
+                        driver=driver_control+"."+driver_attr
+                        if standard:
+                            self.add_original_face_sdk(driver,"SDK"+control+"."+attribute,in_loop_value,values[index])
+                        else:
+                            weighted="bw"+control+"_"+attribute
+                            if c.objExists(weighted):
+                                self.add_original_face_sdk(driver,weighted+".input",in_loop_value,values[index])
         finally:
             if auto: raw.autoKeyframe(state=True)
         self._transaction_changed=True
+
+    def finish_original_face_sdk(self,driver_name,driver_side,driver_attr,driver_value):
+        """asFaceDsFinish: collect fitting controls, store sides then center."""
+        self._require_transaction()
+        c=self._cmds
+        sides=[]; centers=[]
+        for shape in c.listRelatives("OnFacecontrols",allDescendents=True,type="nurbsCurve") or []:
+            parents=c.listRelatives(shape,parent=True) or []
+            if not parents: continue
+            control=parents[0]
+            if not c.listConnections(control,source=True,destination=False,type="animCurve"): continue
+            leaf=control.rsplit("|",1)[-1].rsplit(":",1)[-1]
+            if leaf.endswith("_L"): continue
+            (sides if leaf.endswith("_R") else centers).append(leaf[:-2])
+        if sides:
+            self.store_original_face_sdk(sides,"_RL",driver_name,driver_side,driver_attr,driver_value)
+        if centers:
+            self.store_original_face_sdk(centers,"_M",driver_name,driver_side,driver_attr,driver_value)
+        self.remove_original_face_fit_animations()
 
     def mirror_original_face_controls(self,connect):
         """asFaceMirrorConnectCtrls copies channels directly in mirrored spaces."""
@@ -508,7 +480,7 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
         for offset in c.listRelatives("OnFacecontrols",allDescendents=True,type="transform") or []:
             leaf=offset.rsplit("|",1)[-1]
             if not leaf.endswith("Offset_R"): continue
-            right=leaf.replace("Offset",""); left=right[:-2]+"_L"
+            right=leaf.replace("Offset","",1); left=right.replace("_R","_L",1)
             if not c.objExists(left): continue
             for attr in c.listAttr(right,keyable=True) or []:
                 if not c.attributeQuery(attr,node=left,exists=True): continue

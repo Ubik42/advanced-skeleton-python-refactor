@@ -4,6 +4,8 @@ from adv_py.core.face_blendshape_conversion import (original_face_bs_target_name
     original_face_bs_driving_value)
 
 
+from .maya_original_transform_channels import lock_original_transform_channels
+
 class MayaFaceBSSamplingMixin:
     def _original_face_is_blended_attr(self, control, attr):
         c = self._cmds
@@ -63,11 +65,11 @@ class MayaFaceBSSamplingMixin:
                     limits = c.transformLimits(control, query=True, translationY=True)
                     if attr == "translateY" and sign == -1 and limits[0] == 0:
                         continue
+                    key = "_L" if side == "_L" else "other"
+                    steps[key] += 1
                     if leaf.startswith("ctrlEye_") and (attr in ("iris", "pupil") or
                             options.keep_joints and attr in ("translateX", "translateY")):
                         continue
-                    key = "_L" if side == "_L" else "other"
-                    steps[key] += 1
                     name = original_face_bs_target_name(leaf, attr, sign, positive_only, attr in user)
                     blended = self._original_face_is_blended_attr(control, attr)
                     value = original_face_bs_driving_value(attr, sign, blended)
@@ -101,8 +103,7 @@ class MayaFaceBSSamplingMixin:
                                 c.rename(name, target)
                             if previous:
                                 c.rename("tempRenamingBlendShapeTarget", name)
-                            for channel in ("t", "r", "s", "v"):
-                                c.setAttr(target + "." + channel, lock=False)
+                            lock_original_transform_channels(c, target)
                             c.move(source["cheek_position"][0] * 2.5 * (-1 if side == "_L" else 1) * steps[key],
                                    0, 0, target, relative=True)
                         if blended:

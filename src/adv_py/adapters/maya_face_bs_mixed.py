@@ -1,6 +1,8 @@
 """Original Mixed Face local matrix and layered control conversion."""
 
 
+from .maya_original_skin_history import remove_unused_for_skin
+
 class MayaFaceBSMixedMixin:
     def make_original_face_bs_mixed_local(self, source):
         c = self._cmds
@@ -14,7 +16,7 @@ class MayaFaceBSMixedMixin:
                 raw.skinPercent(skin, self.scene_address(geometry), transformValue=((self.scene_address(source["head"]), 1),))
             except RuntimeError:
                 pass
-            raw.skinCluster(skin, edit=True, removeUnusedInfluence=True)
+            remove_unused_for_skin(raw, skin)
             bs = "asFaceBS" if geometry == source["geometry"] else "asFaceBS_" + self._original_bs_geo_tag(geometry, first_colon=True)
             c.setAttr(bs + ".FaceJointsLayer", 1)
         self._original_bs_delete_existing(tuple("FaceDeformationFollowHead_" + kind + "1" for kind in ("pointConstraint", "orientConstraint", "parentConstraint")))

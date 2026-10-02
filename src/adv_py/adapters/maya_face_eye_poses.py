@@ -7,7 +7,7 @@ class MayaFaceEyePosesMixin:
         simpler=bool(c.objExists(fit+".SimplerEyeLid") and c.getAttr(fit+".SimplerEyeLid"))
         for side in ("_R","_L"):
             for name in ("wide","blink"):
-                c.addAttr("ctrlEye"+side,longName=name,attributeType="double",softMaxValue=10,softMinValue=0,hasMinValue=True,keyable=True)
+                c.addAttr("ctrlEye"+side,longName=name,attributeType="double",softMaxValue=10,hasSoftMaxValue=True,softMinValue=0,hasMinValue=True,keyable=True)
                 self.original_face_output_bw("ctrlEye"+side+"."+name)
             bw="bwctrlEye"+side+"_blink"
             conversion=c.createNode("unitConversion",name=bw+"UnitConversion")
