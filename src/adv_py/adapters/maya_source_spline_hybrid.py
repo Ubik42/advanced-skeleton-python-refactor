@@ -11,8 +11,16 @@ from .maya_adv_icons import create_adv_icon
 def create(host,plan):
     c = host._cmds
     if plan.source_follow_parent:
+        # MEL 81481: the constrained frame is aligned by the parent
+        # constraint, before the already-bound Hybrid Offset is parented.
+        # Binding it at the Spline start with -mo rotates Main scale into
+        # the child's axes, changing the curve even with untouched controls.
+        if plan.source_native_follow:
+            matrix,axes=host._spine_world_frame(plan.source_follow_parent)
+            position=tuple(matrix[12:15])
+        else:position,axes=plan.positions[0],plan.axes
         host._spine_frame('AdvPy_SplineIKOffsetConstrained',plan.source_controls_root,
-                          plan.positions[0],plan.axes)
+                          position,axes)
         host._spine_frame('AdvPy_SplineHybridFollow',plan.source_controls_root,
                           plan.positions[0],plan.axes)
     distance = sqrt(sum((a-b)**2 for a,b in zip(plan.positions[0],plan.positions[1])))/10.

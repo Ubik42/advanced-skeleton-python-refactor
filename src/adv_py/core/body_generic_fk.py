@@ -99,6 +99,9 @@ class GenericFkFeaturePolicy:
     source_rp_x_translation: bool | None = None
     source_rp_part_scale: bool | None = None
     source_rp_build_pole: bool | None = None
+    source_ik_root_frames: bool | None = None
+    source_rp_measurement_frame: bool | None = None
+    source_twist_reference_main_scale: bool | None = None
     source_untwister_receiver: bool | None = None
     source_body_matrix: bool | None = None
     source_bendy_deform_matrix: bool | None = None

@@ -12,7 +12,7 @@ from .fit_bendy import (
 )
 
 
-def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, bendy_chains=(), inbetween_segments=(), *,use_offset_parent_matrix=True):
+def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, bendy_chains=(), inbetween_segments=(), *,use_offset_parent_matrix=True, main_scale_plug=None):
     if part_result is None:
         return (), None, ()
     paths = part_result.final_paths
@@ -76,7 +76,8 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
     # The original XformInverter receives FKX/parent blend world matrices.
     # Parenting references beneath a Bendy-driven Body introduces a loop
     # between adjacent segments, even if the projected joint source is independent.
-    inputs = host.create_source_part_twist_references(inputs, independent, blended)
+    inputs = host.create_source_part_twist_references(inputs, independent, blended,
+        main_scale_plug=main_scale_plug if not use_offset_parent_matrix else None)
     sources = PrepareFitPartTwistSources(host).apply(inputs)
     bendy_parts = {name for chain in bendy_chains for name in chain.part_names}
     ordinary_parts = tuple(part for part in parts if part.name not in bendy_parts)

@@ -26,17 +26,27 @@ class SourceIkRootFrameRecord:
     offset_matrix: tuple[float,...]
     joint: str
     rotate_order: int
+    measurements: tuple[tuple[str,tuple[float,...]],...] = ()
 
 
 def decode_record(text):
     from .character_registry import safe_json,exact,canonical,path,vector,CharacterRegistryError
-    raw=exact(safe_json(text),('graph','offset','offset_matrix','joint','rotate_order'))
+    raw=safe_json(text)
+    if isinstance(raw,dict) and 'measurements' not in raw:raw={**raw,'measurements':[]}
+    raw=exact(raw,('graph','offset','offset_matrix','joint','rotate_order','measurements'))
     graph=decode_source_body_matrix(canonical(raw['graph']))
     offset=path(raw['offset']);joint=path(raw['joint']);order=raw['rotate_order']
     if (type(order) is not int or not 0<=order<=5 or offset.rsplit('|',1)[0]!=graph.body
             or joint.rsplit('|',1)[0]!=offset):
         raise CharacterRegistryError('来源 IK 起点绑定层级记录无效')
-    return SourceIkRootFrameRecord(graph,offset,vector(raw['offset_matrix'],16),joint,order)
+    rows=raw['measurements']
+    if (not isinstance(rows,list) or len(rows)>1 or any(
+            not isinstance(row,list) or len(row)!=2 for row in rows)):
+        raise CharacterRegistryError('来源 IK 起点测量绑定数量无效')
+    measurements=tuple((path(node),vector(matrix,16)) for node,matrix in rows)
+    if any(node.rsplit('|',1)[0]!=graph.body or node in (offset,joint) for node,_ in measurements):
+        raise CharacterRegistryError('来源 IK 起点测量绑定父级无效')
+    return SourceIkRootFrameRecord(graph,offset,vector(raw['offset_matrix'],16),joint,order,measurements)
 
 
 def configure(plan,body):

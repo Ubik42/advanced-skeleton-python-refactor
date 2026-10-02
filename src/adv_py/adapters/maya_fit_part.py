@@ -25,9 +25,9 @@ _FIT_INBETWEEN_KIND = "fit-inbetween-v1"
 
 
 class MayaFitPartMixin:
-    def create_source_part_twist_references(self, inputs, independent, blended):
+    def create_source_part_twist_references(self, inputs, independent, blended, *, main_scale_plug=None):
         from .maya_source_part_reference import create
-        return create(self, inputs, independent, blended)
+        return create(self, inputs, independent, blended, main_scale_plug=main_scale_plug)
 
     def _has_fit_part_parent_chain(self, child: str,
                                    ancestor: str) -> bool:

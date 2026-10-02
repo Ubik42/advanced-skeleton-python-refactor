@@ -115,7 +115,14 @@ def capture_fk_policy(host, registration):
                            for channel in registration.channels
                            if channel.key.startswith("generic.aim.")
                            and channel.key.endswith(".follow"))
+    from adv_py.core.source_limb_root_frame import decode_record
+    frames=tuple(decode_record(c.getAttr(node+'.advPySourceIkRootFrame'))
+                 for node in owned if c.objExists(node+'.advPySourceIkRootFrame'))
     return GenericFkFeaturePolicy(
+        source_ik_root_frames=bool(frames),
+        source_rp_measurement_frame=any(record.measurements for record in frames),
+        source_twist_reference_main_scale=any(
+            node.rsplit('|',1)[-1].endswith('_FitPartTwistMainScaleCM') for node in owned),
         source_spline_layouts=tuple(plan for plan in
             (registration.spine,*registration.additional_spines) if isinstance(plan,BodySplinePlan)),
         source_spline_body_root=registration.body_root,

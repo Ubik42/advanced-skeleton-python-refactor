@@ -1,5 +1,5 @@
 """Native source IK start frames and their locked parent-follow matrix graph."""
-from dataclasses import asdict
+from dataclasses import asdict,replace
 from adv_py.core.character_registry import canonical,CharacterRegistryError
 from adv_py.core.source_body_matrix import SourceBodyMatrixPlan
 from adv_py.core.source_rp_dynamics import SourceRpNode
@@ -47,6 +47,19 @@ def connect(host,spec,body_root,root_follow):
     host._transaction_changed=True
 
 
+def attach_measurement(host,spec,measurement):
+    host._require_transaction();c=host._cmds
+    measurement=host._resolve_connected_node(measurement)
+    plug=spec.frame+'.'+MARKER
+    record=decode_record(c.getAttr(plug))
+    if measurement.rsplit('|',1)[0]!=spec.frame or record.measurements:
+        raise CharacterRegistryError('来源 IK 长度测量绑定重复或父级不一致')
+    updated=replace(record,measurements=((measurement,tuple(c.getAttr(measurement+'.matrix'))),))
+    c.setAttr(plug,lock=False)
+    c.setAttr(plug,canonical(asdict(updated)),type='string',lock=True)
+    host._transaction_changed=True
+
+
 def audit_registered(host,registration):
     c=host._cmds
     for node in registration.nodes:
@@ -61,6 +74,13 @@ def audit_registered(host,registration):
                 or max(abs(a-b) for a,b in zip(c.getAttr(saved.offset+'.matrix'),saved.offset_matrix))>1e-8
                 or any(abs(value)>1e-8 for value in c.getAttr(saved.joint+'.jointOrient')[0])):
             raise CharacterRegistryError('来源 IK 起点绑定 Offset 或零朝向变化')
+        for measurement,matrix in saved.measurements:
+            if (not c.objExists(measurement) or c.nodeType(measurement)!='transform'
+                    or (c.listRelatives(measurement,parent=True,fullPath=True) or [])!=[node.path]
+                    or max(abs(a-b) for a,b in zip(c.getAttr(measurement+'.matrix'),matrix))>1e-8
+                    or any(c.listConnections(measurement+'.'+attr,s=True,d=False)
+                           for attr in ('translate','rotate','scale','shear','offsetParentMatrix'))):
+                raise CharacterRegistryError('来源 IK 长度测量绑定帧变化')
         for saved in plan.nodes:
             if not c.objExists(saved.name) or c.nodeType(saved.name)!=saved.kind:
                 raise CharacterRegistryError('来源 IK 起点矩阵节点缺失')

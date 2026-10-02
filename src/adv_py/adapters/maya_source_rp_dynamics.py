@@ -26,7 +26,7 @@ def rebase_records(host,roots,rewrites):
 
 def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,
            source_pole_targets=True,source_x_translation=True,source_part_scale=True,
-           instances=(),inbetween_segments=()):
+           instances=(),inbetween_segments=(),source_start_frame=True):
     host._require_transaction()
     c=host._cmds
     plans=[]
@@ -61,7 +61,9 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,
         connections=SourceGraphConnections(host,stem)
         start_name=stem+'_Start'
         target_name=stem+'_Target'
-        start_path=limb.mechanisms.root_path+'|'+start_name
+        frame=next((frame for frame in limb.root_frames if frame.joint==ik.chain[0]),None) if source_start_frame else None
+        start_parent=frame.frame if frame is not None else limb.mechanisms.root_path
+        start_path=start_parent+'|'+start_name
         target_parent=ik.handle_parent
         target_path=target_parent+'|'+target_name
         chain=tuple(c.ikHandle(ik.handle_name,query=True,jointList=True) or ())
@@ -105,9 +107,17 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,
             while parent in by_body and 'Part' in by_body[parent].name:
                 parent=by_body[parent].parent_path
             start_source=root_follow if parent==body.root and root_follow else parent
-        start=c.createNode('transform',name=start_name,parent=limb.mechanisms.root_path,skipSelect=True)
-        c.xform(start,worldSpace=True,translation=c.xform(ik.chain[0],query=True,worldSpace=True,translation=True))
-        if start_source:
+        # MEL 80458: IKMessureFrom is a sibling of IKXOffset below the
+        # source parent frame. A separate maintain-offset position constraint
+        # computes a different point under Main's nonuniform scale.
+        start=c.createNode('transform',name=start_name,parent=start_parent,skipSelect=True)
+        if frame is not None:
+            c.xform(start,worldSpace=True,matrix=c.xform(frame.offset,query=True,worldSpace=True,matrix=True))
+            from .maya_source_limb_root_frame import attach_measurement
+            attach_measurement(host,frame,start)
+        else:
+            c.xform(start,worldSpace=True,translation=c.xform(ik.chain[0],query=True,worldSpace=True,translation=True))
+        if start_source and frame is None:
             c.parentConstraint(start_source,start,maintainOffset=True,
                 name=stem+'_StartFollow',skipRotate=('x','y','z'))
         c.setAttr(start+'.visibility',False)

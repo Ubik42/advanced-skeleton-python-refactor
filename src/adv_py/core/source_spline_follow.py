@@ -41,7 +41,7 @@ def configure_source_spline_follow(plan, body, fk, global_control, *,
                     for index,(label,path,_) in enumerate(targets))
     if len({label for label,_,_ in targets})!=len(targets):
         raise FitSkeletonValidationError('来源 Spline Follow 层名称重复')
-    result = replace(plan,source_follow_parent=source,source_follow_targets=targets)
+    result = replace(plan,source_follow_parent=source,source_follow_targets=targets,source_native_follow=True)
     controls = tuple(result.target_parent(index)+
                      f'|AdvPy_SplineIK{index}Offset|AdvPy_SplineIK{index}Extra|AdvPy_SplineIK{index}'
                      for index in range(len(result.targets)))

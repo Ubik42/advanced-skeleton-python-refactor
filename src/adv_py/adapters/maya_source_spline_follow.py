@@ -12,11 +12,19 @@ def _matrix(value):
 def create(host,plan):
     c=host._cmds
     constrained=plan.hybrid_constrained
-    c.parentConstraint(plan.source_follow_parent,constrained,maintainOffset=True,
-                       name='AdvPy_SplineIKOffsetParent')
     main=next(path for label,path,_ in plan.source_follow_targets if label=='Main')
-    c.scaleConstraint(main,constrained,maintainOffset=True,
-                      name='AdvPy_SplineIKOffsetScale')
+    if plan.source_native_follow and plan.use_offset_parent_matrix:
+        parent=c.createNode('multMatrix',name='AdvPy_SplineIKOffsetParentMM',skipSelect=True)
+        c.connectAttr(plan.source_follow_parent+'.worldMatrix[0]',parent+'.matrixIn[0]')
+        c.connectAttr(parent_world_inverse(host,constrained),parent+'.matrixIn[1]')
+        for kind,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
+            c.setAttr(constrained+'.'+kind,value,value,value,type='double3')
+        c.connectAttr(parent+'.matrixSum',constrained+'.offsetParentMatrix')
+    else:
+        c.parentConstraint(plan.source_follow_parent,constrained,maintainOffset=not plan.source_native_follow,
+                           name='AdvPy_SplineIKOffsetParent')
+        c.scaleConstraint(main,constrained,maintainOffset=not plan.source_native_follow,
+                          name='AdvPy_SplineIKOffsetScale')
     driven=plan.hybrid_follow
     bind=_matrix(c.xform(driven,query=True,worldSpace=True,matrix=True))
     blend=c.createNode('blendMatrix',name='AdvPy_SplineHybridFollowBlend',skipSelect=True)
@@ -38,27 +46,64 @@ def create(host,plan):
     output=c.createNode('multMatrix',name='AdvPy_SplineHybridFollowOutput',skipSelect=True)
     c.connectAttr(blend+'.outputMatrix',output+'.matrixIn[0]')
     c.connectAttr(parent_world_inverse(host,driven),output+'.matrixIn[1]')
-    # MEL asMatrixConnectAttr gives the detached receiver its own OPM even
-    # when the rest of the character uses legacy transform constraints.
     for kind,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
         c.setAttr(driven+'.'+kind,value,value,value,type='double3')
-    c.connectAttr(output+'.matrixSum',driven+'.offsetParentMatrix')
+    if not plan.source_native_follow or plan.use_offset_parent_matrix:
+        c.connectAttr(output+'.matrixSum',driven+'.offsetParentMatrix')
+    else:
+        # MEL asMatrixConnectAttr preserves all native TRS/shear outputs.
+        dm=c.createNode('decomposeMatrix',name='AdvPy_SplineHybridFollowDM',skipSelect=True)
+        c.setAttr(dm+'.inputRotateOrder',c.getAttr(driven+'.rotateOrder'))
+        c.connectAttr(output+'.matrixSum',dm+'.inputMatrix')
+        for kind in ('Translate','Rotate','Scale'):
+            for axis in 'XYZ':c.connectAttr(dm+'.output'+kind+axis,driven+'.'+kind.lower()+axis)
+        for axis,component in zip('XYZ',('XY','XZ','YZ')):
+            c.connectAttr(dm+'.outputShear'+axis,driven+'.shear'+component)
 
 
 def audit(host,plan):
     c=host._cmds
+    if plan.source_native_follow and (c.getAttr(plan.source_controls_root+'.inheritsTransform') or
+            not c.getAttr(plan.source_controls_root+'.inheritsTransform',lock=True)):
+        raise FitSkeletonValidationError('来源 Spline 控制根重复继承 Main 变换')
     parent='AdvPy_SplineIKOffsetParent'
     scale='AdvPy_SplineIKOffsetScale'
     main=next(path for label,path,_ in plan.source_follow_targets if label=='Main')
-    for command,node,source in ((c.parentConstraint,parent,plan.source_follow_parent),
-                                (c.scaleConstraint,scale,main)):
-        targets=tuple(host._resolve_connected_node(path)
-                      for path in command(node,query=True,targetList=True) or [])
-        if targets!=(source,):
-            raise FitSkeletonValidationError('来源 Spline 起点跟随目标改变')
+    if not (plan.source_native_follow and plan.use_offset_parent_matrix):
+        for command,node,source in ((c.parentConstraint,parent,plan.source_follow_parent),
+                                    (c.scaleConstraint,scale,main)):
+            targets=tuple(host._resolve_connected_node(path)
+                          for path in command(node,query=True,targetList=True) or [])
+            if targets!=(source,):
+                raise FitSkeletonValidationError('来源 Spline 起点跟随目标改变')
+        if plan.source_native_follow:
+            for attr in ('target[0].targetOffsetTranslate','target[0].targetOffsetRotate'):
+                if any(abs(v)>1e-8 for v in c.getAttr(parent+'.'+attr)[0]):
+                    raise FitSkeletonValidationError('来源 Spline 起点错误保留了父约束偏移')
+            if any(abs(v-1.)>1e-8 for v in c.getAttr(scale+'.offset')[0]):
+                raise FitSkeletonValidationError('来源 Spline Main 缩放约束偏移改变')
     edges=[('AdvPy_SplineHybridFollowBlend.outputMatrix','AdvPy_SplineHybridFollowOutput.matrixIn[0]'),
-           (parent_world_inverse(host,plan.hybrid_follow),'AdvPy_SplineHybridFollowOutput.matrixIn[1]'),
-           ('AdvPy_SplineHybridFollowOutput.matrixSum',plan.hybrid_follow+'.offsetParentMatrix')]
+           (parent_world_inverse(host,plan.hybrid_follow),'AdvPy_SplineHybridFollowOutput.matrixIn[1]')]
+    if plan.source_native_follow and plan.use_offset_parent_matrix:
+        matrix='AdvPy_SplineIKOffsetParentMM'
+        edges.extend(((plan.source_follow_parent+'.worldMatrix[0]',matrix+'.matrixIn[0]'),
+            (parent_world_inverse(host,plan.hybrid_constrained),matrix+'.matrixIn[1]'),
+            (matrix+'.matrixSum',plan.hybrid_constrained+'.offsetParentMatrix'),
+            ('AdvPy_SplineHybridFollowOutput.matrixSum',plan.hybrid_follow+'.offsetParentMatrix')))
+        for attr,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
+            if c.listConnections(plan.hybrid_constrained+'.'+attr,s=True,d=False) or any(
+                    abs(v-value)>1e-8 for v in c.getAttr(plan.hybrid_constrained+'.'+attr)[0]):
+                raise FitSkeletonValidationError('来源 Spline OPM 跟随本地变换改变')
+    elif plan.source_native_follow:
+        dm='AdvPy_SplineHybridFollowDM'
+        edges.append(('AdvPy_SplineHybridFollowOutput.matrixSum',dm+'.inputMatrix'))
+        if c.getAttr(dm+'.inputRotateOrder')!=c.getAttr(plan.hybrid_follow+'.rotateOrder'):
+            raise FitSkeletonValidationError('来源 Spline Follow 旋转顺序变化')
+        for kind in ('Translate','Rotate','Scale'):
+            for axis in 'XYZ':edges.append((dm+'.output'+kind+axis,plan.hybrid_follow+'.'+kind.lower()+axis))
+        for axis,component in zip('XYZ',('XY','XZ','YZ')):
+            edges.append((dm+'.outputShear'+axis,plan.hybrid_follow+'.shear'+component))
+    else:edges.append(('AdvPy_SplineHybridFollowOutput.matrixSum',plan.hybrid_follow+'.offsetParentMatrix'))
     for index,(label,path,_) in enumerate(plan.source_follow_targets):
         stem='AdvPy_SplineHybridFollow'+label
         edges.extend(((path+'.worldMatrix[0]',stem+'Matrix.matrixIn[2]'),
@@ -67,9 +112,10 @@ def audit(host,plan):
                       (stem+'Weight.output',f'AdvPy_SplineHybridFollowBlend.target[{index}].weight')))
         if c.getAttr(stem+'Weight.input2')!=.1:
             raise FitSkeletonValidationError('来源 Spline Follow 权重单位改变')
-    for axis in 'XYZ':
-        edges.extend(((parent+'.constraintTranslate'+axis,plan.hybrid_constrained+'.translate'+axis),
-                      (parent+'.constraintRotate'+axis,plan.hybrid_constrained+'.rotate'+axis),
-                      (scale+'.constraintScale'+axis,plan.hybrid_constrained+'.scale'+axis)))
+    if not (plan.source_native_follow and plan.use_offset_parent_matrix):
+        for axis in 'XYZ':
+            edges.extend(((parent+'.constraintTranslate'+axis,plan.hybrid_constrained+'.translate'+axis),
+                          (parent+'.constraintRotate'+axis,plan.hybrid_constrained+'.rotate'+axis),
+                          (scale+'.constraintScale'+axis,plan.hybrid_constrained+'.scale'+axis)))
     if any(not c.isConnected(source,destination) for source,destination in edges):
         raise FitSkeletonValidationError('来源 Spline Follow 图连接改变')

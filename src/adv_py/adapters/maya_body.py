@@ -10229,11 +10229,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_rp_follow import create
         return create(self,body,limbs,global_control,root,leg_aim=leg_aim)
 
-    def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None, *,source_pole_targets=True,source_x_translation=True,source_part_scale=True,instances=(),inbetween_segments=()):
+    def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None, *,source_pole_targets=True,source_x_translation=True,source_part_scale=True,instances=(),inbetween_segments=(),source_start_frame=True):
         from .maya_source_rp_dynamics import create
         return create(self,body,limbs,global_control,internal_local,root_follow,
             source_pole_targets=source_pole_targets,source_x_translation=source_x_translation,
-            source_part_scale=source_part_scale,instances=instances,inbetween_segments=inbetween_segments)
+            source_part_scale=source_part_scale,instances=instances,inbetween_segments=inbetween_segments,source_start_frame=source_start_frame)
 
     def create_source_body_matrices(self,body,fk,limbs,dynamics, *,excluded=frozenset()):
         from .maya_source_body_matrix import configure

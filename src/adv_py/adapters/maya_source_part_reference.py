@@ -10,7 +10,7 @@ MARKER = 'advPySourceTwistReference'
 GROUP = '|Group|MotionSystem|TwistSystem'
 
 
-def create(host, inputs, independent, blended):
+def create(host, inputs, independent, blended, *, main_scale_plug=None):
     host._require_transaction()
     c=host._cmds
     resolved=[]
@@ -28,7 +28,8 @@ def create(host, inputs, independent, blended):
         reference=stem+'IndependentReference'
         matrix=stem+'ParentMM'
         blend_name=stem+'ParentBM'
-        names=(frame,reference,matrix)+((blend_name,) if blend else ())
+        scale_name=stem+'MainScaleCM'
+        names=(frame,reference,matrix)+((blend_name,) if blend else ())+((scale_name,) if main_scale_plug else ())
         if any(host.find_name_collisions(name) for name in names):
             raise CharacterRegistryError('来源 Twist 独立父参考名称冲突：'+stem)
         for plug in ((blend[:3]) if blend else (world,)):
@@ -50,6 +51,16 @@ def create(host, inputs, independent, blended):
         # before RootBM when it supplies children's twist reference frames.
         if parent.rsplit('|',1)[-1]=='Root_M' and c.objExists('AdvPy_SourceRootRemoveRotIM.outputMatrix'):
             sources.insert(0,'AdvPy_SourceRootRemoveRotIM.outputMatrix')
+        # MEL 78897 scales TwistSystem only in non-OPM mode. The original
+        # asMatrixConnectAttr decomposes the parent world matrix into that
+        # scaled hierarchy; cancelling its parent inverse loses this factor.
+        # Encode it per owned frame so legacy scene rebuilds retain their graph.
+        if main_scale_plug:
+            if not c.objExists(main_scale_plug):
+                raise CharacterRegistryError('来源 Twist Main 缩放输入缺失')
+            nodes.append(SourceRpNode(scale_name,'composeMatrix',connections=(
+                (main_scale_plug,'inputScale'),)))
+            sources.append(scale_name+'.outputMatrix')
         sources.append(parent_world_inverse(host,frame))
         nodes.append(SourceRpNode(matrix,'multMatrix',connections=tuple(
             (source,f'matrixIn[{index}]') for index,source in enumerate(sources))))

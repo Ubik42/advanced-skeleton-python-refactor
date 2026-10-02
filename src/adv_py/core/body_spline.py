@@ -99,6 +99,7 @@ class BodySplinePlan:
     source_forward_axis: int | None = None
     source_start_volume: bool = False
     source_local_scale_indices: tuple[int,...] = ()
+    source_native_follow: bool = False
 
     @property
     def simple_twist(self):
@@ -419,8 +420,11 @@ class BodySplinePlan:
                         for suffix in ('X','XParent')) if self.source_curve_points else ()
         if self.source_follow_parent:
             hybrids += ('AdvPy_SplineHybridFollow','AdvPy_SplineIKOffsetConstrained',
-                        'AdvPy_SplineIKOffsetParent','AdvPy_SplineIKOffsetScale',
                         'AdvPy_SplineHybridFollowBlend','AdvPy_SplineHybridFollowOutput')
+            hybrids += (('AdvPy_SplineIKOffsetParentMM',) if self.source_native_follow and self.use_offset_parent_matrix else
+                        ('AdvPy_SplineIKOffsetParent','AdvPy_SplineIKOffsetScale'))
+            if self.source_native_follow and not self.use_offset_parent_matrix:
+                hybrids += ('AdvPy_SplineHybridFollowDM',)
             hybrids += tuple('AdvPy_SplineHybridFollow'+label+suffix
                              for label,_,_ in self.source_follow_targets
                              for suffix in ('Matrix','Weight'))

@@ -80,6 +80,11 @@ def create(host,plan):
     if plan.source_controller_layers:
         c.createNode('transform',name='AdvPy_SplineControls',
                      parent=plan.source_controls_root.rsplit('|',1)[0],skipSelect=True)
+        if plan.source_native_follow:
+            # Original IKHandle is outside IKJoints/Main scaling. Applying
+            # Main to this parent makes scaleConstraint cancel Main first,
+            # then reapply it in the wrong axes below the constrained frame.
+            c.setAttr(plan.source_controls_root+'.inheritsTransform',False,lock=True)
     for control,joint in zip(plan.fk_controls,fk):
         c.connectAttr(control+'.scale',joint.path+'.scale')
     if plan.source_hybrid_graph:

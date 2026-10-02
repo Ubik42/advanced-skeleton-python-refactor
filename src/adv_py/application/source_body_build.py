@@ -408,7 +408,10 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         mechanisms = plan_body_limb_mechanisms(
             body, limb_label=label, joint_names=mechanism_names, allow_part_parents=True,sides=sides)
         from adv_py.core.source_limb_root_frame import configure as configure_root_frames
-        mechanisms,root_frames=(configure_root_frames(mechanisms,body) if options.use_offset_parent_matrix else (mechanisms,()))
+        # MEL 80418–80452 creates these IK start layers in both modes. The
+        # parent uses its forced matrix follow even when Body uses constraints.
+        mechanisms,root_frames=(configure_root_frames(mechanisms,body) if generic_fk_policy is None
+            or generic_fk_policy.source_ik_root_frames is not False else (mechanisms,()))
         ik = plan_body_arm_ik(body, mechanisms, joint_names=names,
             limb_label=label, radius=scale * 1.5,
             sub_controllers=options.sub_controllers,
@@ -675,6 +678,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         or generic_fk_policy.source_rp_pole_sources is not False,
         source_x_translation=generic_fk_policy is None or generic_fk_policy.source_rp_x_translation is not False,
         source_part_scale=generic_fk_policy is None or generic_fk_policy.source_rp_part_scale is not False,
+        source_start_frame=generic_fk_policy is None or generic_fk_policy.source_rp_measurement_frame is not False,
         instances=build.symmetry.instances,inbetween_segments=inbetween_segments) if generic_fk_policy is None
         or generic_fk_policy.source_rp_dynamics is not False else ())
     center_between_feet = None
@@ -707,7 +711,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             skeleton = replace(skeleton, snapshot=body)
     twist_steps, part_scale, bendy_chains = build_source_body_part_drivers(
         host, build, part_result, fk, limbs, splines, bendy_chains, inbetween_segments,
-        use_offset_parent_matrix=options.use_offset_parent_matrix)
+        use_offset_parent_matrix=options.use_offset_parent_matrix,
+        main_scale_plug=global_control.scale_node_name+'.output' if generic_fk_policy is None
+            or generic_fk_policy.source_twist_reference_main_scale is not False else None)
     (fit_follows, named_follows, follow_spaces, ik_follows,
      advanced_constraints, aim_at, geo_attach, proximity_pin) = build_source_body_follow(
         host, metadata, body, fk, limbs, splines, global_control,
