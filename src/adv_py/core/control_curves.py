@@ -214,20 +214,26 @@ def plan_control_curve_colors(
 
 
 def plan_control_curve_scale(
-    controls: tuple[ControlCurveState, ...], factor: float
+    controls: tuple[ControlCurveState, ...], factor: float, *, shape_pivots=()
 ) -> ControlCurveScalePlan:
     if (isinstance(factor, bool) or not isinstance(factor, (int, float))
-            or not isfinite(float(factor)) or not 0.01 <= float(factor) <= 100.0):
-        raise ControlCurveValidationError("控制曲线缩放倍率必须位于 0.01 到 100")
+            or not isfinite(float(factor))):
+        raise ControlCurveValidationError("控制曲线缩放倍率必须为有限数值")
     if not controls or len({state.control for state in controls}) != len(controls):
         raise ControlCurveValidationError("至少需要一个且不能重复的控制曲线")
     value = float(factor)
+    pivots=dict(shape_pivots)
+    for pivot in pivots.values():
+        if len(pivot)!=3 or not all(isfinite(float(component)) for component in pivot):
+            raise ControlCurveValidationError('控制曲线组件枢轴必须为有限三维坐标')
     after = tuple(ControlCurveState(
         state.control,
         state.world_matrix,
         tuple(ControlCurveShapeState(
             shape.path, shape.degree, shape.form,
-            tuple(tuple(component * value for component in point)
+            tuple(tuple(pivots.get(shape.path,(0.,0.,0.))[axis]+
+                        (component-pivots.get(shape.path,(0.,0.,0.))[axis])*value
+                        for axis,component in enumerate(point))
                   for point in shape.points))
               for shape in state.shapes))
         for state in controls)
@@ -237,6 +243,11 @@ def plan_control_curve_scale(
 def plan_control_curve_auto_scale(
     mesh: str, metrics: tuple[ControlCurveAutoScaleMetric, ...]
 ) -> ControlCurveAutoScalePlan:
+    """Legacy uniform-radius estimator; not ADV's public Auto Scale action.
+
+    Retained for callers of the old numerical API. The Maya application uses
+    source point projection, implemented in control_curve_projection.
+    """
     if not mesh or not metrics or len({row.state.control for row in metrics}) != len(metrics):
         raise ControlCurveValidationError("自动缩放需要网格和不重复的控制器测量")
     changes = []

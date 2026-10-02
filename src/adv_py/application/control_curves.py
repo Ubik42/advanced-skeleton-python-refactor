@@ -6,19 +6,24 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from adv_py.core.control_curves import (
-    ControlCurveAutoScaleMetric, ControlCurveAutoScalePlan,
     ControlCurveMirrorPair, ControlCurveMirrorPlan,
     ControlCurveSwapPlan,
     ControlCurveColorMode, ControlCurveColorPlan, ControlCurveColorState,
     ControlCurveScalePlan, ControlCurveState, ControlCurveValidationError,
-    plan_control_curve_auto_scale, plan_control_curve_colors,
+    plan_control_curve_colors,
     plan_control_curve_mirror,
     plan_control_curve_swap,
     plan_control_curve_scale,
 )
+from adv_py.core.control_curve_projection import ControlCurveProjectionResult
 
 
 class ControlCurveHost(Protocol):
+    def capture_control_curve_scale_pivots(self, states: tuple[ControlCurveState,...]) -> tuple: ...
+
+    def project_control_curves(self, controls: tuple[str,...], mesh: str, *,
+                              strict: bool) -> tuple[tuple[ControlCurveState,...],int]: ...
+
     def capture_control_curves(
         self, controls: tuple[str, ...], *, strict: bool
     ) -> tuple[ControlCurveState, ...]: ...
@@ -37,11 +42,6 @@ class ControlCurveHost(Protocol):
     def set_control_curve_color(self, shape: str,
                                 color: tuple[float, float, float]) -> None: ...
 
-    def measure_control_curve_auto_scale(
-        self, controls: tuple[str, ...], mesh: str,
-        semantic_keys: tuple[tuple[str, tuple[str, ...]], ...], *, strict: bool,
-    ) -> tuple[ControlCurveAutoScaleMetric, ...]: ...
-
     def replace_control_curve_shapes(self, source: str, target: str) -> None: ...
 
 
@@ -57,10 +57,7 @@ class ControlCurveColorResult:
     verified: tuple[ControlCurveColorState, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class ControlCurveAutoScaleResult:
-    plan: ControlCurveAutoScalePlan
-    verified: tuple[ControlCurveState, ...]
+ControlCurveAutoScaleResult = ControlCurveProjectionResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,8 +80,9 @@ class ScaleControlCurves:
              strict: bool = True) -> ControlCurveScalePlan:
         if not controls or len(set(controls)) != len(controls):
             raise ControlCurveValidationError("控制器列表不能为空或重复")
-        return plan_control_curve_scale(
-            self._host.capture_control_curves(controls, strict=strict), factor)
+        states=self._host.capture_control_curves(controls,strict=strict)
+        pivots=self._host.capture_control_curve_scale_pivots(states)
+        return plan_control_curve_scale(states,factor,shape_pivots=pivots)
 
     def apply(self, controls: tuple[str, ...], factor: float, *,
               strict: bool = True) -> ControlCurveScaleResult:
@@ -171,24 +169,22 @@ class AutoScaleControlCurves:
 
     def apply(self, controls: tuple[str, ...], mesh: str,
               semantic_keys: tuple[tuple[str, tuple[str, ...]], ...] = (), *,
-              strict: bool = True) -> ControlCurveAutoScaleResult:
-        if not controls or len(set(controls)) != len(controls):
-            raise ControlCurveValidationError("控制器列表不能为空或重复")
-        metrics = self._host.measure_control_curve_auto_scale(
-            controls, mesh, semantic_keys, strict=strict)
-        plan = plan_control_curve_auto_scale(mesh, metrics)
-        with self._host.transaction(
-                f"按网格为 {len(plan.changes)} 个控制曲线自动缩放"):
-            for change in plan.changes:
-                for shape in change.after.shapes:
-                    self._host.set_control_curve_points(shape.path, shape.points)
+              strict: bool = True) -> ControlCurveProjectionResult:
+        if len(set(controls)) != len(controls):
+            raise ControlCurveValidationError("控制器列表不能重复")
+        with self._host.transaction('按原版逐点投射控制曲线'):
+            before,projected = self._host.project_control_curves(
+                controls,mesh,strict=strict)
             verified = self._host.capture_control_curves(
-                tuple(change.control for change in plan.changes), strict=True)
-            ScaleControlCurves._verify(
-                ControlCurveScalePlan(1.0,
-                    tuple(change.before for change in plan.changes),
-                    tuple(change.after for change in plan.changes)), verified)
-        return ControlCurveAutoScaleResult(plan, verified)
+                tuple(state.control for state in before),strict=True) if before else ()
+            if len(verified)!=len(before):
+                raise RuntimeError('曲线投射改变了控制器数量')
+            for original,actual in zip(before,verified):
+                if (any(abs(a-b)>1e-8 for a,b in zip(original.world_matrix,actual.world_matrix)) or
+                    tuple((s.path,s.degree,s.form,len(s.points)) for s in original.shapes)!=
+                    tuple((s.path,s.degree,s.form,len(s.points)) for s in actual.shapes)):
+                    raise RuntimeError('曲线投射改变了控制器变换或曲线拓扑')
+        return ControlCurveProjectionResult(mesh,before,verified,projected)
 
 
 class MirrorControlCurves:

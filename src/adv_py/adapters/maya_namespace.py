@@ -167,6 +167,11 @@ class MayaCharacterCommands:
             elif name=='aliasAttr' and not query:
                 # The alias is a literal identifier; only its destination is a node plug.
                 args=[args[0]]+[address(a) for a in args[1:]]
+            elif name=='polyProjectCurve' and not query:
+                # The owned scan curve produces a new history projection;
+                # the target mesh is read, not edited. It may be referenced
+                # production geometry in a separate model namespace.
+                args=[address(args[0])]+[self._map(a,identity.to_scene) for a in args[1:]] if args else []
             elif name in ('lattice', 'duplicate'):
                 # Face / Pre explicitly chooses production geometry, which may
                 # sit in a model namespace. New lattice nodes stay in the rig.

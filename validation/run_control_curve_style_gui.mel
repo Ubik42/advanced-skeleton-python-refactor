@@ -1,0 +1,2 @@
+python("import sys; from pathlib import Path; sys.path.insert(0, r'D:/3D/_tools/_DCC/advanced-skeleton-python-refactor/validation'); import maya_control_curve_style_parity as test; test.main(Path(r'D:/3D/_tools/_DCC/advanced-skeleton-python-refactor/validation/results/control-curve-style-source'))");
+evalDeferred("quit -force;");

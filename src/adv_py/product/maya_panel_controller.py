@@ -997,13 +997,17 @@ class MayaPanelController:
         host = self._host(namespace)
         strict = bool(controls)
         if not controls:
-            resolver = ResolveBodyCharacter(host)
-            names = resolver.discover()
-            if len(names) != 1:
-                raise ValueError("当前命名空间必须恰好包含一个已登记角色")
-            registration = resolver.execute(names[0])
-            controls = tuple(dict.fromkeys(
-                channel.node for channel in registration.channels))
+            c=host._cmds
+            sets=tuple(name for name in ('ControlSet','FaceControlSet') if c.objExists(name))
+            if not sets:raise ValueError('当前角色没有 ControlSet 或 FaceControlSet')
+            selected=c.ls(selection=True,long=True) or []
+            controls=tuple(node for node in selected if any(c.sets(node,isMember=name) for name in sets))
+            if not controls:
+                controls=tuple(dict.fromkeys(node for name in sets for node in c.sets(name,query=True) or []))
+        raw=getattr(host._cmds,'raw',host._cmds)
+        if (raw.getModifiers()//4)%2:
+            if factor==0:raise ValueError('Ctrl 反向缩放不能使用零倍率')
+            factor=1./factor
         result = ScaleControlCurves(host).apply(controls, factor, strict=strict)
         return len(result.verified)
 
@@ -1031,23 +1035,38 @@ class MayaPanelController:
     def control_curves_auto_scale(self, namespace: str,
                                   controls: tuple[str, ...], mesh: str) -> int:
         host = self._host(namespace)
-        resolver = ResolveBodyCharacter(host)
-        names = resolver.discover()
-        registration = resolver.execute(names[0]) if len(names) == 1 else None
-        semantic_map: dict[str, list[str]] = {}
-        if registration:
-            for channel in registration.channels:
-                semantic_map.setdefault(channel.node, []).append(channel.key)
         strict = bool(controls)
         if not controls:
-            if registration is None:
-                raise ValueError("当前命名空间必须恰好包含一个已登记角色")
-            controls = tuple(semantic_map)
-        semantics = tuple(
-            (control, tuple(semantic_map.get(control, ()))) for control in controls)
+            controls=tuple(host._cmds.ls(selection=True,long=True) or [])
         result = AutoScaleControlCurves(host).apply(
-            controls, mesh.strip(), semantics, strict=strict)
+            controls, mesh.strip(), strict=strict)
         return len(result.verified)
+
+    def control_curves_palette(self,namespace,controls,index,*,rgb=None):
+        from adv_py.application.control_curve_style import SetControlCurvePalette
+        host=self._host(namespace)
+        controls=tuple(controls) or tuple(host._cmds.ls(selection=True,long=True) or [])
+        return SetControlCurvePalette(host).apply(controls,index,rgb=rgb)
+
+    def control_curve_palette_colors(self):
+        from maya import cmds
+        return ((0.,0.,0.),)+tuple(tuple(cmds.colorIndex(index,query=True)) for index in range(1,32))
+
+    def select_control_curves(self,namespace,controller_type,side):
+        from adv_py.application.control_curve_selection import SelectControlCurves
+        return SelectControlCurves(self._host(namespace)).apply(controller_type,side)
+
+    def control_curves_width(self,namespace,controls,width):
+        from adv_py.application.control_curve_style import SetControlCurveWidth
+        host=self._host(namespace)
+        controls=tuple(controls) or tuple(host._cmds.ls(selection=True,long=True) or [])
+        return SetControlCurveWidth(host).apply(controls,width)
+
+    def control_curves_snap_rotate(self,namespace,controls,axis):
+        from adv_py.application.control_curve_style import SnapRotateControlCurves
+        host=self._host(namespace)
+        controls=tuple(controls) or tuple(host._cmds.ls(selection=True,long=True) or [])
+        return SnapRotateControlCurves(host).apply(controls,axis)
 
     def control_curves_mirror(self, namespace: str, controls: tuple[str, ...],
                               source_side: str) -> int:

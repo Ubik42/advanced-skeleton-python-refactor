@@ -37,6 +37,9 @@ class Host:
             raise ControlCurveValidationError("missing")
         return found
 
+    def capture_control_curve_scale_pivots(self, states):
+        return tuple((shape.path,(0.,0.,0.)) for state in states for shape in state.shapes)
+
     @contextmanager
     def transaction(self, label):
         self.transactions.append(label)
@@ -56,6 +59,15 @@ class Host:
         return tuple(ControlCurveAutoScaleMetric(
             self.states[name], semantics.get(name, ()), 2., 3.,
             (10., 20., 30.), "z") for name in controls)
+
+    def project_control_curves(self, controls, mesh, *, strict):
+        before=self.capture_control_curves(controls,strict=strict)
+        # An intentionally nonuniform result makes this a dispatch contract:
+        # the application must retain host projection, not infer one factor.
+        for current in before:
+            shape=current.shapes[0]
+            self.set_control_curve_points(shape.path,((3.,0.,0.),(0.,4.,0.)))
+        return before,2*len(before)
 
     def replace_control_curve_shapes(self, source, target):
         source_state = self.states[source]
@@ -109,7 +121,7 @@ class ControlCurveScaleTests(unittest.TestCase):
         self.assertEqual(plan.after[0].shapes[0].points,
                          ((1.5, 0., 0.), (0., 3., 0.)))
         with self.assertRaises(ControlCurveValidationError):
-            plan_control_curve_scale((state(),), 0.)
+            plan_control_curve_scale((state(),), float('nan'))
 
     def test_application_writes_and_verifies_one_transaction(self):
         host = Host()
@@ -163,17 +175,17 @@ class ControlCurveAutoScaleTests(unittest.TestCase):
         self.assertAlmostEqual(plan.changes[0].target_world_radius, 3.45)
         self.assertAlmostEqual(plan.changes[1].target_world_radius, 12.)
 
-    def test_application_writes_each_planned_factor_and_verifies(self):
+    def test_application_retains_host_point_projection(self):
         host = Host()
         result = AutoScaleControlCurves(host).apply(
             ("|Control",), "|Skin",
             (("|Control", ("arm.fk.Wrist_R",)),))
         self.assertEqual(len(host.transactions), 1)
-        self.assertAlmostEqual(result.plan.changes[0].factor, 1.725)
+        self.assertEqual(result.projected_points,2)
         self.assertTrue(all(
             abs(value - expected) <= 1e-9
             for point, wanted in zip(result.verified[0].shapes[0].points,
-                                     ((1.725, 0., 0.), (0., 3.45, 0.)))
+                                     ((3., 0., 0.), (0., 4., 0.)))
             for value, expected in zip(point, wanted)))
 
 

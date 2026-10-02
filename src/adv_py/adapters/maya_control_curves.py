@@ -22,6 +22,58 @@ _CUSTOM_GROUP = "AdvPy_ControlOrientDetached"
 
 
 class MayaControlCurveMixin:
+    def select_original_control_curves(self,controller_type,side):
+        from adv_py.core.control_curve_selection import select_curve_members
+        c=self._cmds
+        members=c.sets('ControlSet',query=True) or [] if c.objExists('ControlSet') else []
+        face=()
+        if controller_type.startswith('Face:') and c.objExists('ctrlBox'):
+            face=c.listConnections('ctrlBox.'+controller_type.split(':',1)[1]+'CtrlVis',
+                source=False,destination=True) or []
+        targets=select_curve_members(members,controller_type,side,face_connections=face)
+        c.select(clear=True)
+        if targets:c.select(targets,replace=True)
+        return targets
+
+    def capture_control_curve_scale_pivots(self, states):
+        from maya import mel
+        from maya.api import OpenMaya as om
+        c=self._cmds;raw=getattr(c,'raw',c)
+        selection=raw.ls(selection=True,long=True) or []
+        move=mel.eval('global string $gMove; $gMove = $gMove;')
+        if not move:
+            raise ControlCurveValidationError('请在 Maya 图形会话中使用控制曲线缩放')
+        pivots=[]
+        try:
+            for state in states:
+                inverse=om.MMatrix(state.world_matrix).inverse()
+                for shape in state.shapes:
+                    raw.select(self.scene_address(shape.path)+'.cv[0:99999]',replace=True)
+                    raw.refresh()
+                    raw.setToolTo(move)
+                    position=raw.manipMoveContext('Move',query=True,position=True)
+                    local=om.MPoint(*position)*inverse
+                    pivots.append((shape.path,(local.x,local.y,local.z)))
+        finally:
+            raw.select(selection,replace=True) if selection else raw.select(clear=True)
+        return tuple(pivots)
+
+    def set_original_control_curve_palette(self, controls, palette):
+        from .maya_control_curve_style import set_palette
+        return set_palette(self,controls,palette)
+
+    def set_original_control_curve_width(self, controls, width):
+        from .maya_control_curve_style import set_width
+        return set_width(self,controls,width)
+
+    def snap_rotate_control_curves(self, controls, axis):
+        from .maya_control_curve_style import snap_rotate
+        return snap_rotate(self,controls,axis)
+
+    def project_control_curves(self, controls, mesh, *, strict=True):
+        from .maya_control_curve_projection import project_control_curves
+        return project_control_curves(self, controls, mesh, strict=strict)
+
     def capture_control_curve_variants(self, controls, variant):
         if variant not in ("Sub", "Extra"):
             raise ControlCurveValidationError("目标控制层只能是 Sub 或 Extra")

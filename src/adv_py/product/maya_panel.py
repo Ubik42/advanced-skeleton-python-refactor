@@ -57,7 +57,7 @@ def format_face_eye_lid_build_result(result: dict) -> str:
 
 def create_panel(controller: MayaPanelController | None = None):
     """Create a panel inside an existing Maya Qt application; do not show it."""
-    from PySide2 import QtCore, QtWidgets
+    from PySide2 import QtCore, QtGui, QtWidgets
 
     if QtWidgets.QApplication.instance() is None:
         raise RuntimeError("请在 Maya 图形会话中创建角色工作台")
@@ -322,11 +322,11 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('EditBlendShapes', ('03R · 原版 BlendShape 编辑',)), ('NewBlendShapes', ('03S · 原版新建 BlendShape',)),
                     ('Custom Controllers', ('07 · 自定义控制器',)))),
                 ('Pose', (
-                    ('Driving Systems', ('03 · 动画通道',
+                    ('Driving Systems', ('08 · 原版 Driving Systems', '03 · 动画通道',
                                          '04 · 区间模式转换',
                                          '05 · 控制空间事件')),
                     ('Corrective Shapes', ('07 · 原版 Corrective Shapes',)),
-                    ('Pose Functions', ('01 · 当前姿态',
+                    ('Pose Functions', ('09 · 原版 Pose Functions', '01 · 当前姿态',
                                         '02 · 全身动画',
                                         '06 · 角色预设')))),
                 ('Tools', (('Tools', ('01 · 外部 FBX 驱动角色',
@@ -1018,13 +1018,13 @@ def create_panel(controller: MayaPanelController | None = None):
 
             self.control_curve_targets = QtWidgets.QPlainTextEdit()
             self.control_curve_targets.setPlaceholderText(
-                "每行一个控制器路径；留空时处理当前角色的全部已登记控制曲线")
+                "每行一个控制器路径；自动缩放、调色板、宽度与旋转留空使用 Maya 当前选择")
             self.control_curve_targets.setMaximumHeight(76)
             self.control_curve_factor = QtWidgets.QDoubleSpinBox()
-            self.control_curve_factor.setRange(.01, 100.)
+            self.control_curve_factor.setRange(-3.402823466e38,3.402823466e38)
             self.control_curve_factor.setDecimals(3)
             self.control_curve_factor.setSingleStep(.1)
-            self.control_curve_factor.setValue(1.1)
+            self.control_curve_factor.setValue(1.)
             self.control_curve_color_mode = QtWidgets.QComboBox()
             self.control_curve_color_mode.addItem("按左右侧", "side")
             self.control_curve_color_mode.addItem("按控制类型", "type")
@@ -1045,6 +1045,53 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("自定义曲线", self.control_curve_custom_source)])
             form.addRow(self._button("缩放控制曲线", self._scale_control_curves))
             form.addRow(self._button("按 Skin 自动缩放", self._auto_scale_control_curves))
+            rotation_row=QtWidgets.QWidget()
+            rotation_layout=QtWidgets.QHBoxLayout(rotation_row)
+            rotation_layout.setContentsMargins(0,0,0,0)
+            for axis in 'xyz':
+                rotation_layout.addWidget(self._button(axis.upper()+' 90°',
+                    lambda axis=axis:self._snap_rotate_control_curves(axis)))
+            form.addRow('旋转曲线',rotation_row)
+            self.control_curve_palette_index=0
+            self.control_curve_custom_rgb=None
+            palette=QtWidgets.QWidget()
+            palette_layout=QtWidgets.QGridLayout(palette)
+            palette_layout.setContentsMargins(0,0,0,0)
+            palette_layout.setSpacing(2)
+            self.control_curve_palette_buttons=QtWidgets.QButtonGroup(self)
+            self.control_curve_palette_buttons.setExclusive(True)
+            for index,rgb in enumerate(self.controller.control_curve_palette_colors()):
+                button=QtWidgets.QPushButton('')
+                button.setCheckable(True)
+                button.setChecked(index==0)
+                button.setToolTip('Maya 颜色索引 '+str(index))
+                button.setMinimumSize(15,20)
+                red,green,blue=(round(value*255) for value in rgb)
+                button.setStyleSheet('QPushButton { background-color: rgb(%d,%d,%d); border: 1px solid #555; } '
+                    'QPushButton:checked { border: 2px solid white; }'%(red,green,blue))
+                button.clicked.connect(lambda checked=False,index=index:self._select_control_curve_palette(index))
+                self.control_curve_palette_buttons.addButton(button,index)
+                palette_layout.addWidget(button,index//16,index%16)
+            form.addRow('原版调色板',palette)
+            self.control_curve_palette_label=QtWidgets.QLabel('索引 0')
+            form.addRow(self.control_curve_palette_label)
+            form.addRow(self._button('编辑调色板颜色',self._choose_control_curve_palette_rgb))
+            form.addRow(self._button('设置颜色',self._set_control_curve_palette))
+            self.control_curve_width=QtWidgets.QSpinBox()
+            self.control_curve_width.setRange(-1,100)
+            self.control_curve_width.setValue(5)
+            form.addRow('曲线宽度',self.control_curve_width)
+            form.addRow(self._button('设置宽度',self._set_control_curve_width))
+            self.control_curve_select_type=QtWidgets.QComboBox()
+            self.control_curve_select_side=QtWidgets.QComboBox()
+            from adv_py.core.control_curve_selection import CONTROL_CURVE_TYPES,CONTROL_CURVE_SIDES
+            for value in CONTROL_CURVE_TYPES:self.control_curve_select_type.addItem(value,value)
+            for value,label in zip(CONTROL_CURVE_SIDES,('右侧','左侧','中间','全部')):
+                self.control_curve_select_side.addItem(label,value)
+            self.control_curve_select_side.setCurrentIndex(3)
+            form.addRow('选择类型',self.control_curve_select_type)
+            form.addRow('选择侧别',self.control_curve_select_side)
+            form.addRow(self._button('选择控制器',self._select_control_curves))
             form.addRow(self._button("设置控制曲线颜色", self._color_control_curves))
             form.addRow(self._button("镜像控制曲线形状", self._mirror_control_curves))
             form.addRow(self._button("替换控制器图标", self._swap_control_curves))
@@ -3105,6 +3152,43 @@ def create_panel(controller: MayaPanelController | None = None):
             count = self.controller.control_curves_auto_scale(
                 self._namespace(), controls, self.control_curve_skin.text())
             return f"已按 Skin 自动缩放 {count} 个控制曲线"
+
+        def _control_curve_style_targets(self):
+            return tuple(line.strip() for line in self.control_curve_targets.toPlainText().splitlines() if line.strip())
+
+        def _select_control_curves(self):
+            targets=self.controller.select_control_curves(self._namespace(),
+                self.control_curve_select_type.currentData(),self.control_curve_select_side.currentData())
+            return f'已选择 {len(targets)} 个控制器'
+
+        def _select_control_curve_palette(self,index):
+            self.control_curve_palette_index=index
+            self.control_curve_custom_rgb=None
+            self.control_curve_palette_label.setText('索引 '+str(index))
+
+        def _choose_control_curve_palette_rgb(self):
+            colors=self.controller.control_curve_palette_colors()
+            rgb=self.control_curve_custom_rgb or colors[self.control_curve_palette_index]
+            initial=QtGui.QColor.fromRgbF(*rgb)
+            color=QtWidgets.QColorDialog.getColor(initial,self,'编辑调色板颜色')
+            if color.isValid():
+                self.control_curve_custom_rgb=(color.redF(),color.greenF(),color.blueF())
+                self.control_curve_palette_label.setText('索引 %d · RGB %.3f, %.3f, %.3f'%
+                    (self.control_curve_palette_index,*self.control_curve_custom_rgb))
+
+        def _set_control_curve_palette(self):
+            count=self.controller.control_curves_palette(self._namespace(),self._control_curve_style_targets(),
+                self.control_curve_palette_index,rgb=self.control_curve_custom_rgb)
+            return f'已设置 {count} 个控制器形状的颜色'
+
+        def _set_control_curve_width(self):
+            count=self.controller.control_curves_width(self._namespace(),self._control_curve_style_targets(),
+                self.control_curve_width.value())
+            return f'已设置 {count} 个控制曲线的宽度'
+
+        def _snap_rotate_control_curves(self,axis):
+            count=self.controller.control_curves_snap_rotate(self._namespace(),self._control_curve_style_targets(),axis)
+            return f'已将 {count} 个控制曲线绕 {axis.upper()} 旋转 90 度'
 
         def _mirror_control_curves(self):
             controls = tuple(line.strip() for line in

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from adv_py.core.fbx_rig_autoscale import fbx_fk_projection_factor
+from adv_py.core.control_curve_projection import projection_cv_count
+from fnmatch import fnmatchcase
 
 
 def _curve_shape(cmds, control: str) -> str:
@@ -58,7 +60,9 @@ def _project_curve(cmds, control: str, shape: str, mesh: str, *,
         worldUpObject=control)[0]
     changed = 0
     try:
-        for index, cv in enumerate(_cvs(cmds, shape)):
+        count=projection_cv_count(int(cmds.getAttr(shape+'.form')),
+            int(cmds.getAttr(shape+'.spans')),int(cmds.getAttr(shape+'.degree')))
+        for index, cv in enumerate(_cvs(cmds, shape)[:count]):
             local = tuple(float(cmds.getAttr(cv + "." + axis + "Value"))
                           for axis in "xyz")
             factor = fbx_fk_projection_factor(source_control_name or control, index, local)
@@ -86,7 +90,7 @@ def _project_curve(cmds, control: str, shape: str, mesh: str, *,
                 if not projected:
                     continue
                 candidates = cmds.listRelatives(projected[0], children=True,
-                                                type="nurbsCurve", fullPath=True) or ()
+                                                fullPath=True) or ()
                 distances = []
                 for candidate in candidates:
                     if int(cmds.getAttr(candidate + ".spans")) == 0:
@@ -94,7 +98,7 @@ def _project_curve(cmds, control: str, shape: str, mesh: str, *,
                     hit = _world_position(cmds, candidate + ".cv[1]")
                     cmds.xform(probe, worldSpace=True, translation=hit)
                     depth = float(cmds.getAttr(probe + ".translateZ"))
-                    if depth >= 0:
+                    if 0 <= depth < 999:
                         distances.append(depth)
                 if not distances:
                     continue
@@ -127,7 +131,7 @@ def project_fbx_fk_controls(
     shapes = {name: _curve_shape(cmds, aliases.get(name, name))
               for name in control_names}
     eligible = tuple(name for name in control_names
-                     if name.startswith("FK") and not name.startswith("FKIK")
+                     if fnmatchcase(name,'FK*_*') and not name.startswith("FKIK")
                      and not name.endswith("_L"))
     if not eligible:
         return 0
