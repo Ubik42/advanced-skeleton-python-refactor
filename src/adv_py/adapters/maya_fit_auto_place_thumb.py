@@ -5,6 +5,7 @@ from .maya_fit_auto_place_fingers import project
 def detect_thumb(s):
     c=s.c
     if not c.objExists('asFitPivotWrist') or s.hit_thumb or not s.has_ncloth:return
+    s.host._require_transaction();s.host._transaction_changed=True
     current=c.getAttr('asFitScanCurve.translateX')
     c.setAttr('asFitScanCurve.translateX',c.getAttr('asFitScanCurveWrist.translateX'))
     project(s,'CombinedSkinUpper_M')

@@ -66,7 +66,11 @@ def body_scan(s):
         s.index=index;s.ankle_rotation=value(sampler+'.rotateY')
         c.setAttr(sampler+'.rotateY',0.)
         for index in range(1,7):c.createNode('transform',name='tempXform'+str(index),parent=sampler,skipSelect=True)
-        minimum,maximum=c.getAttr(sampler+'.boundingBoxMin')[0],c.getAttr(sampler+'.boundingBoxMax')[0]
+        # Source reads AnkleRotSamplerShape here, after creating six empty
+        # child transforms. The transform bbox also includes those children,
+        # which can pull the foot bounds toward their local origin.
+        shape=c.listRelatives(sampler,shapes=True,type='nurbsCurve')[0]
+        minimum,maximum=c.getAttr(shape+'.boundingBoxMin')[0],c.getAttr(shape+'.boundingBoxMax')[0]
         center=tuple((a+b)/2. for a,b in zip(minimum,maximum))
         points={1:(center[0],center[1],minimum[2]),2:(center[0],center[1],maximum[2]),
                 4:(minimum[0],center[1],center[2]),5:(maximum[0],center[1],center[2]),6:(center[0],center[1],maximum[2])}

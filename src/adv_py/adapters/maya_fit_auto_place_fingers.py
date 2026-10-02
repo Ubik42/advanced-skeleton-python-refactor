@@ -21,75 +21,146 @@ def project(s,skin,automatic=False,*,refresh=False,read_hits=True):
         s.hits=len(c.listRelatives(s.projected,children=True) or []) if s.projected else 0
 
 
-def detect_fingers(s):
+def _selected_vertices(c):
+    return c.ls(selection=True, flatten=True) or []
+
+
+def _selection_box(c):
+    return c.xform(query=True, worldSpace=True, boundingBox=True)
+
+
+def _center(box):
+    return tuple((box[i]+box[i+3])/2. for i in range(3))
+
+
+def _closest_upper_vertex(c):
+    index=c.getAttr('closestSampler.closestVertexIndex')
+    return 'CombinedSkinUpper_M.vtx['+str(index)+']'
+
+
+def _check_four_finger_interval(s):
+    """Retain the source's forward probe, including its unused half-way result."""
     c=s.c
-    if s.axis=='y' and not s.four_fingers and s.hits==4:project(s,'CombinedSkinUpper_M')
-    if s.axis!='y' or s.four_fingers or s.hits!=4:return
-    for index in range(1,199):
+    for step in range(1,199):
         agent=c.duplicate('asFitScanCurve',name='asFitScanCurveAgent')[0]
-        c.move(0,0,s.step_z/10.*index,agent,relative=True,objectSpace=True,worldSpaceDistance=True)
-        result=c.polyProjectCurve(agent,s.project_on,constructionHistory=True,direction=s.direction,
-                                 pointsOnEdges=False,curveSamples=50,automatic=False)
+        c.move(0,0,s.step_z/10.*step,agent,relative=True,
+               objectSpace=True,worldSpaceDistance=True)
+        result=c.polyProjectCurve(agent,s.project_on,constructionHistory=True,
+            direction=s.direction,pointsOnEdges=False,curveSamples=50,automatic=False)
         projection=c.rename(result[0],'asFitScanPolyProjectionCurvesAgent')
         hits=len(c.listRelatives(projection,children=True) or [])
         c.delete(agent,projection)
-        if hits!=4:break
-    # The source automatic re-projection does not overwrite numHits / the
-    # projectedCurves array used by the next outer iteration.
+        if hits!=4:
+            break
+
+
+def _remove_sampled_nail_shell(c):
+    """Source 52622: a shell that cannot grow to the wrist is removed."""
+    c.select(_closest_upper_vertex(c),replace=True)
+    for _ in range(199):
+        before=_selected_vertices(c)
+        box=_selection_box(c)
+        c.polySelectConstraint(pp=1,type=1)
+        if len(_selected_vertices(c))==len(before):
+            break
+        box=_selection_box(c)
+        if box[3]>c.getAttr('asFitHandleWrist.translateX'):
+            break
+    if c.getAttr('asFitHandleWrist.translateX')>box[3]:
+        faces(c)
+        c.delete(c.ls(selection=True))
+
+
+def _find_finger_tip(c,finger):
+    # Re-query after shell deletion because Maya renumbers the vertices.
+    c.select(_closest_upper_vertex(c),replace=True)
+    for _ in range(199):
+        before=_selection_box(c)
+        c.polySelectConstraint(pp=1,type=1)
+        after=_selection_box(c)
+        if after[0]<before[0]:
+            continue
+        minimum_x=999.
+        for vertex in _selected_vertices(c):
+            point=c.xform(vertex,query=True,worldSpace=True,translation=True)
+            if point[0]<minimum_x:
+                minimum_x=point[0]
+                c.select(vertex,replace=True)
+        break
+    selected=_selected_vertices(c)
+    point=c.xform(query=True,worldSpace=True,translation=True)[:3]
+    tip=c.createNode('transform',name='asFitPivot'+finger+'Finger4',
+                     parent='asFitPivotsFingers',skipSelect=True)
+    c.xform(tip,worldSpace=True,translation=point)
+    c.select(selected,replace=True)
+
+
+def _grow_finger_curve(s,finger):
+    """Keep averageDiam, prevBB and fingerGrowFail at procedure scope."""
+    c=s.c
+    points=[]
+    for ring_index in range(199):
+        before=_selected_vertices(c)
+        c.polySelectConstraint(pp=1,type=1)
+        grown=_selected_vertices(c)
+        c.select(before,deselect=True)
+        if not c.ls(selection=True):
+            s.finger_grow_failed=True
+            break
+        box=_selection_box(c)
+        diameter=(box[5]-box[2])/2.
+        if ring_index==4:
+            s.average_finger_diameter=diameter
+        knuckle=(ring_index>3 and diameter>s.average_finger_diameter*2.)
+        if knuckle:
+            node=c.createNode('transform',name='asFitPivot'+finger+'Finger1',
+                              parent='asFitPivotsFingers',skipSelect=True)
+            c.xform(node,worldSpace=True,translation=_center(s.previous_finger_box))
+        else:
+            points.append(_center(box))
+        s.previous_finger_box=box
+        c.select(grown,replace=True)
+        if knuckle:
+            break
+    curve=c.curve(degree=1,name='FingerCurve'+finger,point=points)
+    c.parent(curve,'asFitPivotsFingers',absolute=True)
+
+
+def _sample_finger(s,finger,projection_index):
+    c=s.c
+    # A retry keeps one curve and pivot pair. This avoids the original's
+    # duplicate-short-name failure without changing detection thresholds.
+    for name in ('FingerCurve'+finger,'asFitPivot'+finger+'Finger1',
+                 'asFitPivot'+finger+'Finger4'):
+        if c.objExists(name):
+            c.delete(c.ls(name,long=True))
+    curve='polyProjectionCurve1_'+str(projection_index+1)
+    minimum=c.getAttr(curve+'.boundingBoxMin')[0]
+    maximum=c.getAttr(curve+'.boundingBoxMax')[0]
+    s.max_finger_width=max(s.max_finger_width,maximum[2]-minimum[2])
+    point=tuple((a+b)/2. for a,b in zip(minimum,maximum))
+    c.setAttr('closestSampler.inPosition',*point,type='double3')
+    _remove_sampled_nail_shell(c)
+    _find_finger_tip(c,finger)
+    _grow_finger_curve(s,finger)
+
+
+def detect_fingers(s):
+    if s.axis!='y' or s.four_fingers or s.hits!=4:
+        return
+    s.host._require_transaction()
+    s.host._transaction_changed=True
+    project(s,'CombinedSkinUpper_M')
+    if s.hits!=4:
+        return
+    _check_four_finger_interval(s)
+    # Source automatic re-projection leaves numHits / projectedCurves alone.
     project(s,'CombinedSkinUpper_M',True,read_hits=False)
-    for index,finger in enumerate(FIT_AUTO_PLACE_FINGERS):
-        # Failed growth can retry on another scan slice. Keep one editable
-        # curve / pair of pivots per finger, rather than letting Maya create
-        # duplicate short names which make the original's next lookup fail.
-        for name in ('FingerCurve'+finger,'asFitPivot'+finger+'Finger1','asFitPivot'+finger+'Finger4'):
-            if c.objExists(name):c.delete(c.ls(name,long=True))
-        curve='polyProjectionCurve1_'+str(index+1)
-        minimum=c.getAttr(curve+'.boundingBoxMin')[0];maximum=c.getAttr(curve+'.boundingBoxMax')[0]
-        s.max_finger_width=max(s.max_finger_width,maximum[2]-minimum[2])
-        point=tuple((a+b)/2. for a,b in zip(minimum,maximum))
-        c.setAttr('closestSampler.inPosition',*point,type='double3')
-        def closest():return 'CombinedSkinUpper_M.vtx['+str(c.getAttr('closestSampler.closestVertexIndex'))+']'
-        c.select(closest(),replace=True)
-        for _ in range(199):
-            before=c.ls(selection=True,flatten=True) or [];box=c.xform(query=True,worldSpace=True,boundingBox=True)
-            c.polySelectConstraint(pp=1,type=1)
-            if len(c.ls(selection=True,flatten=True) or [])==len(before):break
-            box=c.xform(query=True,worldSpace=True,boundingBox=True)
-            if box[3]>c.getAttr('asFitHandleWrist.translateX'):break
-        if c.getAttr('asFitHandleWrist.translateX')>box[3]:
-            faces(c);c.delete(c.ls(selection=True))
-        c.select(closest(),replace=True)
-        for _ in range(199):
-            before=c.xform(query=True,worldSpace=True,boundingBox=True);c.polySelectConstraint(pp=1,type=1)
-            after=c.xform(query=True,worldSpace=True,boundingBox=True)
-            if not after[0]<before[0]:
-                minimum_x=999.
-                for vertex in c.ls(selection=True,flatten=True) or []:
-                    point=c.xform(vertex,query=True,worldSpace=True,translation=True)
-                    if point[0]<minimum_x:minimum_x=point[0];c.select(vertex,replace=True)
-                break
-        selected=c.ls(selection=True,flatten=True) or []
-        point=c.xform(query=True,worldSpace=True,translation=True)[:3]
-        tip=c.createNode('transform',name='asFitPivot'+finger+'Finger4',parent='asFitPivotsFingers',skipSelect=True)
-        c.xform(tip,worldSpace=True,translation=point);c.select(selected,replace=True)
-        points=[]
-        for index in range(199):
-            before=c.ls(selection=True,flatten=True) or [];c.polySelectConstraint(pp=1,type=1)
-            grown=c.ls(selection=True,flatten=True) or [];c.select(before,deselect=True)
-            if not c.ls(selection=True):s.finger_grow_failed=True;break
-            box=c.xform(query=True,worldSpace=True,boundingBox=True);diameter=(box[5]-box[2])/2.
-            if index==4:s.average_finger_diameter=diameter
-            knuckle=index>3 and diameter>s.average_finger_diameter*2.
-            if knuckle:
-                node=c.createNode('transform',name='asFitPivot'+finger+'Finger1',parent='asFitPivotsFingers',skipSelect=True)
-                c.xform(node,worldSpace=True,translation=tuple((s.previous_finger_box[i]+s.previous_finger_box[i+3])/2. for i in range(3)))
-            else:points.append(tuple((box[i]+box[i+3])/2. for i in range(3)))
-            s.previous_finger_box=box;c.select(grown,replace=True)
-            if knuckle:break
-        curve=c.curve(degree=1,name='FingerCurve'+finger,point=points)
-        c.parent(curve,'asFitPivotsFingers',absolute=True)
-    c.setAttr('AutoPlacing.fingerWidth',s.max_finger_width)
-    if not s.finger_grow_failed:s.four_fingers=True
+    for projection_index,finger in enumerate(FIT_AUTO_PLACE_FINGERS):
+        _sample_finger(s,finger,projection_index)
+    s.c.setAttr('AutoPlacing.fingerWidth',s.max_finger_width)
+    if not s.finger_grow_failed:
+        s.four_fingers=True
 
 
 def stock_selected(host,command):
@@ -101,6 +172,7 @@ def stock_selected(host,command):
 
 def straighten_fingers(s):
     if not s.four_fingers or s.has_ncloth:return
+    s.host._require_transaction();s.host._transaction_changed=True
     from .maya_fit_auto_place_nucleus import temporary_nucleus
     with temporary_nucleus(s.host) as nucleus:
         s.nucleus=nucleus

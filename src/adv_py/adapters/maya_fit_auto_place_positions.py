@@ -3,6 +3,7 @@ from .maya_fit_auto_place_projection import projected_curve
 
 
 def from_scan_curves(host,container='FitSkeleton'):
+    host._require_transaction();host._transaction_changed=True
     c=host._cmds
     selection=c.ls(selection=True,long=True) or []
     maximum=c.getAttr('AutoPlacing.bbMaxY')
@@ -97,6 +98,7 @@ def set_fat(host,container='FitSkeleton'):
     Preserve that behavior rather than silently applying guessed torso radii.
     The five explicit finger chains do receive the source fingerWidth values.
     """
+    host._require_transaction();host._transaction_changed=True
     c=host._cmds;width=c.getAttr('AutoPlacing.fingerWidth')/2.
     joints=tuple(c.listRelatives(container,allDescendents=True,type='joint',fullPath=True) or [])
     host.write_missing_fit_deform_profiles(container,joints)

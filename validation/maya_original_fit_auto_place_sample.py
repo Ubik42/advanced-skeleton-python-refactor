@@ -10,6 +10,7 @@ MODEL=ROOT/'validation/results/fit-auto-place-sam/sam-model.ma'
 def fixture():
     from maya import cmds as c
     c.file(new=True,force=True)
+    c.selectMode(object=True)
     c.file(str(ROOT/'local/adv_6_925/AdvancedSkeletonFiles/fitSkeletons/biped.ma'),i=True,executeScriptNodes=False)
     c.file(str(MODEL),i=True,executeScriptNodes=False)
     if not c.objExists('FitSkeleton.fitSkeletonTemplate'):c.addAttr('FitSkeleton',longName='fitSkeletonTemplate',dataType='string')

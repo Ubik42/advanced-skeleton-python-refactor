@@ -8,17 +8,20 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
 
-def main(output):
-    import maya.standalone
-    maya.standalone.initialize(name='python')
+def main(output,initialize=True):
+    if initialize:
+        import maya.standalone
+        maya.standalone.initialize(name='python')
     from maya import cmds as c
     from adv_py.adapters.maya_fit import MayaFitJointHost
     from adv_py.application.fit_auto_place import AutoPlaceFit
     from adv_py.adapters import maya_fit_auto_place as engine
     from adv_py.adapters import maya_fit_auto_place_fingers as fingers
+    from adv_py.adapters import maya_fit_auto_place_arm_scan as arms
 
     output.mkdir(parents=True, exist_ok=True)
     c.file(new=True, force=True)
+    c.selectMode(object=True)
     c.file(str(ROOT / 'local/adv_6_925/AdvancedSkeletonFiles/fitSkeletons/biped.ma'),
            i=True, executeScriptNodes=False)
     c.file(str(ROOT / 'validation/results/fit-auto-place-sam/sam-model.ma'),
@@ -31,12 +34,18 @@ def main(output):
     original_detect, original_finish = engine.detect_fingers, engine.finish
 
     def trace(frame, event, arg):
-        if frame.f_code.co_filename == fingers.__file__ and frame.f_code.co_name == 'detect_fingers':
+        if frame.f_code.co_filename==arms.__file__ and frame.f_code.co_name=='arm_scan' and event=='line':
+            values=frame.f_locals
+            if values['s'].axis=='yArmStraight' and 'vertices' in values:
+                report['arm_selection']=list(values['vertices'])
+            if values['s'].axis=='yArmStraight' and 'point' in values and 'vertices' not in values:
+                report['arm_sample_point']=list(values['point'])
+        if frame.f_code.co_filename == fingers.__file__ and frame.f_code.co_name == '_grow_finger_curve':
             if event == 'line':
                 values = frame.f_locals
                 state = values['s']
                 if 'finger' in values:
-                    current = {'finger': values['finger'], 'index': values.get('index'),
+                    current = {'finger': values['finger'], 'index': values.get('ring_index'),
                                'points': len(values.get('points', ())),
                                'average_diameter': state.average_finger_diameter,
                                'diameter': values.get('diameter'),
@@ -72,8 +81,28 @@ def main(output):
 
     engine.detect_fingers, engine.finish = detect, finish
     original_arm=engine.arm_scan
+    active_arm=[None]
+    raw_get_attr=c.getAttr
+    def get_attr(*args,**kwargs):
+        value=raw_get_attr(*args,**kwargs)
+        if args and args[0]=='closestSampler.closestVertexIndex' and active_arm[0]=='yArmStraight':
+            report['arm_sampler']={'index':value,'point':raw_get_attr('closestSampler.inPosition'),
+                'input':c.listConnections('closestSampler.inMesh',source=True,destination=False,plugs=True),
+                'mode':c.selectMode(query=True,object=True)}
+        return value
+    c.getAttr=get_attr
+    raw_skin_percent=c.skinPercent
+    def skin_percent(*args,**kwargs):
+        if kwargs.get('transformValue')==[('asFitShoulderStraight',1.)]:
+            report['arm_constraints']=c.polySelectConstraint(query=True,stateString=True)
+            report['arm_mask']=(c.selectType(query=True,polymeshVertex=True),c.selectMode(query=True,object=True))
+        return raw_skin_percent(*args,**kwargs)
+    c.skinPercent=skin_percent
     def arm(state):
-        result=original_arm(state)
+        active_arm[0]=state.axis
+        sys.settrace(trace)
+        try:result=original_arm(state)
+        finally:sys.settrace(None);active_arm[0]=None
         if state.axis=='yArmStraight' and state.break_axis:
             c.file(rename=str(output/'shoulder-checkpoint.mb'))
             c.file(save=True,type='mayaBinary',force=True)
@@ -89,8 +118,11 @@ def main(output):
         sys.settrace(None)
         engine.detect_fingers, engine.finish = original_detect, original_finish
         engine.arm_scan=original_arm
+        c.skinPercent=raw_skin_percent
+        c.getAttr=raw_get_attr
         (output / 'diagnostic.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
-    print(json.dumps({k: v for k, v in report.items() if k != 'scans'}, indent=2))
+    print(json.dumps({k: v for k, v in report.items()
+                      if k not in ('scans','arm_selection','arm_constraints')}, indent=2))
 
 
 if __name__ == '__main__':

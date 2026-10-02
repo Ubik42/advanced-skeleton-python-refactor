@@ -3,6 +3,7 @@ from .maya_fit_auto_place_projection import save_projection
 
 
 def build_loft(host,axis):
+    host._require_transaction();host._transaction_changed=True
     c=host._cmds
     reps=('Wrist','Elbow','Shoulder') if axis=='yLoft' else ('Toes','Ankle','Knee','Hip','Root','Chest','Spine1','Neck','Head')
     prefix='asFitProjectionLoftCurve'+axis

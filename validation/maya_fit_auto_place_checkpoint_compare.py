@@ -13,8 +13,10 @@ def main():
     from maya.api import OpenMayaAnim as oma
     snapshots=[]
     stage = '--shoulder' in sys.argv
+    gui = '--gui' in sys.argv
     paths=(ROOT/'validation/results/fit-auto-place-native-trace/shoulder-checkpoint.mb',
-           ROOT/'validation/results/fit-auto-place-diagnostic-v3/shoulder-checkpoint.mb') if stage else (
+           ROOT/('validation/results/fit-auto-place-gui-selection/shoulder-checkpoint.mb' if gui else
+                 'validation/results/fit-auto-place-diagnostic-v3/shoulder-checkpoint.mb')) if stage else (
            ROOT/'validation/results/fit-auto-place-sam-source/native-checkpoint.mb',
            ROOT/'validation/results/fit-auto-place-diagnostic-v2/before-cleanup.mb')
     for path in paths:
@@ -64,7 +66,8 @@ def main():
             if row['vertices']==python[name]['vertices']:
                 report[name]['maximum_point_error']=max(abs(a-b) for pa,pb in zip(row['points'],python[name]['points'])
                                                        for a,b in zip(pa,pb))
-    target=ROOT/('validation/results/fit-auto-place-diagnostic-v3/shoulder-comparison.json' if stage else
+    target=ROOT/('validation/results/fit-auto-place-gui-selection/shoulder-comparison.json' if stage and gui else
+                'validation/results/fit-auto-place-diagnostic-v3/shoulder-comparison.json' if stage else
                 'validation/results/fit-auto-place-diagnostic-v2/checkpoints.json')
     target.write_text(json.dumps(report,indent=2),encoding='utf-8')
     print(json.dumps(report,indent=2))

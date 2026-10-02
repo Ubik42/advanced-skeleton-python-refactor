@@ -25,6 +25,25 @@ def main():
         marker='\t\t//checks'
         trace='\t\tif ($zxy[$z]=="yElbowStraight") print ("ADV_TRACE elbow "+$i+" "+$numHits+" "+`getAttr asFitScanCurve.tx`+" "+$firstNonFingerSplitTx+"\\n");\n'
         procedure=procedure.replace(marker,trace+marker,1)
+        # Observe procedure locals without evaluating geometry or saving the
+        # scene before the selection has been computed.
+        arm_start=procedure.index('//find $armVtxs')
+        arm_end=procedure.index('//split Left/Right',arm_start)
+        arm=procedure[arm_start:arm_end]
+        trace_path=(OUTPUT/'arm-selection.txt').as_posix()
+        sample_marker='$closestVtxIndex=`getAttr closestSampler.closestVertexIndex`;'
+        sample_trace=('\n\t\t\t\tint $advTraceFile=`fopen "'+trace_path+'" "w"`; '
+            'fprint $advTraceFile ("sample "+$closestVtxIndex+" "+$pos[0]+" "+$pos[1]+" "+$pos[2]+"\\n"); '
+            'fprint $advTraceFile (`polySelectConstraint -q -sts`+"\\n"); '
+            'fprint $advTraceFile ("mask "+`selectType -q -pv`+" "+`selectMode -q -object`+"\\n"); fclose $advTraceFile;')
+        arm=arm.replace(sample_marker,sample_marker+sample_trace,1)
+        selection_marker='$armVtxs=`ls -sl -fl`;'
+        selection_trace=('\n\t\t\t\t$advTraceFile=`fopen "'+trace_path+'" "a"`; '
+            'fprint $advTraceFile ("count "+size($armVtxs)+"\\n"); '
+            'for ($advTraceIndex=0;$advTraceIndex<size($armVtxs);$advTraceIndex++) '
+            'fprint $advTraceFile ($armVtxs[$advTraceIndex]+"\\n"); fclose $advTraceFile;')
+        arm=arm.replace(selection_marker,selection_marker+'\nint $advTraceIndex;'+selection_trace,1)
+        procedure=procedure[:arm_start]+arm+procedure[arm_end:]
         mel.eval(procedure)
         skin=fixture()
         for field,value in (('Skin',' '.join(skin)),('All',''),('RightEye',''),('LeftEye','')):
