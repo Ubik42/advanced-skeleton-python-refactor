@@ -90,6 +90,14 @@ class BodySplinePlan:
     source_scale_indices: tuple[int,...] = ()
 
     source_ik_chain: tuple[BodyLimbMechanismJointSpec,...] = ()
+    source_solver_tail: BodyLimbMechanismJointSpec | None = None
+
+    @property
+    def solver_ik(self):
+        if self.source_solver_tail is None:return self.native_ik
+        chain=self.native_ik
+        return (chain if self.source_solver_tail.parent_path==chain[-1].path else chain[:-1])+(self.source_solver_tail,)
+
 
     @property
     def native_ik(self):
@@ -294,6 +302,8 @@ class BodySplinePlan:
             'AdvPy_SplineFlipUpAxis','AdvPy_SplineFlipVector') + (
             ('AdvPy_SplineIKEndLocalStartOrient',)
             if len(self.body_joints)>2 else ())
+        if self.source_solver_tail is not None:
+            fixed=tuple(name for name in fixed if name!='AdvPy_SplineChestOrient')+(self.source_solver_tail.name,)
         targets=tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(len(self.targets)) for suffix in
                       (('Offset','','Shape') if self.source_curve_points else ('Offset','','Shape','Matrix','Position')))
         cvs = (tuple(f'AdvPy_SplineCV{i}{suffix}'
@@ -316,6 +326,9 @@ class BodySplinePlan:
                       for kind in (('Length',) if i in self.source_body_matrix_indices
                                    else ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale')))
         outputs+=tuple(f'AdvPy_SplineLength{key}' for key in self.native_keys if not isinstance(key,int))
+        if self.source_solver_tail is not None:
+            outputs+=('AdvPy_SplineLengthTail','AdvPy_SplineLengthBlendTail')+tuple(
+                f'AdvPy_SplineLengthBlend{key}' for key in self.native_keys[1:-1])
         outputs+=tuple(f'AdvPy_SplineBody{i}{suffix}'
                        for i in self.source_body_matrix_indices
                        for suffix in ('ScaleBlend','ScaleCM','BodyBM','BodyMM'))
@@ -350,10 +363,15 @@ class BodySplinePlan:
                 f'AdvPy_SplineIK{kind}{key}' for key in self.native_keys
                 for kind in ('ArcSample','ArcPoint','ArcFrame','ArcLocalMM','ArcLocalPM','ArcWorldMM','SpFollowMM','AcFollowMM','AcFollowPM','AcFollowWorldMM','Output','OutputBM'))+tuple(
                 f'AdvPy_SplineIKArcAimMatrix{key}' for key in self.native_keys[:-1])
+        if self.source_solver_tail is not None:
+            even+=('AdvPy_SplineIKSpEndRotation','AdvPy_SplineIKSpEndPosition','AdvPy_SplineIKSpEndMatrix')
         twist=('AdvPy_SplineTwistRamp',)+tuple(
             f'AdvPy_SplineTwist{kind}{i}'
             for i in range(1,len(self.targets)-1)
             for kind in ('Relative','Decompose','QuatToEuler'))
+        if self.source_solver_tail is not None:
+            twist+=tuple(f'AdvPy_SplineTwistOffsetRelative{i}' for i in range(1,len(self.targets)-1))
+            twist+=tuple(f'AdvPy_SplineTwistLocalOrient{i}' for i in range(1,len(self.targets)-1))
         follow=('AdvPy_SplineFollowStart','AdvPy_SplineFollowEnd',
                 'AdvPy_SplineFollowStartConstraint',
                 'AdvPy_SplineFollowEndConstraint',

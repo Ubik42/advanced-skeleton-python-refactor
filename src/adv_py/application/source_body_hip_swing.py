@@ -38,7 +38,10 @@ def build_source_hip_swing(host,selection,root,body,fk,segments,parts):
         child_fk.offset_path,'AdvPy_SourceRootRemoveRotMM.matrixIn[0]',body.root,child.path,
         leg_lock_weight='AdvPy_SourceRootLegLockUnit.output' if root.leg_lock_enabled else None,
         root_fk_weight=root.spline_reverse,
-        root_fkx_parent_inverse=root.fk_receiver+'.parentInverseMatrix[0]',
+        # asParentConstraint consumes the actual DAG parent's inverse.
+        # A receiver's parentInverseMatrix includes its OPM and feeds back
+        # into this very graph; legacy repair must not be needed on new rigs.
+        root_fkx_parent_inverse=root.fk_receiver.rsplit('|',1)[0]+'.worldInverseMatrix[0]',
         leg_lock_enabled=root.leg_lock_enabled,
         independent_child_receiver=any(follower.path==child_fk.parent_path for follower in fk.followers))
     plan=plan_hip_swing_no_parts(selection,topology,radius=root_control.radius,

@@ -83,7 +83,18 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
             expanded+=1+sum(part.kind=="inbetween" and part.start_body_name==joint.name for part in parts) if index<len(source)-1 else 1
         spline=replace(spline,source_mode=mode,source_scale_indices=tuple(indices))
         spline=retain_source_spline_layout(spline,saved,change_count=system in counts)
-        plans.append(_expand_source_ik(spline,parts))
+        expanded_plan=_expand_source_ik(spline,parts)
+        if expanded_plan.source_ik_chain:
+            tail=expanded_plan.native_ik[-1]
+            # MEL IKfake1 lives below the end unless it is an unbound leaf.
+            has_child=any(node.dag_parent==info.end for node in hierarchy.joints)
+            parent=tail.path if has_child else expanded_plan.native_ik[-2].path
+            from .body_limb_mechanisms import BodyLimbMechanismJointSpec
+            end_fake=BodyLimbMechanismJointSpec(tail.role,tail.side,tail.source_joint,
+                parent+'|'+spline.node_name('AdvPy_SplineIKEndFake'),
+                spline.node_name('AdvPy_SplineIKEndFake'),parent,tail.world_position,tail.world_axes)
+            expanded_plan=replace(expanded_plan,source_solver_tail=end_fake)
+        plans.append(expanded_plan)
     if saved_layouts is not None and len(plans)!=len(saved_layouts):
         raise FitSkeletonValidationError('来源 Spline 重建不能静默增删已保存系统')
     if counts.keys()-{plan.system_name for plan in plans}:
@@ -185,6 +196,5 @@ def _expand_source_ik(plan,parts):
             item=BodyLimbMechanismJointSpec(joint.role,joint.side,source,
                 parent+'|'+name,name,parent,part.world_position,joint.world_axes)
             chain.append(item);parent=item.path
-    if len(chain)==len(base):return plan
     return replace(plan,joints=plan.joints[:count]+tuple(updated),source_ik_chain=tuple(chain),source_curve_points=tuple(joint.world_position for joint in chain),
                    source_scale_indices=tuple(index for index,joint in enumerate(chain) if joint in updated))

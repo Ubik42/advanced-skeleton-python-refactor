@@ -46,6 +46,14 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
                     joint.constraint_name)
     for spline in spline_plans:
         count = len(spline.body_joints)
+        if spline.body_joints[0].rsplit('|',1)[-1]=='Root_M':
+            # RootBM also drives the children's XformInverter. Reading only
+            # Root FK silently drops firstJointFixed=0 Spline rotation.
+            blended[spline.body_joints[0]]=(
+                independent.get(spline.body_joints[0],fk_receivers.get(spline.joints[0].path,
+                    spline.joints[0].path+'.worldMatrix[0]')),
+                spline.root_path+'|'+spline.node_name('AdvPy_SplineFirstFixedOutput')+'.worldMatrix[0]',
+                spline.mode_weight,spline.node_name('AdvPy_SplineFKOrient0'))
         for index in range(1, count):
             blended[spline.body_joints[index]] = (
                 fk_receivers.get(spline.joints[index].path,spline.joints[index].path + ".worldMatrix[0]"),

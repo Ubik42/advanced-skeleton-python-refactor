@@ -49,17 +49,32 @@ def create(host,plan,shape,ik):
         c.connectAttr(_names(keys[index+1])['ArcFrame']+'.worldMatrix[0]',aim+'.primaryTargetMatrix')
         c.connectAttr(joint.path+'.worldMatrix[0]',aim+'.secondaryTargetMatrix')
         _arc_world(c,plan,names,aim+'.outputMatrix')
+    if plan.source_solver_tail is not None:
+        rotation=c.createNode('pickMatrix',name='AdvPy_SplineIKSpEndRotation',skipSelect=True)
+        position=c.createNode('pickMatrix',name='AdvPy_SplineIKSpEndPosition',skipSelect=True)
+        mixer=c.createNode('multMatrix',name='AdvPy_SplineIKSpEndMatrix',skipSelect=True)
+        c.connectAttr(end+'.worldMatrix[0]',rotation+'.inputMatrix')
+        for attr in ('useTranslate','useScale','useShear'):c.setAttr(rotation+'.'+attr,False)
+        c.connectAttr(ik[-1].path+'.worldMatrix[0]',position+'.inputMatrix')
+        for attr in ('useRotate','useScale','useShear'):c.setAttr(position+'.'+attr,False)
+        c.connectAttr(rotation+'.outputMatrix',mixer+'.matrixIn[0]')
+        c.connectAttr(position+'.outputMatrix',mixer+'.matrixIn[1]')
     for index,(key,joint,bind) in enumerate(zip(keys,ik,binds)):
         names=_names(key)
         for kind,source in (('SpFollowMM',joint.path),('AcFollowMM',names['ArcFrame'])):
             matrix=c.createNode('multMatrix',name=names[kind],skipSelect=True)
             offset=tuple(om.MMatrix(bind)*om.MMatrix(c.getAttr(source+'.worldMatrix[0]')).inverse())
+            if kind=='SpFollowMM' and index==len(keys)-1 and plan.source_solver_tail is not None:
+                clean=om.MTransformationMatrix(om.MMatrix(offset));clean.setRotation(om.MEulerRotation())
+                offset=tuple(clean.asMatrix())
             c.addAttr(matrix,longName='advPySplineSourceBind',dataType='matrix')
             c.setAttr(matrix+'.advPySplineSourceBind',*offset,type='matrix',lock=True)
             c.addAttr(matrix,longName='advPySplineSourceBindRecord',dataType='string')
             c.setAttr(matrix+'.advPySplineSourceBindRecord',json.dumps(offset),type='string',lock=True)
             c.connectAttr(matrix+'.advPySplineSourceBind',matrix+'.matrixIn[0]')
-            c.connectAttr(source+'.worldMatrix[0]',matrix+'.matrixIn[1]')
+            c.connectAttr('AdvPy_SplineIKSpEndMatrix.matrixSum'
+                          if kind=='SpFollowMM' and index==len(keys)-1 and plan.source_solver_tail is not None
+                          else source+'.worldMatrix[0]',matrix+'.matrixIn[1]')
         pick=c.createNode('pickMatrix',name=names['AcFollowPM'],skipSelect=True)
         c.connectAttr(plan.scale_reference+'.worldInverseMatrix[0]',names['AcFollowMM']+'.matrixIn[2]')
         c.connectAttr(names['AcFollowMM']+'.matrixSum',pick+'.inputMatrix')
@@ -112,7 +127,8 @@ def audit(host,plan,shape,ik):
             if (not c.getAttr(matrix+'.advPySplineSourceBindRecord',lock=True)
                     or tuple(json.loads(c.getAttr(matrix+'.advPySplineSourceBindRecord')))!=tuple(c.getAttr(matrix+'.advPySplineSourceBind'))):
                 raise FitSkeletonValidationError('来源 Spline FollowOffset 绑定矩阵记录变化')
-            edges.extend(((matrix+'.advPySplineSourceBind',matrix+'.matrixIn[0]'),(source+'.worldMatrix[0]',matrix+'.matrixIn[1]')))
+            edges.extend(((matrix+'.advPySplineSourceBind',matrix+'.matrixIn[0]'),('AdvPy_SplineIKSpEndMatrix.matrixSum' if kind=='SpFollowMM' and index==len(keys)-1 and plan.source_solver_tail is not None
+                     else source+'.worldMatrix[0]',matrix+'.matrixIn[1]')))
         pick=names['AcFollowPM'];blend=names['OutputBM']
         if c.getAttr(pick+'.useScale') or c.getAttr(pick+'.useShear'):
             raise FitSkeletonValidationError('来源 Spline IKAc 必须剔除缩放和剪切')
@@ -139,6 +155,14 @@ def audit(host,plan,shape,ik):
     for name,attrs in (('AdvPy_SplineIKArcEndRotation',('useTranslate','useScale','useShear')),
                        ('AdvPy_SplineIKArcEndPosition',('useRotate','useScale','useShear'))):
         if any(c.getAttr(name+'.'+attr) for attr in attrs):raise FitSkeletonValidationError('来源 Spline 末端矩阵过滤被修改')
+    if plan.source_solver_tail is not None:
+        edges.extend(((end+'.worldMatrix[0]','AdvPy_SplineIKSpEndRotation.inputMatrix'),
+            (ik[-1].path+'.worldMatrix[0]','AdvPy_SplineIKSpEndPosition.inputMatrix'),
+            ('AdvPy_SplineIKSpEndRotation.outputMatrix','AdvPy_SplineIKSpEndMatrix.matrixIn[0]'),
+            ('AdvPy_SplineIKSpEndPosition.outputMatrix','AdvPy_SplineIKSpEndMatrix.matrixIn[1]')))
+        for node,attrs in (('AdvPy_SplineIKSpEndRotation',('useTranslate','useScale','useShear')),
+                           ('AdvPy_SplineIKSpEndPosition',('useRotate','useScale','useShear'))):
+            if any(c.getAttr(node+'.'+attr) for attr in attrs):raise FitSkeletonValidationError('来源 Spline 非伸展末端过滤被修改')
     bad=[pair for pair in edges if not c.isConnected(*pair)]
     if bad:raise FitSkeletonValidationError('来源 Spline 原版双链矩阵接线被替换：'+repr(bad[:2]))
 

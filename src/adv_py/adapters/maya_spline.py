@@ -64,6 +64,7 @@ def prepare(host,plan):
                                    plan.isolated_mid_follow_graph),
               type='string',lock=True)
     for joint in plan.joints[:len(plan.body_joints)]+plan.native_ik:host.create_body_arm_mechanism_joint(joint)
+    if plan.source_solver_tail is not None:host.create_body_arm_mechanism_joint(plan.source_solver_tail)
     last=plan.joints[len(plan.body_joints)-1]
     host._spine_frame('AdvPy_SplineChestSpace',plan.chest_space.rsplit('|',1)[0],last.world_position,last.world_axes)
 
@@ -184,7 +185,7 @@ def create(host,plan):
     c.pointConstraint(_fk_root_source(host, plan),fk[0].path,
                       maintainOffset=False,name='AdvPy_SplineFKRootPoint')
     c.pointConstraint(plan.driver_targets[0],ik[0].path,maintainOffset=False,name='AdvPy_SplineIKRootPoint')
-    handle,effector=c.ikHandle(name='AdvPy_SplineIKHandle',startJoint=ik[0].path,endEffector=ik[-1].path,
+    handle,effector=c.ikHandle(name='AdvPy_SplineIKHandle',startJoint=ik[0].path,endEffector=plan.solver_ik[-1].path,
         solver='ikSplineSolver',curve=plan.curve,createCurve=False,parentCurve=False)
     c.rename(effector,'AdvPy_SplineIKEffector');c.parent(handle,plan.root_path)
     for attr,value in (('dTwistControlEnable',True),('dWorldUpType',3 if n==2 else 4),
@@ -219,7 +220,8 @@ def create(host,plan):
         maya_spline_twist.create(host, plan)
     if plan.mid_follow_graph:
         maya_spline_follow.create(host, plan)
-    c.orientConstraint(plan.driver_targets[-1],ik[-1].path,maintainOffset=True,name='AdvPy_SplineChestOrient')
+    if plan.source_solver_tail is None:
+        c.orientConstraint(plan.driver_targets[-1],ik[-1].path,maintainOffset=True,name='AdvPy_SplineChestOrient')
     c.createNode('curveInfo',name='AdvPy_SplineArc',skipSelect=True)
     c.connectAttr(shape+('.worldSpace[0]' if plan.source_ik_chain else '.local'),'AdvPy_SplineArc.inputCurve')
     c.createNode('multiplyDivide',name='AdvPy_SplineRatio',skipSelect=True)
@@ -299,9 +301,13 @@ def create(host,plan):
         for axis in 'XYZ':c.connectAttr(volume+'.output'+axis,joint.path+'.scale'+axis)
         if i:
             c.connectAttr(ik[ordinal-1].path+'.scale',joint.path+'.inverseScale',force=True)
-            c.createNode('multiplyDivide',name=f'AdvPy_SplineLength{i}',skipSelect=True)
-            c.setAttr(f'AdvPy_SplineLength{i}.input1X',plan.native_lengths[ordinal-1]);c.connectAttr('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X')
-            c.connectAttr(f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX')
+            if plan.source_solver_tail is None:
+                c.createNode('multiplyDivide',name=f'AdvPy_SplineLength{i}',skipSelect=True)
+                c.setAttr(f'AdvPy_SplineLength{i}.input1X',plan.native_lengths[ordinal-1]);c.connectAttr('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X')
+                c.connectAttr(f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX')
+    if plan.source_solver_tail is not None:
+        from . import maya_source_spline_lengths
+        maya_source_spline_lengths.create(host,plan)
     if plan.even_stretch_graph:
         maya_spline_even.create(host, plan, shape, ik)
     if plan.curved:
@@ -445,8 +451,7 @@ def audit(host,plan,*,source_visibility_ready=True):
              _fk_root_source(host, plan)),
             ('AdvPy_SplineIKRootPoint', c.pointConstraint,
              plan.driver_targets[0]),
-            ('AdvPy_SplineChestOrient', c.orientConstraint,
-             plan.driver_targets[-1])):
+            *((('AdvPy_SplineChestOrient',c.orientConstraint,plan.driver_targets[-1]),) if plan.source_solver_tail is None else ())):
         actual = tuple(host._resolve_connected_node(node)
                        for node in command(name, query=True,
                                            targetList=True) or [])
@@ -463,9 +468,9 @@ def audit(host,plan,*,source_visibility_ready=True):
     if c.ikHandle('AdvPy_SplineIKHandle',q=True,solver=True)!='ikSplineSolver':raise FitSkeletonValidationError('Spline 求解器被替换')
     if plan.source_ik_chain:
         actual=tuple(host._resolve_connected_node(node) for node in c.ikHandle('AdvPy_SplineIKHandle',q=True,jointList=True))
-        if actual!=tuple(joint.path for joint in ik[:-1]):
+        if actual!=tuple(joint.path for joint in plan.solver_ik[:-1]):
             raise FitSkeletonValidationError('来源 Spline 求解链遗漏或替换了 Inbetween')
-        for joint in ik:
+        for joint in (*ik,*((plan.source_solver_tail,) if plan.source_solver_tail is not None else ())):
             if (c.listRelatives(joint.path,parent=True,fullPath=True) or [])!=[joint.parent_path]:
                 raise FitSkeletonValidationError('来源 Spline 完整 IK 父链改变')
     shape=plan.curve+'|AdvPy_SplineCurveShape'
@@ -597,8 +602,14 @@ def audit(host,plan,*,source_visibility_ready=True):
         else:
             edges += [('AdvPy_SplineVolume.outputX',joint.path+'.scale'+axis)
                       for axis in 'YZ']
-        if i:edges += [('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X'),
-            (f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX'),(ik[ordinal-1].path+'.scale',joint.path+'.inverseScale')]
+        if i:
+            edges.append((ik[ordinal-1].path+'.scale',joint.path+'.inverseScale'))
+            if plan.source_solver_tail is None:
+                edges += [('AdvPy_SplineClamp.outputR',f'AdvPy_SplineLength{i}.input2X'),
+                    (f'AdvPy_SplineLength{i}.outputX',joint.path+'.translateX')]
+    if plan.source_solver_tail is not None:
+        from . import maya_source_spline_lengths
+        maya_source_spline_lengths.audit(host,plan)
     if new_scaling:
         if not original_volume_graph:
             edges.append(('AdvPy_SplineVolume.outputX',

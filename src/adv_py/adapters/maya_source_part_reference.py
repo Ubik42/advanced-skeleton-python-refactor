@@ -45,8 +45,14 @@ def create(host, inputs, independent, blended):
                 (blend[0],'inputMatrix'),(blend[1],'target[0].targetMatrix'),
                 (blend[2],'target[0].weight'))))
             world=blend_name+'.outputMatrix'
-        nodes.append(SourceRpNode(matrix,'multMatrix',connections=(
-            (world,'matrixIn[0]'),(parent_world_inverse(host,frame),'matrixIn[1]'))))
+        sources=[world]
+        # MEL 84453–84466 inserts the same Root inbetween inverse rotation
+        # before RootBM when it supplies children's twist reference frames.
+        if parent.rsplit('|',1)[-1]=='Root_M' and c.objExists('AdvPy_SourceRootRemoveRotIM.outputMatrix'):
+            sources.insert(0,'AdvPy_SourceRootRemoveRotIM.outputMatrix')
+        sources.append(parent_world_inverse(host,frame))
+        nodes.append(SourceRpNode(matrix,'multMatrix',connections=tuple(
+            (source,f'matrixIn[{index}]') for index,source in enumerate(sources))))
         graph=SourceGraphConnections(host,stem+'Parent')
         for node in nodes:
             c.createNode(node.kind,name=node.name,skipSelect=True)

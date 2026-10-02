@@ -57,13 +57,34 @@ def matrix_cases():
         ('neck_part_nonuniform',(('FKNeckPart1_M.scaleY','AdvPy_NeckPart1_M_InbetweenFK.scaleY',1.2),)))
 
 
-def main(native,python_scene,reference,output,*,extended=False,source_matrices=False):
+
+def spline_cases():
+    mode=('FKIKSpine_M.FKIKBlend','FKIKSpine_M.FKIKBlend',10.)
+    def mid(attr,value):return ('IKSpine2_M.'+attr,'AdvPy_SplineIK1.'+attr,value)
+    def end(attr,value):return ('IKSpine3_M.'+attr,'AdvPy_SplineIK2.'+attr,value)
+    native=end('stretchEven',10.)
+    bend=mid('translateZ',.4)
+    main=tuple(('Main.scale'+axis,'AdvPy_Global.scale'+axis,value) for axis,value in zip('XYZ',(1.2,.85,1.1)))
+    return (
+        ('spine_native_neutral',(mode,native)),
+        ('spine_native_bend',(mode,native,bend)),
+        ('spine_native_mid_twist',(mode,native,mid('rotateY',25.))),
+        ('spine_arc_mid_twist',(mode,mid('rotateY',25.))),
+        ('spine_half_stretch',(mode,end('stretchy',5.),bend)),
+        ('spine_no_stretch',(mode,end('stretchy',0.),end('translateY',.5))),
+        ('spine_half_mode',(('FKIKSpine_M.FKIKBlend','FKIKSpine_M.FKIKBlend',5.),bend)),
+        ('spine_first_not_fixed',(mode,('IKSpine1_M.firstJointFixed','AdvPy_SplineIK0.firstJointFixed',0.),bend)),
+        ('spine_end_rotate',(mode,end('rotateX',15.))),
+        ('spine_native_main_nonuniform',main+(mode,native)),
+    )
+
+def main(native,python_scene,reference,output,*,extended=False,source_matrices=False,source_splines=False):
     import maya.standalone
     maya.standalone.initialize(name='python')
     from maya import cmds
     names=tuple(json.loads(reference.read_text())['neutral_body'])
     matrices={}
-    cases=CASES+(rp_cases() if extended else ())+(matrix_cases() if source_matrices else ())
+    cases=CASES+(rp_cases() if extended else ())+(matrix_cases() if source_matrices else ())+(spline_cases() if source_splines else ())
     for index,(label,scene) in enumerate((('native',native),('python',python_scene))):
         matrices[label]={}
         for name,edits in cases:
@@ -85,4 +106,4 @@ def main(native,python_scene,reference,output,*,extended=False,source_matrices=F
     print([(row['case'],row['maximum_error'],row['largest'][:2]) for row in rows])
     if not passed:raise AssertionError('Whole Body pose comparison failed')
 
-if __name__=='__main__':main(*(Path(arg) for arg in sys.argv[1:5]),extended='--extended' in sys.argv[5:],source_matrices='--source-matrices' in sys.argv[5:])
+if __name__=='__main__':main(*(Path(arg) for arg in sys.argv[1:5]),extended='--extended' in sys.argv[5:],source_matrices='--source-matrices' in sys.argv[5:],source_splines='--source-splines' in sys.argv[5:])
