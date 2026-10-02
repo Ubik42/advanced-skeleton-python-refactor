@@ -478,9 +478,9 @@ class FitBendyChainSpec:
         """MEL's start, master and interior distance falloffs at a bind sample."""
         if not 0 <= sample_index <= len(self.part_names):
             raise ValueError("Bendy 采样编号超出 Body／Part 链")
-        # MEL samples each control's world distance, but divides by the
-        # downstream Body joint's local translateX after Part reparenting.
-        # That is the final subsegment, not the complete Bendy segment.
+        # MEL samples world distance against child.tx at graph assembly.
+        # OPM assembly captures the complete bind span before reparenting;
+        # traditional assembly retains the final local subsegment.
         total = (dist(self.start_position, self.end_position)
                  if self.legacy_full_span_weights else
                  self.falloff_span if self.falloff_span is not None else

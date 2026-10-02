@@ -185,9 +185,7 @@ def plan_standard_fit_part_rotation_inputs(
                 "Body 扭转补偿需要独立的控制矩阵与朝向约束：" + body)
     for body, inverse in reference_inverse_matrices.items():
         if (body not in starts or not isinstance(inverse, str)
-                or not inverse.endswith(".worldInverseMatrix[0]")
-                or starts[body].start_body_name.rsplit("_", 1)[0]
-                in ("Shoulder", "Elbow", "Hip", "Knee")):
+                or not inverse.endswith(".worldInverseMatrix[0]")):
             raise FitPartTwistValidationError(
                 "Part 参考逆矩阵不属于有效的起点：" + body)
     result = []
@@ -232,6 +230,7 @@ def plan_standard_fit_part_rotation_inputs(
                 compensate_start_body=True,
                 body_constraint_name=(blend[3] if blend else
                     f"AdvPy_{stem}IKFKBlend_{side}"),
+                reference_inverse_plug=reference_inverse_matrices.get(start),
                 reference_parent_body=semantic_parent_by_body.get(start)))
         else:
             blend = blended_world_matrices.get(start)

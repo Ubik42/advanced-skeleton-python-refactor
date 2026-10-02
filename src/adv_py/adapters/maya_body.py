@@ -1853,21 +1853,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     relative + ".matrixSum",
                     motion_decompose + ".inputMatrix")
             for path in plan.driven_roots:
-                for axis in "XYZ":
-                    self._cmds.connectAttr(
-                        (f"{motion_decompose}.outputTranslate{axis}"
-                         if motion_decompose else f"{control}.translate{axis}"),
-                        f"{path}.translate{axis}",
-                    )
-                    self._cmds.connectAttr(
-                        (f"{motion_decompose}.outputRotate{axis}"
-                         if motion_decompose else f"{control}.rotate{axis}"),
-                        f"{path}.rotate{axis}",
-                    )
-                    self._cmds.connectAttr(
-                        plan.effective_scale_source(axis),
-                        f"{path}.scale{axis}",
-                    )
+                for kind in plan.driven_transform_kinds(path):
+                    for axis in "XYZ":
+                        source = (plan.effective_scale_source(axis) if kind == "scale" else
+                                  f"{motion_decompose}.output{kind.title()}{axis}" if motion_decompose else
+                                  f"{control}.{kind}{axis}")
+                        self._cmds.connectAttr(source, f"{path}.{kind}{axis}")
             if plan.root_follow_main_path is not None:
                 follow_path = plan.root_follow_main_path
                 if (self._cmds.ls(follow_path, long=True,

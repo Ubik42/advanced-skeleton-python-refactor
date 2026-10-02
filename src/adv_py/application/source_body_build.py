@@ -6,6 +6,7 @@ The import layer must not own a second implementation of FK, IK or Main.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from math import dist
 
 from adv_py.core.body_arm_ik import BodyArmIkPlan, plan_body_arm_ik
 from adv_py.core.body_limb_mechanisms import (
@@ -445,7 +446,11 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         axes = {joint.path: joint.world_axes for joint in body.joints}
         bendy_chains = tuple(replace(chain,
             start_world_axes=axes[chain.start_body],
-            falloff_span=host.capture_fit_bendy_end_local_length(chain.end_body),
+            # MEL 83741 reads child.tx before OPM Part reparenting shortens
+            # the terminal local segment. Preserve that full bind span.
+            falloff_span=(dist(chain.start_position, chain.end_position)
+                          if options.use_offset_parent_matrix else
+                          host.capture_fit_bendy_end_local_length(chain.end_body)),
             scale_guide_group=not options.use_offset_parent_matrix,
             non_opm_additive_micro_scale=not options.use_offset_parent_matrix,
             opm_offset_only_scale=options.use_offset_parent_matrix,
@@ -497,7 +502,12 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
                             for joint in spline.joints)
     original_by_driver.update((driver,source) for source,driver in driver_by_body.items())
     root_children=tuple(joint.path for joint in body.joints if joint.parent_path==body.root)
-    first_child=root_children[0] if root_children else None
+    from adv_py.core.source_part_reference import source_root_primary_child
+    primary_child=source_root_primary_child(build.symmetry.source.hierarchy,
+                                           build.symmetry.source.fit_scale)
+    first_child=next((spec.path for spec in build.specs
+                      if primary_child is not None and spec.source_joint==primary_child.path
+                      and spec.path in root_children),None)
     root = replace(root,branch_offsets=tuple(control.offset_path for control in fk.controls
         if original_by_driver.get(control.driven_joint,control.driven_joint) in root_children
         and original_by_driver.get(control.driven_joint,control.driven_joint)!=first_child
@@ -544,7 +554,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
                     for side in limb.foot.sides if side.side is spec.side)) for spec in limb.ik.limbs)))
         updated_limbs.append(limb)
     limbs=updated_limbs
-    roots = (fk.root_path,) + tuple(limb.ik.root_path for limb in limbs)
+    roots = ("|Group|MotionSystem|FKSystem", fk.root_path) + tuple(limb.ik.root_path for limb in limbs)
     roots += tuple(limb.mechanisms.root_path for limb in limbs)
     root_metadata = next(item for item in metadata
                          if item.joint == build.specs[0].source_joint)

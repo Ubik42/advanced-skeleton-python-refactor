@@ -147,7 +147,7 @@ class MayaBodyFkScaleCompensationMixin:
                   keyable=False)
         c.connectAttr(spec.control_path + ".inheritScale",
                       pick + ".useScale")
-        if spec.use_fkx_world_source:
+        if spec.use_offset_parent_matrix or spec.use_fkx_world_source:
             c.setAttr(pick + ".useShear", False)
         else:
             c.connectAttr(spec.control_path + ".inheritScale",
@@ -181,7 +181,18 @@ class MayaBodyFkScaleCompensationMixin:
         c.setAttr(offset + ".scale", 1, 1, 1)
         c.setAttr(offset + ".shear", 0, 0, 0)
         if spec.use_offset_parent_matrix:
-            c.connectAttr(relative + ".matrixSum",
+            output = relative + ".matrixSum"
+            if spec.use_offset_parent_matrix and not spec.independent_parent:
+                # MEL 80262-80277: the second pick operates in the Offset
+                # parent's space. Removing world scale alone also removes
+                # Main scale; the relative pick preserves its inheritance.
+                relative_pick = c.createNode("pickMatrix",
+                                             name=spec.relative_scale_pick_name)
+                c.connectAttr(output, relative_pick + ".inputMatrix")
+                c.connectAttr(spec.control_path + ".inheritScale",
+                              relative_pick + ".useScale")
+                output = relative_pick + ".outputMatrix"
+            c.connectAttr(output,
                           offset + ".offsetParentMatrix")
         else:
             decompose = c.createNode("decomposeMatrix",
@@ -211,6 +222,8 @@ class MayaBodyFkScaleCompensationMixin:
             ((spec.main_scale_pick_name, "pickMatrix"),
              (spec.inherit_scale_reverse_name, "reverse"))
             if spec.independent_parent else ())
+        if spec.use_offset_parent_matrix and not spec.independent_parent:
+            extra_nodes += ((spec.relative_scale_pick_name, "pickMatrix"),)
         if any(not c.objExists(name) or c.nodeType(name) != kind
                for name, kind in ((world, "multMatrix"),
                                   (pick, "pickMatrix"),
@@ -225,7 +238,7 @@ class MayaBodyFkScaleCompensationMixin:
             (world + ".matrixSum", pick + ".inputMatrix"),
             (spec.control_path + ".inheritScale", pick + ".useScale"),
         )
-        if spec.use_fkx_world_source:
+        if spec.use_offset_parent_matrix or spec.use_fkx_world_source:
             if (bool(c.getAttr(pick + ".useShear"))
                     or c.connectionInfo(pick + ".useShear",
                                         sourceFromDestination=True)):
@@ -251,7 +264,13 @@ class MayaBodyFkScaleCompensationMixin:
             links += ((spec.parent_control_path + ".worldInverseMatrix[0]",
                        relative + ".matrixIn[1]"),)
         if spec.use_offset_parent_matrix:
-            links += ((relative + ".matrixSum",
+            output = relative + ".matrixSum"
+            if spec.use_offset_parent_matrix and not spec.independent_parent:
+                links += ((output, spec.relative_scale_pick_name + ".inputMatrix"),
+                          (spec.control_path + ".inheritScale",
+                           spec.relative_scale_pick_name + ".useScale"))
+                output = spec.relative_scale_pick_name + ".outputMatrix"
+            links += ((output,
                        spec.offset_path + ".offsetParentMatrix"),)
         else:
             decompose = spec.decompose_matrix_name

@@ -50,7 +50,10 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
     for path in blended:
         independent.pop(path, None)
         constraints.pop(path, None)
+    from adv_py.core.source_part_reference import plan_source_root_twist_references
+    root_references=plan_source_root_twist_references(build,paths,fk,spline_plans)
     inputs = plan_standard_fit_part_rotation_inputs(parts,
+        reference_inverse_matrices=root_references,
         independent_world_matrices=independent,
         independent_body_constraints=constraints,
         blended_world_matrices=blended,

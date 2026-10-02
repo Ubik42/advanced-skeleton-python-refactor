@@ -136,6 +136,17 @@ class BodyCharacterGlobalPlan:
     spine_root_scale: BodySpineRootScaleSpec | None = None
     root_fk_scale: BodyRootFkScaleSpec | None = None
 
+    def driven_transform_kinds(self, path: str) -> tuple[str, ...]:
+        # MEL 78888 scales FKSystem itself: Inbetween Part offsets are
+        # siblings of the ordinary control root and must share Main scale.
+        system = "|Group|MotionSystem|FKSystem"
+        if system in self.driven_roots:
+            if path == system:
+                return ("scale",)
+            if path.startswith(system + "|"):
+                return ("translate", "rotate")
+        return ("translate", "rotate", "scale")
+
     @property
     def root_follow_constraint_name(self) -> str | None:
         return ("RootFollowMain_parentConstraint1"
@@ -498,6 +509,7 @@ def plan_body_character_global(
                  and path.count("|") == 3)
                 or (path.startswith("|Group|MotionSystem|RootSystem|RootFollowMain|")
                  and path.count("|") == 5)
+                or path == "|Group|MotionSystem|FKSystem"
                 or (path.startswith(("|Group|MotionSystem|FKSystem|",
                                  "|Group|MotionSystem|IKSystem|",
                                  "|Group|MotionSystem|FKIKSystem|",
@@ -774,9 +786,9 @@ def audit_body_character_global(
             continue
         if not (
             state.parent_path == (path.rsplit("|", 1)[0] or None)
-            and state.translation_sources == expected_translate
-            and state.rotation_sources == expected_rotate
-            and state.scale_sources == expected_scale
+            and state.translation_sources == (expected_translate if "translate" in plan.driven_transform_kinds(path) else (None,)*3)
+            and state.rotation_sources == (expected_rotate if "rotate" in plan.driven_transform_kinds(path) else (None,)*3)
+            and state.scale_sources == (expected_scale if "scale" in plan.driven_transform_kinds(path) else (None,)*3)
         ):
             issues.append(BodyCharacterGlobalIssue(
                 "driven_root_wiring_mismatch",

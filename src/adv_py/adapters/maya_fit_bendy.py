@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from math import isfinite
+from struct import pack, unpack
 from typing import TYPE_CHECKING
 
 from adv_py.core.fit_bendy import FitBendyChainSpec, FitBendyFkScaleSpec
@@ -18,6 +19,13 @@ _SECONDARY_GROUPS = ("AdvPy_Bend2Curve", "AdvPy_Bend2Joints",
                      "AdvPy_Bend2MPX")
 _MICRO_GROUP = "AdvPy_MicroSystem"
 _OWNER = "adv_py.fit_bendy_guides.v1"
+
+
+def _maya_float(value: float) -> float:
+    """multiplyDivide's input2 stores authored weights as float32."""
+    return unpack("f", pack("f", value))[0]
+
+
 # ADV 6.925 replaces the master Bend icon with this closed XZ curve.
 _MASTER_BEND_PROFILE_XZ = (
     (-.04560501961, -.4902758548), (-.02387150518, -.4243238881),
@@ -1042,9 +1050,12 @@ class MayaFitBendyMixin:
                                   lock=True)
             if index == 0:
                 control = c.parent(control, parent)[0]
+            # MEL configures rotation order before assigning the bind frame.
+            # Changing it afterwards reinterprets Euler values and adds a
+            # false default Twist when compared with the Offset frame.
+            c.setAttr(control + ".rotateOrder", spec.rotation_order)
             self._align_bendy_control(
                 control, position, spec.start_world_axes)
-            c.setAttr(control + ".rotateOrder", spec.rotation_order)
             if index == 0:
                 if self._bendy_fraction_mode_supported():
                     c.addAttr(control, longName="parametric",
@@ -1087,10 +1098,10 @@ class MayaFitBendyMixin:
             middle = c.createNode(
                 "transform", name=spec.simple_proxy_name,
                 parent=controls[0], skipSelect=True)
+            c.setAttr(middle + ".rotateOrder", spec.rotation_order)
             self._align_bendy_control(
                 middle, spec.control_positions[1],
                 spec.start_world_axes)
-            c.setAttr(middle + ".rotateOrder", spec.rotation_order)
         if spec.parent_bendy:
             junction_offset = c.createNode(
                 "transform", name=spec.junction_offset_name,
@@ -1120,6 +1131,7 @@ class MayaFitBendyMixin:
                          parent=junction, skipSelect=True)
         end_proxy = c.createNode("transform", name=spec.end_proxy_name,
                                  parent=_GROUPS[0], skipSelect=True)
+        c.setAttr(end_proxy + ".rotateOrder", spec.rotation_order)
         self._align_bendy_control(
             end_proxy, end, spec.start_world_axes)
         bend_drivers = (controls if spec.legacy_twist_outputs else
@@ -2311,7 +2323,7 @@ class MayaFitBendyMixin:
                         or c.nodeType(weight_name) != "multiplyDivide"
                         or not c.isConnected(delta_name + ".output3D", weight_name + ".input1", ignoreUnitConversion=True)
                         or not c.isConnected(weight_name + ".output", scale_add + f".input3D[{control_index}]", ignoreUnitConversion=True)
-                        or any(abs(float(value) - weight) > 1e-8
+                        or any(abs(float(value) - _maya_float(weight)) > 1e-8
                                for value in c.getAttr(
                                    weight_name + ".input2")[0])):
                     return False
@@ -2337,7 +2349,7 @@ class MayaFitBendyMixin:
                                    scale_delta + ".input3D[1]")[0])
                         or not c.isConnected(scale_delta + ".output3D", scale_weight + ".input1", ignoreUnitConversion=True)
                         or any(abs(float(value)
-                                   - (1.0 - spec.control_weights(index)[1]))
+                                   - _maya_float(1.0 - spec.control_weights(index)[1]))
                                > 1e-8 for value in c.getAttr(
                                    scale_weight + ".input2")[0])
                         or not c.isConnected(scale_weight + ".output", scale_add + f".input3D[{len(spec.control_names) + 1}]", ignoreUnitConversion=True)):

@@ -391,8 +391,8 @@ def plan_world_fit_orientations(
         else:
             desired = world_axes_from_orientation_policy(policy)
         axes_match = all(
-            _dot(_normalize(current, "当前世界轴无效"), wanted)
-            >= 1.0 - tolerance
+            all(abs(a-b) <= tolerance for a,b in zip(
+                _normalize(current, "当前世界轴无效"), wanted))
             for current, wanted in zip(state.world_axes, desired)
         )
         if (not world_match and axes_match
@@ -665,7 +665,8 @@ def plan_simple_fit_orientations(
                 desired_axes=((0.,1.,0.),(0.,0.,1.),(1.,0.,0.))
         planned_world_axes[path] = desired_axes
         axes_match = all(
-            _dot(_normalize(current, "当前世界轴无效"), desired) >= 1.0 - tolerance
+            all(abs(a-b) <= tolerance for a,b in zip(
+                _normalize(current, "当前世界轴无效"), desired))
             for current, desired in zip(state.world_axes, desired_axes)
         )
         if (not axis_config.world_match and axes_match

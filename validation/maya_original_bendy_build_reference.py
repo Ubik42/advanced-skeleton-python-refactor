@@ -18,8 +18,16 @@ def main():
         cmds.file(str(ROOT/'local/adv_6_925/AdvancedSkeletonFiles/fitSkeletons/biped.ma'),
                   open=True,force=True,executeScriptNodes=False)
         cmds.checkBox('asBodyOffsetParentMatrixCheckBox',edit=True,value=True)
+        # Native builder reads the Fit attribute; editing a UI value does not
+        # run its change callback. Keep both inputs consistent without altering MEL.
+        if not cmds.objExists('FitSkeleton.useOffsetParentMatrix'):
+            cmds.addAttr('FitSkeleton',longName='useOffsetParentMatrix',attributeType='bool')
+        cmds.setAttr('FitSkeleton.useOffsetParentMatrix',True)
+        assert mel.eval('asGetOpm') == 1
+        report['native_opm_input']=True
         for joint in ('Shoulder','Elbow'):cmds.setAttr(joint+'.bendyCtrls',3)
         cmds.createNode('transform',name='asBatch')
+        (output/'original-bendy-reference.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
         mel.eval('asBuildAdvancedSkeleton;')
         assert cmds.objExists('Root_M') and cmds.objExists('MicroXElbowPart1_L')
         body=cmds.listRelatives('Root_M',allDescendents=True,fullPath=True,type='joint') or []

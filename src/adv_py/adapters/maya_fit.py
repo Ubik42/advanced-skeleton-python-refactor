@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterator, Sequence
 
 from adv_py.core.body_skeleton import FitDeformProfile
@@ -1300,11 +1300,21 @@ class MayaFitJointHost:
         self._transaction_changed = True
         self._cmds.addAttr(container, **options)
 
+    def _fit_joint_attribute_spec(self, joint, field):
+        spec = _FIT_ATTRIBUTES[field]
+        # MEL 6901–6914 reads the pre-5.792 worldOrient, then lets the
+        # newer worldOrientUp override it. Preserve the authored spelling.
+        if (field is FitJointField.WORLD_ORIENT_UP
+                and not self._attribute_exists(joint, spec.name)
+                and self._attribute_exists(joint, "worldOrient")):
+            return replace(spec, name="worldOrient")
+        return spec
+
     def read_fit_joint_metadata(self, joint: str) -> FitJointMetadata:
         present = {
             field
             for field, spec in _FIT_ATTRIBUTES.items()
-            if self._attribute_exists(joint, spec.name)
+            if self._attribute_exists(joint, self._fit_joint_attribute_spec(joint, field).name)
         }
         follow_names = tuple(
             attr for attr in (self._cmds.listAttr(
@@ -1396,7 +1406,8 @@ class MayaFitJointHost:
                 else None),
             geo_attach_mode=self._optional_enum(
                 joint, "geoAttachMode") or "parent",
-            world_orient_up=self._optional_enum(joint, "worldOrientUp"),
+            world_orient_up=self._optional_enum(joint,
+                self._fit_joint_attribute_spec(joint, FitJointField.WORLD_ORIENT_UP).name),
             world_orient_forward=self._optional_enum(joint, "worldOrientForward"),
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
             present_fields=frozenset(present),
@@ -1423,7 +1434,7 @@ class MayaFitJointHost:
                     minValue=0, maxValue=10, defaultValue=float(weight),
                     keyable=True)
             return
-        spec = _FIT_ATTRIBUTES[edit.field]
+        spec = self._fit_joint_attribute_spec(joint, edit.field)
         exists = self._attribute_exists(joint, spec.name)
         if (edit.value is None
                 or (edit.field is FitJointField.AIM and edit.value is False)
@@ -1433,6 +1444,10 @@ class MayaFitJointHost:
             if exists:
                 self._transaction_changed = True
                 self._cmds.deleteAttr(f"{joint}.{spec.name}")
+            if (edit.field is FitJointField.WORLD_ORIENT_UP
+                    and self._attribute_exists(joint, "worldOrient")):
+                self._transaction_changed = True
+                self._cmds.deleteAttr(joint + ".worldOrient")
             if edit.field is FitJointField.FOLLOW:
                 for companion in ("followLeftRight", "followWorld"):
                     if self._attribute_exists(joint, companion):

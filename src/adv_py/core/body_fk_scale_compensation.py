@@ -57,6 +57,10 @@ class BodyFkScaleCompensationSpec:
         return self.world_matrix_name + "InheritScaleReverse"
 
     @property
+    def relative_scale_pick_name(self) -> str:
+        return self.relative_matrix_name + "ScalePick"
+
+    @property
     def node_names(self) -> tuple[str, ...]:
         if self.mel_non_opm_fkx:
             return (() if self.inherit_scale
@@ -66,6 +70,8 @@ class BodyFkScaleCompensationSpec:
                      self.fkps_point_constraint_name))
         names = (self.world_matrix_name, self.pick_matrix_name,
                  self.relative_matrix_name)
+        if self.use_offset_parent_matrix and not self.independent_parent:
+            names += (self.relative_scale_pick_name,)
         if self.independent_parent:
             names += (self.main_scale_pick_name,
                       self.inherit_scale_reverse_name)

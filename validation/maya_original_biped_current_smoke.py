@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 
 
 def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
-         bendy=False, export=True):
+         bendy=False, export=True, bendy_count=3, bendy_joints=('Shoulder','Elbow')):
     import maya.standalone
     maya.standalone.initialize(name='python')
     from maya import cmds
@@ -24,10 +24,16 @@ def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
             cmds.addAttr('FitSkeleton', ln='useOffsetParentMatrix', at='bool')
         cmds.setAttr('FitSkeleton.useOffsetParentMatrix', True)
     if bendy:
-        for joint in ('Shoulder', 'Elbow'):
+        for joint in bendy_joints:
+            if joint == 'Spine1':
+                if cmds.objExists(joint+'.inbetweenJoints'):
+                    cmds.deleteAttr(joint+'.inbetweenJoints')
+                if not cmds.objExists(joint+'.twistJoints'):
+                    cmds.addAttr(joint,ln='twistJoints',at='long',min=0)
+                cmds.setAttr(joint+'.twistJoints',2)
             if not cmds.objExists(joint + '.bendyCtrls'):
                 cmds.addAttr(joint, ln='bendyCtrls', at='long', min=0)
-            cmds.setAttr(joint + '.bendyCtrls', 3)
+            cmds.setAttr(joint + '.bendyCtrls', bendy_count)
     # This proxy checks binding/deformation plumbing, not model appearance.
     mesh = cmds.polyCube(name='BipedBindProxy', width=30, height=100,
                          depth=20, subdivisionsY=10)[0]
@@ -82,7 +88,8 @@ def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
     if export:
         assert published.bytes_written > 0
     report = dict(source=str(source.resolve()), body_joints=result.joint_count,
-                  opm=opm, bendy=bendy,
+                  opm=opm, bendy=bendy, bendy_count=bendy_count if bendy else 0,
+                  bendy_joints=bendy_joints if bendy else (),
                   part_joints=result.segment_joint_count,
                   channels=result.channel_count, skins=skins,
                   restricted_skin=restricted_skin,portable_pose_roundtrip=True,
@@ -133,4 +140,6 @@ if __name__ == '__main__':
     main(Path(sys.argv[1]), Path(sys.argv[2]),rebuild='--rebuild' in sys.argv[3:],
          restricted_skin='--restricted-skin' in sys.argv[3:],
          opm='--opm' in sys.argv[3:], bendy='--bendy' in sys.argv[3:],
-         export='--no-export' not in sys.argv[3:])
+         export='--no-export' not in sys.argv[3:],
+         bendy_count=int(sys.argv[sys.argv.index('--bendy-count')+1]) if '--bendy-count' in sys.argv else 3,
+         bendy_joints=('Spine1',) if '--spine-bendy' in sys.argv else ('Shoulder','Elbow'))
