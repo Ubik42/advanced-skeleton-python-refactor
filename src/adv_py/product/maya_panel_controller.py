@@ -673,6 +673,32 @@ class MayaPanelController:
             source, container)
         return len(result.joint_paths)
 
+    def fit_auto_scale(self, namespace: str, container: str = 'FitSkeleton', *,
+                       interactive: bool = True):
+        from adv_py.application.fit_auto_scale import AutoScaleFit
+        from adv_py.adapters.maya_preparation_objects import MayaPreparationObjectsHost
+        from adv_py.core.preparation_objects import PreparationObjectRole
+        records=MayaPreparationObjectsHost(namespace)
+        from maya import cmds
+        selected=cmds.ls(selection=True,long=True) or []
+        try:
+            # Original asFitAutoPlace checks every Skin independently before
+            # changing Fit, with symmetry explicitly skipped for this action.
+            for mesh in records.read_objects(PreparationObjectRole.SKIN):
+                cmds.select(mesh,replace=True)
+                self.model_check(interactive=interactive,skip_symmetry=True)
+        finally:
+            cmds.select(selected,replace=True) if selected else cmds.select(clear=True)
+        host=self._host(namespace)
+        identity=getattr(host._cmds,'identity',None)
+        def objects(role):
+            names=records.read_objects(role)
+            return tuple(identity.to_local(name) for name in names) if identity else names
+        return AutoScaleFit(host).apply(container,
+            skin=objects(PreparationObjectRole.SKIN),
+            all_objects=objects(PreparationObjectRole.ALL),
+            right_eye=objects(PreparationObjectRole.RIGHT_EYE))
+
     def fit_create_template(self, namespace: str,
                             container: str = "FitSkeleton", *,
                             with_fingers: bool = True,

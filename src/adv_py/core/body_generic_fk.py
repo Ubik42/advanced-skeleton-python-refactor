@@ -109,6 +109,7 @@ class GenericFkFeaturePolicy:
     source_fk_follower_parent_scale: bool | None = None
     source_nonopm_fk_blend_targets: bool | None = None
     source_nonopm_inverse_scale: bool | None = None
+    source_native_ik_effectors: bool | None = None
     source_untwister_receiver: bool | None = None
     source_body_matrix: bool | None = None
     source_bendy_deform_matrix: bool | None = None

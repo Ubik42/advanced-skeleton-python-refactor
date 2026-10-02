@@ -8061,7 +8061,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     'adv_py.ik_align.v1',type='string',lock=True)
             if spec.source_aligned_graph and spec.source_straight_chain:
                 self._cmds.setAttr(spec.chain[1]+'.preferredAngle',0.,0.,-90.,type='double3')
-            handle, _ = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver")
+            if spec.source_native_effector and self.find_name_collisions(spec.source_effector_name):
+                raise FitSkeletonValidationError('来源 IK Effector 名称冲突：'+spec.source_effector_name)
+            handle, effector = self._cmds.ikHandle(name=spec.handle_name, startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver",numSpans=2 if spec.source_native_effector else 1)
+            if spec.source_native_effector:
+                from .maya_source_limb_effector import configure
+                configure(self,spec,handle,effector)
             self._cmds.parent(handle, wrist, absolute=True)
             self._cmds.poleVectorConstraint(pole, handle, name=spec.pole_constraint_name)
             if spec.source_original_pole and len(spec.solver_joint_list or spec.chain[:2])>2:

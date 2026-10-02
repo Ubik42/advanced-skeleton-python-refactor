@@ -428,6 +428,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         ik = configure_source_limb_ik(ik,mechanisms,body,metadata,names[-1],
             instances=build.symmetry.instances,source_pole_placement=generic_fk_policy is None
             or generic_fk_policy.source_rp_build_pole is not False)
+        ik=replace(ik,limbs=tuple(replace(spec,source_native_effector=(generic_fk_policy is None
+            or generic_fk_policy.source_native_ik_effectors is not False)) for spec in ik.limbs))
         blend = plan_body_limb_blend(body, mechanisms, limb_label=label,
             joint_names=mechanism_names, translated_joint_names=mechanism_names,sides=sides)
         limb=SourceBodyLimbPlan(label,names,mechanisms,ik,blend)

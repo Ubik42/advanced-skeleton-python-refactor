@@ -684,6 +684,9 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(template_row)
             form.addRow(self._button("从所选标准骨架创建 Fit",
                                       self._fit_from_selected_skeleton))
+            auto_place_row=QtWidgets.QHBoxLayout()
+            auto_place_row.addWidget(self._button('缩放',self._fit_auto_scale))
+            form.addRow('自动放置：',auto_place_row)
             row = QtWidgets.QHBoxLayout()
             row.addWidget(self._button("导出当前 Fit", self._export_fit))
             row.addWidget(self._button("从文档导入", self._import_fit))
@@ -2549,6 +2552,10 @@ def create_panel(controller: MayaPanelController | None = None):
                 with_fingers=with_fingers,
                 scale=self.fit_template_scale.value())
             return f"已创建 {count} 个 Fit 关节；调整关节位置后可构建 Body"
+
+        def _fit_auto_scale(self):
+            result=self.controller.fit_auto_scale(self._namespace(),self.fit_container.text().strip())
+            return f'已按 Skin 缩放 {len(result.plan.positions)} 个 Fit 关节' + ('，并放置 Eye' if result.eye_placed else '')
 
         def _fit_from_selected_skeleton(self):
             selected_namespace = self._namespace()

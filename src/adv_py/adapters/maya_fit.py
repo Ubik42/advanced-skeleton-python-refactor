@@ -1609,6 +1609,14 @@ class MayaFitJointHost:
             if locked:
                 c.setAttr(plug, lock=True)
 
+    def capture_fit_auto_scale(self,container,skin,all_objects,right_eye):
+        from .maya_fit_auto_scale import capture
+        return capture(self,container,skin,all_objects,right_eye)
+
+    def apply_fit_auto_scale(self,plan,right_eye,skin,all_objects):
+        from .maya_fit_auto_scale import apply
+        return apply(self,plan,right_eye,skin,all_objects)
+
     @contextmanager
     def transaction(self, label: str) -> Iterator[None]:
         if self._transaction_active:

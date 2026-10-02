@@ -62,6 +62,12 @@ class BodyArmIkSpec:
     source_handle_parent: str | None = None
     source_straight_chain: bool = False
     source_original_pole: bool = False
+    source_native_effector: bool = False
+
+    @property
+    def source_effector_name(self):
+        stem,_,side=self.handle_name.rpartition('Handle')
+        return stem+'Effector'+side
 
     @property
     def handle_parent(self):

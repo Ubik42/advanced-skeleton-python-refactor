@@ -130,6 +130,7 @@ def capture_fk_policy(host, registration):
         source_fk_follower_parent_scale=any(c.objExists(node+'.advPySourceFkFollowerParentScale') for node in owned),
         source_nonopm_fk_blend_targets=any(c.objExists(node+'.advPySourceNonOpmFkBlendTarget') for node in owned),
         source_nonopm_inverse_scale=any(c.objExists(node+'.advPySourceFkInverseScale') for node in owned),
+        source_native_ik_effectors=any(c.objExists(node+'.advPySourceIkEffector') for node in owned),
         source_spline_layouts=tuple(plan for plan in
             (registration.spine,*registration.additional_spines) if isinstance(plan,BodySplinePlan)),
         source_spline_body_root=registration.body_root,
