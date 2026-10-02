@@ -17,7 +17,7 @@ def _follow_frame(c, plan, name, target):
 def create(host, plan):
     c = host._cmds
     count = len(plan.targets)
-    if count < 3 or len(plan.body_joints) <= 2:
+    if count < 3 or not plan.source_curve_points and len(plan.body_joints) <= 2:
         raise FitSkeletonValidationError('Spline 中间跟随需要多段 IK 链')
     start = _follow_frame(c, plan, 'AdvPy_SplineFollowStart', plan.driver_targets[0])
     end = _follow_frame(c, plan, 'AdvPy_SplineFollowEnd', plan.driver_targets[-1])

@@ -97,7 +97,10 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
             instance=next((item for item in instances if item.output_name==source[-1].name),None)
             simple=len(expanded_plan.native_ik)==2
             expanded_plan=replace(expanded_plan,source_simple_twist=simple,
-                source_forward_axis=1 if not simple and side=='L' and (instance is None or instance.mirrored) else 0)
+                source_forward_axis=1 if not simple and side=='L' and (instance is None or instance.mirrored) else 0,
+                twist_ramp_graph=(not simple if saved is None or system in counts else saved.twist_ramp_graph),
+                source_start_volume=(source[0].name.rsplit(':',1)[-1].rsplit('_',1)[0]!='Root'
+                    if saved is None else saved.source_start_volume))
         plans.append(expanded_plan)
     if saved_layouts is not None and len(plans)!=len(saved_layouts):
         raise FitSkeletonValidationError('来源 Spline 重建不能静默增删已保存系统')

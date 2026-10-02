@@ -52,6 +52,7 @@ def decode_spline(raw, body):
     if isinstance(raw,dict):
         for key in ('source_simple_twist','source_forward_axis'):
             if key not in raw:raw={**raw,key:None}
+        if 'source_start_volume' not in raw:raw={**raw,'source_start_volume':False}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     fit_count=raw['source_fit_control_count']
     if fit_count is not None and (type(fit_count) is not int or fit_count<2
@@ -80,7 +81,8 @@ def decode_spline(raw, body):
             or (raw['twist_ramp_graph'] and not raw['even_stretch_graph'])):
         raise CharacterRegistryError('Spline 中间扭转图标记无效')
     if (type(raw['mid_follow_graph']) is not bool
-            or (raw['mid_follow_graph'] and not raw['twist_ramp_graph'])):
+            or (raw['mid_follow_graph'] and not raw['twist_ramp_graph']
+                and not (raw['source_simple_twist'] is True and raw['source_curve_points']))):
         raise CharacterRegistryError('Spline 中间跟随图标记无效')
     if (type(raw['isolated_mid_follow_graph']) is not bool
             or (raw['isolated_mid_follow_graph'] and not raw['mid_follow_graph'])):
@@ -122,9 +124,9 @@ def decode_spline(raw, body):
             or set(bendy_indices)&set(matrix_indices)
             or bendy_indices and (not raw['use_offset_parent_matrix'] or not raw['source_curve_points'])):
         raise CharacterRegistryError('来源 Spline Bendy 矩阵交接索引无效')
-    if raw['twist_ramp_graph'] and count<=2:
+    if raw['twist_ramp_graph'] and count<=2 and len(raw['source_ik_chain'])<=2:
         raise CharacterRegistryError('两关节 Spline 不使用中间扭转曲线')
-    if raw['mid_follow_graph'] and count<=2:
+    if raw['mid_follow_graph'] and count<=2 and not raw['source_curve_points']:
         raise CharacterRegistryError('两关节 Spline 不使用中间跟随图')
     by_path = {joint.path: joint for joint in body}
     from .body_limb_mechanisms import body_limb_parent_matches
@@ -278,6 +280,10 @@ def decode_spline(raw, body):
             body_paths[-1],path(row['path']),row['name'],path(row['parent_path']),
             vector(row['world_position'],3),frame)
     simple=raw['source_simple_twist'];forward=raw['source_forward_axis']
+    start_volume=raw['source_start_volume']
+    if (type(start_volume) is not bool or start_volume and (not native or not raw['source_curve_points']
+            or native[0].source_joint.rsplit('|',1)[-1].rsplit(':',1)[-1].rsplit('_',1)[0]=='Root')):
+        raise CharacterRegistryError('来源 Spline 起点体积标记无效')
     if ((simple is None)!=(forward is None)
             or simple is not None and (type(simple) is not bool or not native
                 or simple!=(len(native)==2) or type(forward) is not int or forward not in (0,1)
@@ -299,7 +305,7 @@ def decode_spline(raw, body):
                           source_first_translate=raw['source_first_translate'],
                           source_world_controls=raw['source_world_controls'],source_mode=source_mode,
                           source_fit_control_count=fit_count,source_scale_indices=tuple(scale_indices),source_ik_chain=tuple(native),source_solver_tail=solver_tail,
-                          source_simple_twist=simple,source_forward_axis=forward)
+                          source_simple_twist=simple,source_forward_axis=forward,source_start_volume=start_volume)
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

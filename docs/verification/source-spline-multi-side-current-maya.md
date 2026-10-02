@@ -1,5 +1,37 @@
 # 多系统 Spline、镜像与独立左侧：当前 Maya 记录
 
+## 2026-10-02 UTC 追加批次：起点体积、数量重建、两关节分支
+
+以下为当前结果；本文后面的 23／48 是修复起点体积前的历史记录。
+
+- 原版 MEL 84296–84344 仅跳过名为 Root 的体积起点，不能跳过每条侧边 Spline 的起点。新增 `source_start_volume`，同步接入节点清单、创建、审计、保存与重建；旧登记缺字段时保留旧图布局。诊断确认求解起点和首 IK 输出已匹配，差异来自缺失的体积权重，不是 IKfake0 父帧。
+- 四系统 OPM 布局严格对照现在为 **108 Body／Part × 48 用例全部通过**，阈值仍为 `1e-4`，最大误差 `4.9029043744930334e-5`。包含三条侧链分别操作及四系统同时操作。完整构建、Skin／动画往返、保存重开、FBX、保留 Skin／动画 UUID 的重建和撤销重做通过。
+- SplineTail_L、SplineSolo_L 分别完成控制器数量 3→5→3；Skin／曲线 UUID、权重、成员集合、保存重开、撤销重做、删除控制器的动画曲线保留及用户集合更新通过，其余系统数量保持不变。数量指标为原 Fit 控制数量，原版默认 2 会生成 3 个实际控制器。
+- 重建归属比较按完整连接边界配对登记内外的原生 unitConversion，避免 Maya 自动编号变化误判其他 Bendy 图。扭转局部绑定帧只对有限的 16 个矩阵元素允许 `1e-10` 重组误差，并继续要求全部 TRS／shear 锁定；没有放宽原版动态对照阈值。
+- 新增两 Body 关节链分支：含 Part 时按实际扩展链使用完整扭转，不含 Part 时使用原版简单扭转；两种都保留中间控制跟随。图版本 28／29 表示简单扭转加独立中间跟随，旧版本仍保留。78 Body＋19 Part 的完整构建／重建通过；SplineTwig_L 控制数量 2→4→2 的完整保留流程通过。
+
+当前产物均在 `validation/results/`：
+
+| 内容 | 产物 |
+| --- | --- |
+| 四系统最终体积修复场景／生命周期 | `biped-source-spline-start-volume/` |
+| 四系统严格 48／48 | `original-spline-start-volume-pose.json` |
+| 两个独立左侧数量重建 | `spline-multi-count-SplineTail_L/`、`spline-multi-count-SplineSolo_L/` |
+| 两关节场景／生命周期 | `biped-source-spline-two-joint/` |
+| 两关节严格对照 | `original-spline-two-joint-pose.json` |
+| 简单两关节数量重建 | `spline-two-joint-count-SplineTwig_L/` |
+| 传统非 OPM 对照 | `original-spline-nonopm-baseline-pose.json` |
+
+尚未通过的核心缺口：
+
+1. 两关节布局严格对照 44／48，四个 Main 非均匀缩放组合失败，最大 `0.2777948188515939`，集中在侧链 FK 末端；普通弯曲、扭转和伸展通过。原版末端 FKX 没有对应普通 FK 控制器，Python 多了一层补偿接收。尝试改读机制骨骼能修无 Part 的 Twig，却使有 Part 的 Stem 及三关节布局出现差异，因此该改法已撤回，最终代码不包含它；应分别还原原版末端 FKX 的真实父链，不按关节数猜接收层。
+2. 传统非 OPM 四系统能构建，严格对照只有 12／48，最大 `1.420383721524784`。需完整补独立 IKScaler、Body／Part 的约束与缩放接收，不能用 OPM 通过结果代替此分支验收。
+3. 标准 biped 前批严格对照仍为 46／47，left_arm_ik 的 `0.00014226263` 差异未在本批修复。
+
+下一批优先处理上述实际场景图缺口，再推进其余原版覆盖；整体 ADV 未完成，Goal 保持活跃，不推送 GitHub。
+
+## 前一批记录
+
 2026-10-02 UTC，Maya 2024。原版 ADV 6.925 MEL 保持只读；本批继续修复主体图，没有推送 GitHub。
 
 输入是原版 biped 的副本，增加 Tail 三关节链及其镜像、Solo 独立左侧三关节链。Solo 的 Fit 起点设置 noMirror；新增链分别插入 1、2 个 Inbetween。共 Spine_M、SplineTail_R、SplineTail_L、SplineSolo_L 四个系统，81 Body＋27 Part。

@@ -14,7 +14,7 @@ from .spline_names import scoped_spline_property,scoped_spline_method
 from .source_spline_mode import SourceSplineModePlan
 
 
-CURRENT_SPLINE_VERSION = 27
+CURRENT_SPLINE_VERSION = 29
 
 
 def spline_owner_version(marker: str) -> int:
@@ -33,14 +33,18 @@ def spline_owner_version(marker: str) -> int:
 def current_spline_owner(curved: bool, even_stretch_graph: bool = True,
                          twist_ramp_graph: bool = False,
                          mid_follow_graph: bool = False,
-                         isolated_mid_follow_graph: bool = False) -> str:
+                         isolated_mid_follow_graph: bool = False,
+                         source_simple_follow: bool = False) -> str:
     if twist_ramp_graph and not even_stretch_graph:
         raise FitSkeletonValidationError('Spline 中间扭转图要求 stretchEven 双链')
-    if mid_follow_graph and not twist_ramp_graph:
+    if source_simple_follow and (not mid_follow_graph or twist_ramp_graph
+                                or not isolated_mid_follow_graph or not even_stretch_graph):
+        raise FitSkeletonValidationError('简单来源 Spline 跟随图配置无效')
+    if mid_follow_graph and not twist_ramp_graph and not source_simple_follow:
         raise FitSkeletonValidationError('Spline 中间跟随要求中间扭转控制')
     if isolated_mid_follow_graph and not mid_follow_graph:
         raise FitSkeletonValidationError('Spline 独立跟随层要求中间跟随图')
-    newest = (27 if isolated_mid_follow_graph else
+    newest = (29 if source_simple_follow else 27 if isolated_mid_follow_graph else
               25 if mid_follow_graph else 23 if twist_ramp_graph else
               21 if even_stretch_graph else 19)
     return f'adv_py.spline.v{newest if curved else newest - 1}'
@@ -93,6 +97,7 @@ class BodySplinePlan:
     source_solver_tail: BodyLimbMechanismJointSpec | None = None
     source_simple_twist: bool | None = None
     source_forward_axis: int | None = None
+    source_start_volume: bool = False
 
     @property
     def simple_twist(self):
@@ -357,7 +362,7 @@ class BodySplinePlan:
             for kind in ('Blend','Relative','Decompose','Volume')
         )+tuple(
             f'AdvPy_SplineIKScale{kind}{i}'
-            for i in self.native_keys[1:]
+            for i in self.native_keys[0 if self.source_start_volume else 1:]
             for kind in ('Weight','Add')
         )
         orientations=tuple(f'AdvPy_SplineIKLocalOrient{i}'
@@ -632,7 +637,7 @@ def plan_body_spline_fk_chain(source, controls, *,
     else:
         positions=(fit_spline_controls(tuple(j.world_position for j in source)) if curved else
                tuple(tuple(a+(b-a)*i/3 for a,b in zip(source[0].world_position,source[-1].world_position)) for i in range(4)))
-    isolated_follow=len(source)>2
+    isolated_follow=len(source)>2 or bool(source_points) and len(positions)>2
     targets=tuple((pelvis.control_path+
                    ('|AdvPy_SplineIKFollowMain' if isolated_follow and 0<i<len(positions)-1 else '')+
                    f'|AdvPy_SplineIK{i}Offset|AdvPy_SplineIK{i}Extra|AdvPy_SplineIK{i}')

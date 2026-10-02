@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 
 
-def main(scene,output,*,fit_labels=False):
+def main(scene,output,*,fit_labels=False,spline_system=None):
     import maya.standalone
     maya.standalone.initialize(name='python')
     from maya import cmds
@@ -19,8 +19,16 @@ def main(scene,output,*,fit_labels=False):
     cmds.undoInfo(state=True)
     host=MayaBodyBuildHost()
     original=host.read_character_registration()
-    spline=splines(original)[0]
+    spline=(splines(original)[0] if spline_system is None else
+            next(plan for plan in splines(original) if plan.system_name==spline_system))
     system=spline.system_name
+    def selected(registration):
+        return next(plan for plan in splines(registration) if plan.system_name==system)
+    other_counts={plan.system_name:control_count(plan) for plan in splines(original)
+                  if plan.system_name!=system}
+    def unchanged_systems(registration):
+        assert {plan.system_name:control_count(plan) for plan in splines(registration)
+                if plan.system_name!=system}==other_counts
     count=control_count(spline)
     cmds.setKeyframe(spline.settings,attribute='stretchy',time=1,value=5)
     cmds.setKeyframe(spline.settings,attribute='stretchy',time=5,value=8)
@@ -33,7 +41,8 @@ def main(scene,output,*,fit_labels=False):
     controller=MayaPanelController()
     controller.body_rebuild(':','SplineCountStage',spline_counts=((system,count+2),))
     grown=host.read_character_registration()
-    assert control_count(splines(grown)[0])==count+2
+    assert control_count(selected(grown))==count+2
+    unchanged_systems(grown)
     after=CaptureBodyCharacterPreservation(host).execute()
     assert {row.uuid for row in after.skins}==skin_ids
     assert curve_ids<={row.uuid for row in after.curves}
@@ -55,33 +64,36 @@ def main(scene,output,*,fit_labels=False):
     # The MEL connection-reuse rule drops the output of an obsolete indexed
     # control. Keep its native curve object/data available instead of deleting
     # the user's animation when the generated controller disappears.
-    last=splines(grown)[0].targets[-1]
+    last=selected(grown).targets[-1]
     cmds.setKeyframe(last,attribute='translateY',time=1,value=0)
     cmds.setKeyframe(last,attribute='translateY',time=5,value=2)
     orphan=cmds.connectionInfo(last+'.translateY',sourceFromDestination=True).split('.',1)[0]
     orphan_uuid=cmds.ls(orphan,uuid=True)[0]
     orphan_values=tuple(cmds.keyframe(orphan,q=True,valueChange=True))
-    user_set=cmds.sets((last,splines(grown)[0].targets[0]),name='SplineUserSelection')
+    user_set=cmds.sets((last,selected(grown).targets[0]),name='SplineUserSelection')
     controller.body_rebuild(':','SplineCountReduce',spline_counts=((system,count),))
     reduced=host.read_character_registration()
-    assert control_count(splines(reduced)[0])==count
+    assert control_count(selected(reduced))==count
+    unchanged_systems(reduced)
     curve=cmds.ls(orphan_uuid)[0]
     assert tuple(cmds.keyframe(curve,q=True,valueChange=True))==orphan_values
     assert not cmds.listConnections(curve+'.output',s=False,d=True)
-    assert cmds.sets(splines(reduced)[0].targets[0],isMember=user_set)
+    assert cmds.sets(selected(reduced).targets[0],isMember=user_set)
     assert len(cmds.sets(user_set,q=True))==1
     controller.body_rebuild(':','SplineSameLayout')
-    assert control_count(splines(host.read_character_registration())[0])==count
+    assert control_count(selected(host.read_character_registration()))==count
+    unchanged_systems(host.read_character_registration())
     report=dict(status='passed',system=system,counts=(count,count+2,count),
         native_skin_curves_preserved=True,weights_membership_preserved=True,
         undo_redo=True,saved_reopened=True,same_layout_followup=True,
-        obsolete_curve_kept_unconnected=True,user_selection_updated=True)
+        obsolete_curve_kept_unconnected=True,user_selection_updated=True,
+        other_system_counts_preserved=other_counts)
     if fit_labels:
         # Exercise the existing ordinary panel entry: no extra UI/count option
         # is required when an artist edits the original Fit Mid label.
         registration_now=host.read_character_registration()
         hierarchy=host.capture_fit_hierarchy(registration_now.container)
-        mode=splines(registration_now)[0].source_mode
+        mode=selected(registration_now).source_mode
         from adv_py.core.fit_ik import fit_joint_ik_info
         labels={joint.path:host.read_joint_label(joint.path) for joint in hierarchy.joints}
         start=next(joint.path for joint in hierarchy.joints
@@ -96,15 +108,15 @@ def main(scene,output,*,fit_labels=False):
         cmds.setAttr(middle+'.drawLabel',True)
         controller.body_rebuild(':','SplineFitLabelGrow')
         labelled=host.read_character_registration()
-        assert control_count(splines(labelled)[0])==count+1
+        assert control_count(selected(labelled))==count+1
         cmds.setAttr(middle+'.type',saved_type)
         cmds.setAttr(middle+'.otherType',saved_other,type='string')
         cmds.setAttr(middle+'.drawLabel',saved_draw)
         controller.body_rebuild(':','SplineFitLabelReduce')
-        assert control_count(splines(host.read_character_registration())[0])==count
+        assert control_count(selected(host.read_character_registration()))==count
         report['ordinary_fit_mid_label_rebuild']=True
     (output/'spline-count-rebuild.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     print('PASS Spline count rebuild',report)
 
 
-if __name__=='__main__':main(Path(sys.argv[1]),Path(sys.argv[2]),fit_labels='--fit-label-counts' in sys.argv[3:])
+if __name__=='__main__':main(Path(sys.argv[1]),Path(sys.argv[2]),fit_labels='--fit-label-counts' in sys.argv[3:],spline_system=next((arg.split('=',1)[1] for arg in sys.argv[3:] if arg.startswith('--system=')),None))

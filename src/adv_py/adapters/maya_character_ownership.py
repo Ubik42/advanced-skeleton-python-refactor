@@ -110,7 +110,12 @@ def _graph(host,names,*,external_conversions=(),roles=None,normalize_registry=Fa
     edges=set()
     for name in names:edges.update(connections(host,name))
     outside={p.split('.',1)[0] for edge in edges for p in edge}-set(names)
-    for node in sorted(outside):
+    # Native converters can be in the registry too. Their generated suffix
+    # depends on Maya connection order, so a Spline count edit can rename
+    # unrelated Bendy converters without changing their actual boundaries.
+    # Pair both registered and implicit converters by their complete edges.
+    registered_conversions={name for name in names if c.nodeType(name)=='unitConversion'}
+    for node in sorted(outside|registered_conversions):
         if node in external_conversions:continue
         if c.nodeType(node)!='unitConversion':continue
         links=connections(host,node)
@@ -123,6 +128,8 @@ def _graph(host,names,*,external_conversions=(),roles=None,normalize_registry=Fa
         if len(incoming)!=1 or not outgoing:continue
         role='@conversion:'+sha256(repr((incoming,outgoing)).encode('utf8')).hexdigest()
         if role in nodes:raise CharacterRegistryError('单位转换归属存在歧义')
+        for existing in tuple(nodes):
+            if nodes[existing]==node:del nodes[existing]
         nodes[role]=node
         edges.update(links)
     aliases={node:role for role,node in nodes.items()}

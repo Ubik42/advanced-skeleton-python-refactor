@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from math import isfinite
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
@@ -9,7 +10,7 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 def create(host, plan):
     c = host._cmds
     count = len(plan.targets)
-    if count < 3 or len(plan.body_joints) <= 2:
+    if count < 3 or len(plan.native_ik) <= 2:
         raise FitSkeletonValidationError('Spline 中间扭转需要多段 IK 链')
     ramp = c.createNode('ramp', name='AdvPy_SplineTwistRamp', skipSelect=True)
     c.setAttr(ramp+'.interpolation', 1)
@@ -92,8 +93,17 @@ def audit(host, plan):
         if plan.source_solver_tail is not None:
             reference=f'AdvPy_SplineTwistOffsetRelative{index}'
             local=control+f'|AdvPy_SplineTwistLocalOrient{index}'
+            recorded=tuple(json.loads(c.getAttr(local+'.advPySplineTwistLocalBind')))
+            actual=tuple(c.getAttr(local+'.matrix'))
+            # Re-evaluating a composed transform after staging/reopening can
+            # change its matrix by an ulp without changing any locked TRS.
             if (not c.getAttr(local+'.advPySplineTwistLocalBind',lock=True)
-                    or tuple(json.loads(c.getAttr(local+'.advPySplineTwistLocalBind')))!=tuple(c.getAttr(local+'.matrix'))):
+                    or len(recorded)!=16 or len(actual)!=16
+                    or any(not isfinite(value) for value in recorded+actual)
+                    or any(abs(left-right)>1e-10 for left,right in zip(recorded,actual))
+                    or any(not c.getAttr(local+'.'+kind+axis,lock=True)
+                        for kind,axes in (('translate','XYZ'),('rotate','XYZ'),('scale','XYZ'),('shear',('XY','XZ','YZ')))
+                        for axis in axes)):
                 raise FitSkeletonValidationError('来源 Spline 扭转切线局部坐标变化')
             edges.extend(((offset+'.worldInverseMatrix[0]',reference+'.matrixIn[0]'),
                 (reference+'.advPySplineSourceBind',reference+'.matrixIn[1]')))

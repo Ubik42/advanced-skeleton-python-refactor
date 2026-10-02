@@ -61,7 +61,9 @@ def prepare(host,plan):
               current_spline_owner(plan.curved, plan.even_stretch_graph,
                                    plan.twist_ramp_graph,
                                    plan.mid_follow_graph,
-                                   plan.isolated_mid_follow_graph),
+                                   plan.isolated_mid_follow_graph,
+                                   source_simple_follow=plan.source_simple_twist is True
+                                   and plan.mid_follow_graph and not plan.twist_ramp_graph),
               type='string',lock=True)
     for joint in plan.joints[:len(plan.body_joints)]+plan.native_ik:host.create_body_arm_mechanism_joint(joint)
     if plan.source_solver_tail is not None:host.create_body_arm_mechanism_joint(plan.source_solver_tail)
@@ -286,7 +288,7 @@ def create(host,plan):
         c.connectAttr(plan.scale_reference+'.worldInverseMatrix[0]',relative+'.matrixIn[1]')
         c.connectAttr(relative+'.matrixSum',decompose+'.inputMatrix')
         c.connectAttr(decompose+'.outputScale',volume+'.input1')
-        if 0<ordinal<len(ik)-1:
+        if (ordinal>0 or plan.source_start_volume) and ordinal<len(ik)-1:
             weight=f'AdvPy_SplineIKScaleWeight{i}'
             addition=f'AdvPy_SplineIKScaleAdd{i}'
             c.createNode('multiplyDivide',name=weight,skipSelect=True)
@@ -386,7 +388,7 @@ def audit(host,plan,*,source_visibility_ready=True):
         raise FitSkeletonValidationError('Spline 曲线拓扑与求解图版本不一致')
     if (version>=20)!=plan.even_stretch_graph:
         raise FitSkeletonValidationError('Spline stretchEven 计划与求解图版本不一致')
-    if (version>=22)!=plan.twist_ramp_graph:
+    if (22<=version<28)!=plan.twist_ramp_graph:
         raise FitSkeletonValidationError('Spline 中间扭转计划与求解图版本不一致')
     if (version>=24)!=plan.mid_follow_graph:
         raise FitSkeletonValidationError('Spline 中间跟随计划与求解图版本不一致')
@@ -601,7 +603,7 @@ def audit(host,plan,*,source_visibility_ready=True):
                                  if oriented_scaling else '')
                     edges.append((plan.driver_targets[index]+orientation+'.worldMatrix[0]',
                                   blend+f'.target[{index}].targetMatrix'))
-            if ordinal and not (terminal_without_volume and ordinal==len(ik)-1):
+            if (ordinal or plan.source_start_volume) and not (terminal_without_volume and ordinal==len(ik)-1):
                 weight=f'AdvPy_SplineIKScaleWeight{i}'
                 addition=f'AdvPy_SplineIKScaleAdd{i}'
                 edges += [('AdvPy_SplineVolumeDelta.output',weight+'.input1X'),
@@ -704,14 +706,14 @@ def audit(host,plan,*,source_visibility_ready=True):
             for index,weight in enumerate(spline_ik_scale_weights(*plan.native_sample(i),len(plan.targets))):
                 if weight:
                     constants[blend+f'.target[{index}].weight']=weight
-            if ordinal and not (terminal_without_volume and ordinal==len(ik)-1):
+            if (ordinal or plan.source_start_volume) and not (terminal_without_volume and ordinal==len(ik)-1):
                 sample_index,sample_count=plan.native_sample(i)
                 fraction=2.0*(sample_index+1)/(sample_count+1)
                 constants[f'AdvPy_SplineIKScaleWeight{i}.input2X']=min(fraction,2.0-fraction)
                 constants[f'AdvPy_SplineIKScaleAdd{i}.input2']=1.
             else:
                 for axis in 'XYZ':constants[volume+'.input2'+axis]=1.
-    if n==2 and not single_segment_twist:
+    if n==2 and not single_segment_twist and plan.source_forward_axis is None:
         constants.pop('AdvPy_SplineIKHandle.dTwistControlEnable')
     constants.update({f'AdvPy_SplineLength{i}.input1X':length for i,length in zip(plan.native_keys[1:],plan.native_lengths)})
     if plan.source_ik_chain:
