@@ -76,6 +76,9 @@ def build_source_body_inbetween(host, build, part_result, fk, limbs, spline, *,
                     spline.ik_outputs[index], spline.ik_outputs[index + 1],
                     spline.node_name("AdvPy_SplineReverse.outputX"), spline.mode_weight,
                     spline_root_path=spline.root_path)
+                if spline.source_ik_chain:
+                    binding=replace(binding,spline_native_outputs=tuple(
+                        spline.native_output('Part_'+part.name) for part in sorted(chain,key=lambda item:item.index)))
                 if index == 0 and spline.fk_root_point_from_receiver and not root_start:
                     binding = replace(binding,
                         start_fk_point_constraint_name=spline.node_name("AdvPy_SplineFKRootPoint"))

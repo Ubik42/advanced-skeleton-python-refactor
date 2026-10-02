@@ -155,7 +155,8 @@ class BuildInbetweenLimbSegments:
                             binding.parts,
                             root_path=binding.spline_root_path,
                             start_output_path=binding.start_ik_driver,
-                            end_output_path=binding.end_ik_driver))
+                            end_output_path=binding.end_ik_driver,
+                            native_outputs=binding.spline_native_outputs))
             segments = []
             for binding, fk, rewire in fk_rows:
                 ik = ik_by_part.get(binding.parts[0].name)

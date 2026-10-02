@@ -54,6 +54,7 @@ class InbetweenLimbBinding:
     rotate_order: int
     part_control_radius: float
     spline_root_path: str | None = None
+    spline_native_outputs: tuple[str,...] = ()
     start_fk_source_path: str | None = None
     start_fk_point_constraint_name: str | None = None
 

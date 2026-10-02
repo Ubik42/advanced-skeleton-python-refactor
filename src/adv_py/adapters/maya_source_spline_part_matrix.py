@@ -33,10 +33,18 @@ def configure(host,body,splines,segments):
             stem='AdvPy_'+part.body_part_name+'_SourceSplinePart'
             plan=plan_spline_part_matrix(stem,target,parent,host._resolve_connected_node(part.fkx_name),
                 host._resolve_connected_node(part.ikx_name),built.body.ik_weight_plug,spline.scale_reference,targets,index,len(expanded),
-                spline.node_name('AdvPy_SplineVolumeDelta.output'),offset_sources=tuple((axis,source) for axis,source in offsets if source),offset_values=values)
+                spline.node_name('AdvPy_SplineVolumeDelta.output'),ik_scale_plug=(spline.node_name('AdvPy_SplineIKScaleVolumePart_'+part.body_part_name+'.output') if spline.source_ik_chain else None),offset_sources=tuple((axis,source) for axis,source in offsets if source),offset_values=values)
             if any(host.find_name_collisions(node.name) for node in plan.nodes):raise CharacterRegistryError('来源 Spline Part 原生矩阵节点冲突')
             for axis,source in offsets:
                 if source:c.disconnectAttr(source,constraint+'.offset'+axis)
+            if spline.source_ik_chain:
+                native=next(joint.path for joint in spline.native_ik if joint.source_joint==target)
+                scaler=spline.node_name('AdvPy_SplineIKScaleVolumePart_'+part.body_part_name)
+                for axis in 'XYZ':
+                    if not c.isConnected(scaler+'.output'+axis,native+'.scale'+axis):
+                        raise CharacterRegistryError('来源 Spline Part IKScaler 交接来源变化')
+                    c.disconnectAttr(scaler+'.output'+axis,native+'.scale'+axis)
+                    c.setAttr(native+'.scale'+axis,1.)
             c.delete(constraint);_reset_body(c,target);c.setAttr(target+'.segmentScaleCompensate',False)
             graph=SourceGraphConnections(host,stem)
             for node in plan.nodes:

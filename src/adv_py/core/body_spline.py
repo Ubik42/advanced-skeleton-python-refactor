@@ -89,6 +89,30 @@ class BodySplinePlan:
     # of the base joints in that expanded chain, including its final joint.
     source_scale_indices: tuple[int,...] = ()
 
+    source_ik_chain: tuple[BodyLimbMechanismJointSpec,...] = ()
+
+    @property
+    def native_ik(self):
+        return self.source_ik_chain or self.joints[len(self.body_joints):]
+
+    @property
+    def native_keys(self):
+        base={joint.path:index for index,joint in enumerate(self.joints[len(self.body_joints):])}
+        return tuple(base.get(joint.path,"Part_"+joint.source_joint.rsplit("|",1)[-1]) for joint in self.native_ik)
+
+    @property
+    def native_lengths(self):
+        return tuple(sqrt(sum((b-a)**2 for a,b in zip(left.world_position,right.world_position)))
+                     for left,right in zip(self.native_ik,self.native_ik[1:])) if self.source_ik_chain else self.lengths
+
+    def native_sample(self,key):
+        return (self.native_keys.index(key),len(self.native_ik)) if self.source_ik_chain else self.scale_sample(key)
+
+    @scoped_spline_method
+    def native_output(self,key):
+        joint=self.native_ik[self.native_keys.index(key)]
+        return (self.root_path+f"|AdvPy_SplineIKOutput{key}" if self.even_stretch_graph else joint.path)
+
     def scale_sample(self,index):
         if self.source_scale_indices:
             return self.source_scale_indices[index],self.source_scale_indices[-1]+1
@@ -252,14 +276,14 @@ class BodySplinePlan:
     @scoped_spline_property
     def ik_outputs(self):
         n=len(self.body_joints)
-        return tuple((self.root_path+f'|AdvPy_SplineIKOutput{i}'
+        return tuple((self.native_output(i)
                       if self.even_stretch_graph else self.joints[n+i].path)
                      +(f'|AdvPy_SplineIKRest{i}' if self.curved and i else '')
                      for i in range(n))
     @scoped_spline_property
     def scale_reference(self):
         follow='|Group|MotionSystem|RootSystem|RootFollowMain'
-        return follow if self.root_path.startswith(follow+'|') else self.pelvis_control
+        return follow if self.source_ik_chain or self.root_path.startswith(follow+'|') else self.pelvis_control
     @scoped_spline_property
     def node_names(self):
         fixed=('AdvPy_SplineMechanisms','AdvPy_SplineChestSpace','AdvPy_SplineCurve','AdvPy_SplineCurveShape',
@@ -291,6 +315,7 @@ class BodySplinePlan:
         outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints))
                       for kind in (('Length',) if i in self.source_body_matrix_indices
                                    else ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale')))
+        outputs+=tuple(f'AdvPy_SplineLength{key}' for key in self.native_keys if not isinstance(key,int))
         outputs+=tuple(f'AdvPy_SplineBody{i}{suffix}'
                        for i in self.source_body_matrix_indices
                        for suffix in ('ScaleBlend','ScaleCM','BodyBM','BodyMM'))
@@ -301,11 +326,11 @@ class BodySplinePlan:
         scaling=('AdvPy_SplineVolumeDelta',
                  'AdvPy_SplineStretchUnit','AdvPy_SplineVolumeUnit')+tuple(
             f'AdvPy_SplineIKScale{kind}{i}'
-            for i in range(len(self.body_joints))
+            for i in self.native_keys
             for kind in ('Blend','Relative','Decompose','Volume')
         )+tuple(
             f'AdvPy_SplineIKScale{kind}{i}'
-            for i in range(1,len(self.body_joints))
+            for i in self.native_keys[1:]
             for kind in ('Weight','Add')
         )
         orientations=tuple(f'AdvPy_SplineIKLocalOrient{i}'
@@ -313,12 +338,18 @@ class BodySplinePlan:
         even=('AdvPy_SplineStretchEvenUnit','AdvPy_SplineStretchEvenReverse',
               'AdvPy_SplineStretchEvenWeight')+tuple(
             f'AdvPy_SplineIK{kind}{i}'
-            for i in range(len(self.body_joints))
+            for i in self.native_keys
             for kind in ('ArcSample','ArcFrame','Output','OutputPoint',
                          'OutputOrient','OutputScale','OutputReverse'))+tuple(
             f'AdvPy_SplineIKArcAim{i}'
-            for i in range(len(self.body_joints)-1))+(
-            f'AdvPy_SplineIKArcEndOrient{len(self.body_joints)-1}',)
+            for i in self.native_keys[:-1])+(
+            f'AdvPy_SplineIKArcEndOrient{self.native_keys[-1]}',)
+        if self.source_ik_chain:
+            even=('AdvPy_SplineStretchEvenUnit','AdvPy_SplineStretchEvenReverse','AdvPy_SplineStretchEvenWeight',
+                  'AdvPy_SplineIKArcEndRotation','AdvPy_SplineIKArcEndPosition','AdvPy_SplineIKArcEndMatrix')+tuple(
+                f'AdvPy_SplineIK{kind}{key}' for key in self.native_keys
+                for kind in ('ArcSample','ArcPoint','ArcFrame','ArcLocalMM','ArcLocalPM','ArcWorldMM','SpFollowMM','AcFollowMM','AcFollowPM','AcFollowWorldMM','Output','OutputBM'))+tuple(
+                f'AdvPy_SplineIKArcAimMatrix{key}' for key in self.native_keys[:-1])
         twist=('AdvPy_SplineTwistRamp',)+tuple(
             f'AdvPy_SplineTwist{kind}{i}'
             for i in range(1,len(self.targets)-1)
@@ -354,8 +385,8 @@ class BodySplinePlan:
                              for label,_,_ in self.source_follow_targets
                              for suffix in ('Matrix','Weight'))
         mode=self.source_mode.node_names if self.source_mode else ()
-        return (mode+fixed+chest+tuple(j.name for j in self.joints)+targets+cvs+hybrids+proxies+layers+outputs+
-                rests+scaling+orientations+(even if self.even_stretch_graph else ())+
+        return (mode+fixed+(('AdvPy_SplineMainScaleDM','AdvPy_SplineMainRestArc') if self.source_ik_chain else ())+chest+tuple(j.name for j in self.joints)+targets+cvs+hybrids+proxies+layers+outputs+
+                tuple(j.name for j in self.source_ik_chain if j.path not in {item.path for item in self.joints})+rests+scaling+orientations+(even if self.even_stretch_graph else ())+
                 (twist if self.twist_ramp_graph else ())+
                 (follow if self.mid_follow_graph else ())+
                 (('AdvPy_SplineIKFollowMain',) if self.isolated_mid_follow_graph else ()))

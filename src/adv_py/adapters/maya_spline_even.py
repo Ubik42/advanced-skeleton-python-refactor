@@ -22,11 +22,17 @@ def create(host, plan, shape, ik):
     c.connectAttr('AdvPy_SplineStretchEvenReverse.outputX',
                   'AdvPy_SplineStretchEvenWeight.input2X')
 
+    if plan.source_ik_chain:
+        from . import maya_source_spline_outputs
+        maya_source_spline_outputs.create(host,plan,shape,ik)
+        return
+
     nearest = c.createNode('nearestPointOnCurve', skipSelect=True)
     c.connectAttr(shape+'.worldSpace[0]', nearest+'.inputCurve')
     arcs = []
     outputs = []
-    for i, joint in enumerate(ik):
+    for ordinal, joint in enumerate(ik):
+        i=plan.native_keys[ordinal]
         bind = tuple(c.xform(joint.path, query=True, worldSpace=True, matrix=True))
         for axis, value in zip('XYZ', bind[12:15]):
             c.setAttr(nearest+'.inPosition'+axis, value)
@@ -51,18 +57,20 @@ def create(host, plan, shape, ik):
         outputs.append(output)
     c.delete(nearest)
 
-    for i, arc in enumerate(arcs):
-        if i == n-1:
+    for ordinal, arc in enumerate(arcs):
+        i=plan.native_keys[ordinal]
+        if ordinal == n-1:
             c.orientConstraint(plan.driver_targets[-1], arc, maintainOffset=True,
                                name=f'AdvPy_SplineIKArcEndOrient{i}')
         else:
-            c.aimConstraint(arcs[i+1], arc, maintainOffset=True,
+            c.aimConstraint(arcs[ordinal+1], arc, maintainOffset=True,
                             aimVector=(1, 0, 0), upVector=(0, 1, 0),
                             worldUpType='objectrotation',
-                            worldUpObject=ik[i].path,
+                            worldUpObject=ik[ordinal].path,
                             name=f'AdvPy_SplineIKArcAim{i}')
-    for i, (joint, arc, output) in enumerate(zip(ik, arcs, outputs)):
-        weight = ('AdvPy_SplineStretchUnit.output' if i == n-1 else
+    for ordinal, (joint, arc, output) in enumerate(zip(ik, arcs, outputs)):
+        i=plan.native_keys[ordinal]
+        weight = ('AdvPy_SplineStretchUnit.output' if ordinal == n-1 else
                   'AdvPy_SplineStretchEvenWeight.outputX')
         reverse = c.createNode('reverse',
                                name=f'AdvPy_SplineIKOutputReverse{i}',
@@ -99,7 +107,14 @@ def audit(host, plan, shape, ik):
               'AdvPy_SplineStretchEvenWeight.input2X')]
     if abs(c.getAttr('AdvPy_SplineStretchEvenUnit.conversionFactor')-.1)>1e-9:
         raise FitSkeletonValidationError('Spline stretchEven 量纲被修改')
-    for i, joint in enumerate(ik):
+    if plan.source_ik_chain:
+        if any(not c.isConnected(*edge) for edge in edges):
+            raise FitSkeletonValidationError('来源 Spline stretchEven 权重接线被修改')
+        from . import maya_source_spline_outputs
+        maya_source_spline_outputs.audit(host,plan,shape,ik)
+        return
+    for ordinal, joint in enumerate(ik):
+        i=plan.native_keys[ordinal]
         sample = f'AdvPy_SplineIKArcSample{i}'
         arc = plan.root_path+f'|AdvPy_SplineIKArcFrame{i}'
         output = plan.root_path+f'|AdvPy_SplineIKOutput{i}'
@@ -111,14 +126,14 @@ def audit(host, plan, shape, ik):
             raise FitSkeletonValidationError('Spline 曲线采样或双链输出层无效')
         edges.extend(((shape+'.worldSpace[0]', sample+'.inputCurve'),
                       (sample+'.position', arc+'.translate')))
-        if i == n-1:
+        if ordinal == n-1:
             command = c.orientConstraint
             node = f'AdvPy_SplineIKArcEndOrient{i}'
             targets = (plan.driver_targets[-1],)
         else:
             command = c.aimConstraint
             node = f'AdvPy_SplineIKArcAim{i}'
-            targets = (plan.root_path+f'|AdvPy_SplineIKArcFrame{i+1}',)
+            targets = (plan.root_path+f'|AdvPy_SplineIKArcFrame{plan.native_keys[ordinal+1]}',)
         actual = tuple(host._resolve_connected_node(p)
                        for p in command(node, query=True, targetList=True))
         if actual != targets:
@@ -133,7 +148,7 @@ def audit(host, plan, shape, ik):
             aliases = command(node, query=True, weightAliasList=True)
             if actual != (joint.path, arc) or len(aliases) != 2:
                 raise FitSkeletonValidationError('Spline 双链输出目标被替换')
-            weight = ('AdvPy_SplineStretchUnit.output' if i == n-1 else
+            weight = ('AdvPy_SplineStretchUnit.output' if ordinal == n-1 else
                       'AdvPy_SplineStretchEvenWeight.outputX')
             edges.extend(((weight, f'AdvPy_SplineIKOutputReverse{i}.inputX'),
                           (f'AdvPy_SplineIKOutputReverse{i}.outputX',

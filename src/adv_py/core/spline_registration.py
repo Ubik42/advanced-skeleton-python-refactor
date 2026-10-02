@@ -45,6 +45,8 @@ def decode_spline(raw, body):
         raw={**raw,'source_fit_control_count':None}
     if isinstance(raw,dict) and 'source_scale_indices' not in raw:
         raw={**raw,'source_scale_indices':[]}
+    if isinstance(raw,dict) and 'source_ik_chain' not in raw:
+        raw={**raw,'source_ik_chain':[]}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     fit_count=raw['source_fit_control_count']
     if fit_count is not None and (type(fit_count) is not int or fit_count<2
@@ -144,7 +146,7 @@ def decode_spline(raw, body):
                 for i,left in enumerate(frame) for j,right in enumerate(frame)) for frame in cv_axes)):
         raise CharacterRegistryError('来源 Spline CV 朝向声明无效')
     if (type(raw['fake_mid_control']) is not bool
-            or source_points and len(source_points)!=count
+            or source_points and len(source_points)!=(len(raw['source_ik_chain']) if raw['source_ik_chain'] else count)
             or raw['fake_mid_control'] and not source_points):
         raise CharacterRegistryError('来源 Spline 曲线点或补充中间控制标记无效')
     if (type(raw['source_hybrid_graph']) is not bool or type(raw['source_ik_local']) is not bool
@@ -205,6 +207,36 @@ def decode_spline(raw, body):
         raise CharacterRegistryError('曲线脊柱控制器声明不完整')
     if raw['fake_mid_control'] and len(targets)!=3:
         raise CharacterRegistryError('来源 Spline 补充中间控制必须为三主控')
+    native=[]
+    for row in raw['source_ik_chain']:
+        exact(row,(field.name for field in fields(BodyLimbMechanismJointSpec)))
+        node=path(row['path']);source=path(row['source_joint'])
+        frame=tuple(vector(axis,3) for axis in row['world_axes'])
+        parent=root if not native else native[-1].path
+        if (not source_points or row['role']!='ik' or row['parent_path']!=parent
+                or node!=parent+'|'+row['name'] or len(frame)!=3
+                or any(abs(sum(a*b for a,b in zip(left,right))-(i==j))>1e-5
+                    for i,left in enumerate(frame) for j,right in enumerate(frame))):
+            raise CharacterRegistryError('来源 Spline 完整 IK 父链无效')
+        if source not in body_paths:
+            # Only physical Inbetween Part ancestors may intervene between bases.
+            if not any(end.startswith(source+'|') for end in body_paths):
+                raise CharacterRegistryError('来源 Spline IK Part 不属于 Body 骨链')
+            leaf=source.rsplit('|',1)[-1]
+            if row['name']!='AdvPy_'+leaf+'_SplineNativeIK' or 'Part' not in leaf:
+                raise CharacterRegistryError('来源 Spline IK Part 身份无效')
+        native.append(BodyLimbMechanismJointSpec(BodyLimbMechanismRole.IK,
+            FitBuildSide(row['side']),source,node,row['name'],parent,
+            vector(row['world_position'],3),frame))
+    if native and (tuple(j.source_joint for j in native if j.source_joint in body_paths)!=body_paths
+                   or len({j.source_joint for j in native})!=len(native)
+                   or tuple(i for i,j in enumerate(native) if j.source_joint in body_paths)!=tuple(scale_indices)):
+        raise CharacterRegistryError('来源 Spline 完整 IK 链与缩放索引不一致')
+    if native:
+        for first,last in zip(native,native[1:]):
+            if last.source_joint.rsplit('|',1)[0]!=first.source_joint or last.side!=first.side:
+                raise CharacterRegistryError('来源 Spline IK 链没有严格继承物理 Fit Part 父链')
+    native_by_source={joint.source_joint:joint for joint in native}
     joints = []
     for index, row in enumerate(raw['joints']):
         exact(row, (field.name for field in fields(BodyLimbMechanismJointSpec)))
@@ -215,11 +247,14 @@ def decode_spline(raw, body):
         joint = BodyLimbMechanismJointSpec(
             BodyLimbMechanismRole(row['role']), FitBuildSide(row['side']), path(row['source_joint']),
             node, row['name'], path(row['parent_path']), vector(row['world_position'], 3), joint_axes)
-        expected_parent = root if index % count == 0 else joints[-1].path
+        expected_parent = (native_by_source[body_paths[index%count]].parent_path
+                           if native and index>=count else root if index % count == 0 else joints[-1].path)
         if (index >= count * 2 or joint.source_joint != body_paths[index % count]
                 or joint.role.value != ('fk' if index < count else 'ik')
                 or joint.parent_path != expected_parent or node.rsplit('|', 1)[0] != expected_parent):
             raise CharacterRegistryError('曲线脊柱机制链顺序或父级无效')
+        if native and index>=count and joint!=native_by_source[joint.source_joint]:
+            raise CharacterRegistryError('来源 Spline 基础 IK 与完整 IK 链描述不一致')
         joints.append(joint)
     if len(joints) != count * 2:
         raise CharacterRegistryError('曲线脊柱机制链不完整')
@@ -238,7 +273,7 @@ def decode_spline(raw, body):
                           source_fixed_orient_unique=raw['source_fixed_orient_unique'],
                           source_first_translate=raw['source_first_translate'],
                           source_world_controls=raw['source_world_controls'],source_mode=source_mode,
-                          source_fit_control_count=fit_count,source_scale_indices=tuple(scale_indices))
+                          source_fit_control_count=fit_count,source_scale_indices=tuple(scale_indices),source_ik_chain=tuple(native))
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

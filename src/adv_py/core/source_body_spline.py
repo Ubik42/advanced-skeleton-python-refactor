@@ -82,8 +82,8 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
             indices.append(expanded)
             expanded+=1+sum(part.kind=="inbetween" and part.start_body_name==joint.name for part in parts) if index<len(source)-1 else 1
         spline=replace(spline,source_mode=mode,source_scale_indices=tuple(indices))
-        plans.append(retain_source_spline_layout(spline,saved,
-            change_count=system in counts))
+        spline=retain_source_spline_layout(spline,saved,change_count=system in counts)
+        plans.append(_expand_source_ik(spline,parts))
     if saved_layouts is not None and len(plans)!=len(saved_layouts):
         raise FitSkeletonValidationError('来源 Spline 重建不能静默增删已保存系统')
     if counts.keys()-{plan.system_name for plan in plans}:
@@ -162,3 +162,29 @@ def _plan_source_chain(fk,source,info,options,metadata,system,generated_sources)
     return replace(fk, controls=merged,
                    hidden_controls=hidden,
                    endpoints=endpoints), spline
+
+
+def _expand_source_ik(plan,parts):
+    """asGetIKJoints: insert Fit Inbetween entries before native IK creation."""
+    from .body_limb_mechanisms import BodyLimbMechanismJointSpec
+    count=len(plan.body_joints);base=plan.joints[count:]
+    chain=[];updated=[];parent=plan.root_path
+    for index,joint in enumerate(base):
+        current=replace(joint,parent_path=parent,path=parent+'|'+joint.name)
+        chain.append(current);updated.append(current);parent=current.path
+        if index==count-1:continue
+        rows=sorted((part for part in parts if part.kind=='inbetween'
+                     and part.start_body_name==joint.source_joint.rsplit('|',1)[-1]),
+                    key=lambda part:part.index)
+        for part in rows:
+            # Body has already been physically reparented through these Parts.
+            end=plan.body_joints[index+1]
+            tokens=end.split('|');slot=tokens.index(part.name)
+            source='|'.join(tokens[:slot+1])
+            name='AdvPy_'+part.name+'_SplineNativeIK'
+            item=BodyLimbMechanismJointSpec(joint.role,joint.side,source,
+                parent+'|'+name,name,parent,part.world_position,joint.world_axes)
+            chain.append(item);parent=item.path
+    if len(chain)==len(base):return plan
+    return replace(plan,joints=plan.joints[:count]+tuple(updated),source_ik_chain=tuple(chain),source_curve_points=tuple(joint.world_position for joint in chain),
+                   source_scale_indices=tuple(index for index,joint in enumerate(chain) if joint in updated))

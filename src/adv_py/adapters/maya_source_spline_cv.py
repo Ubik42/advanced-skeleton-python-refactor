@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from struct import pack,unpack
 
 from adv_py.core.source_spline_cv import source_spline_cv_bindings
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -191,7 +192,7 @@ def audit(host, plan, shape):
             stiff = f'AdvPy_SplineStiff{binding.stiffness_control}'
             edges.extend(((plan.targets[binding.stiffness_control]+'.stiff', stiff+'.valueX'),
                           (stiff+'.outValueX', prefix+'Blend.target[0].weight')))
-            if (abs(c.getAttr(stiff+'.minX')-binding.weight)>1e-8
+            if (c.getAttr(stiff+'.minX')!=unpack('f',pack('f',binding.weight))[0]
                     or c.getAttr(stiff+'.maxX')!=1. or c.getAttr(stiff+'.oldMaxX')!=10.):
                 raise FitSkeletonValidationError('来源 Spline stiff 权重范围改变')
         elif abs(c.getAttr(prefix+'Blend.target[0].weight')-binding.weight)>1e-8:

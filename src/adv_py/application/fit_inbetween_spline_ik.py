@@ -1,4 +1,4 @@
-"""Build Spline Part IK sources without changing the spline solver chain."""
+"""Connect Spline Part receivers to the authored native expanded chain."""
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
@@ -24,11 +24,11 @@ class BuildInbetweenSplineIk:
 
     def apply(self, body_parts: tuple[FitPartJointSpec, ...], *,
               root_path: str, start_output_path: str,
-              end_output_path: str) -> InbetweenIkPartsPlan:
+              end_output_path: str,native_outputs: tuple[str,...]=()) -> InbetweenIkPartsPlan:
         plan = plan_inbetween_spline_ik(
             body_parts, root_path=root_path,
             start_output_path=start_output_path,
-            end_output_path=end_output_path)
+            end_output_path=end_output_path,native_outputs=native_outputs)
         self._host.preflight_inbetween_spline_ik(plan)
         with self._host.transaction("构建 Spline Inbetween IK 来源"):
             self._host.create_inbetween_spline_ik(plan)

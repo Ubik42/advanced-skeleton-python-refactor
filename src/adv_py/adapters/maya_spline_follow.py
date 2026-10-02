@@ -5,10 +5,10 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 
 
 def _follow_frame(c, plan, name, target):
-    node = c.createNode('transform', name=name, parent=plan.root_path,
+    node = c.createNode('transform', name=name, parent=plan.mid_follow_parent if plan.source_ik_chain else plan.root_path,
                         skipSelect=True)
     node = (c.ls(node, long=True) or [node])[0]
-    c.setAttr(node+'.inheritsTransform', False, lock=True)
+    c.setAttr(node+'.inheritsTransform',bool(plan.source_ik_chain),lock=True)
     c.xform(node, worldSpace=True,
             matrix=c.xform(target, query=True, worldSpace=True, matrix=True))
     return node
@@ -72,8 +72,11 @@ def audit(host, plan):
                for kind in ('translate','rotate','scale','shear')
                for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ'))):
             raise FitSkeletonValidationError('Spline 独立跟随层变换未锁定')
-    start = plan.root_path+'|AdvPy_SplineFollowStart'
-    end = plan.root_path+'|AdvPy_SplineFollowEnd'
+    if plan.source_ik_chain and not c.isConnected(plan.scale_reference+'.worldMatrix[0]',plan.mid_follow_parent+'.offsetParentMatrix'):
+        raise FitSkeletonValidationError('来源 Spline 中间跟随没有继承 Main 世界矩阵')
+    frame_parent=plan.mid_follow_parent if plan.source_ik_chain else plan.root_path
+    start = frame_parent+'|AdvPy_SplineFollowStart'
+    end = frame_parent+'|AdvPy_SplineFollowEnd'
     edges = [(plan.settings+'.noFlipAxis',
               'AdvPy_SplineMidFlipAxis.valueX')]
     constants = {'AdvPy_SplineMidFlipAxis.minX': 2,
@@ -82,7 +85,7 @@ def audit(host, plan):
     for frame, source, name in (
             (start, plan.driver_targets[0], 'AdvPy_SplineFollowStartConstraint'),
             (end, plan.driver_targets[-1], 'AdvPy_SplineFollowEndConstraint')):
-        if c.getAttr(frame+'.inheritsTransform'):
+        if bool(c.getAttr(frame+'.inheritsTransform'))!=bool(plan.source_ik_chain):
             raise FitSkeletonValidationError('Spline 跟随参考继承了机制层变换')
         targets = tuple(host._resolve_connected_node(p)
                         for p in c.parentConstraint(name, query=True,

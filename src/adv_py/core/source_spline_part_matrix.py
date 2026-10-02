@@ -5,7 +5,7 @@ from .source_rp_dynamics import SourceRpNode
 from .body_spline import spline_ik_scale_weights
 
 
-def plan_spline_part_matrix(stem,body,parent,fk,ik,mode,reference,targets,index,count,volume_delta,*,offset_sources=(),offset_values=(0.,0.,0.)):
+def plan_spline_part_matrix(stem,body,parent,fk,ik,mode,reference,targets,index,count,volume_delta,*,offset_sources=(),offset_values=(0.,0.,0.),ik_scale_plug=None):
     scale=stem+'ScaleBlend';blend=stem+'IKScaleBM';relative=stem+'IKScaleMM';decompose=stem+'IKScaleDM';volume=stem+'IKScaleVolume'
     weights=spline_ik_scale_weights(index,count,len(targets))
     nodes=[SourceRpNode(blend,'blendMatrix',tuple((f'target[{i}].weight',w) for i,w in enumerate(weights) if w),
@@ -21,6 +21,11 @@ def plan_spline_part_matrix(stem,body,parent,fk,ik,mode,reference,targets,index,
     nodes.extend((SourceRpNode(volume,'multiplyDivide',(('operation',1.),),((decompose+'.outputScale','input1'),)+multiplier),
         SourceRpNode(scale,'blendColors',tuple(('color2'+axis,1.) for axis in 'RGB'),
             ((mode,'blender'),)+tuple((volume+'.output'+axis,'color1'+component) for axis,component in zip('XYZ','RGB')))))
+    if ik_scale_plug is not None:
+        # The expanded native plan already owns the original IKScaler graph.
+        # Feed its result to ScaleBlend instead of duplicating its computation.
+        nodes=[SourceRpNode(scale,'blendColors',tuple(('color2'+axis,1.) for axis in 'RGB'),
+            ((mode,'blender'),)+tuple((ik_scale_plug+axis,'color1'+component) for axis,component in zip('XYZ','RGB')))]
     body_graph=plan_source_body_matrix(stem,body,parent,fk+'.worldMatrix[0]',ik+'.worldMatrix[0]',mode,scale,
                                       offset_sources=offset_sources,offset_values=offset_values)
     return replace(body_graph,nodes=tuple(nodes)+body_graph.nodes)
