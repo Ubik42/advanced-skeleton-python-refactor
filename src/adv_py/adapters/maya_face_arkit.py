@@ -115,10 +115,26 @@ class MayaFaceARKitMixin:
         if not c.objExists("FaceControlSet"):
             raise FitSkeletonValidationError("没有 FaceControlSet")
         self._transaction_changed = True
+        disconnected = set()
         for control in c.sets("FaceControlSet", query=True) or []:
             for kind in ("animCurve", "blendWeighted"):
                 nodes = c.listConnections(control, source=True, destination=False, type=kind) or []
                 if nodes:
+                    identifiers = set(c.ls(nodes, uuid=True) or [])
+                    pairs = c.listConnections(control, source=True, destination=False,
+                                               plugs=True, connections=True) or []
+                    for destination, source in zip(pairs[::2], pairs[1::2]):
+                        if identifiers.intersection(c.ls(source.split('.', 1)[0], uuid=True) or []):
+                            disconnected.add(destination)
                     c.delete(nodes)
         self.apply_face_build_pose(self.read_face_build_pose())
+        # Maya's delete undo records the input graph, but redo can restore a
+        # stale cached driven value when that graph is removed again. Journal
+        # exactly the source's already-computed disconnected scalar values.
+        # This neither invents defaults nor resets unrecorded ARKit channels.
+        for plug in sorted(disconnected):
+            if c.objExists(plug) and c.getAttr(plug, settable=True):
+                value = c.getAttr(plug)
+                if isinstance(value, (bool, int, float)):
+                    c.setAttr(plug, value)
         self._transaction_changed = True

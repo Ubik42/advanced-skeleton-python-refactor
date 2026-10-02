@@ -13,6 +13,20 @@ from .maya_face_bs_targets import MayaFaceBSTargetsMixin
 
 class MayaFaceBSConversionMixin(MayaFaceBSEditMixin, MayaFaceBSTargetsMixin, MayaFaceBSSamplingMixin, MayaFaceBSLayersMixin,
                                 MayaFaceBSCleanupMixin, MayaFaceBSMixedMixin, MayaFaceBSAttachersMixin):
+    def original_face_bs_skin(self, geometry):
+        """asGetSkinCluster's pruned, interest-level-two production history.
+
+        A live BlendShape layer has its own upstream Skin. Unrestricted
+        listHistory walks into those target DAGs and can return the target
+        Skin instead of the production model's Skin after Mixed preparation.
+        """
+        raw = getattr(self._cmds, "raw", self._cmds)
+        nodes = [node for node in raw.listHistory(self.scene_address(geometry),
+            pruneDagObjects=True, interestLevel=2) or [] if raw.nodeType(node) == "skinCluster"]
+        if not nodes:
+            raise FitSkeletonValidationError("Face 转换模型缺少原版生产 Skin：" + geometry)
+        return nodes[-1]
+
     @staticmethod
     def _original_restore_leaf(node):
         return node.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
@@ -41,6 +55,9 @@ class MayaFaceBSConversionMixin(MayaFaceBSEditMixin, MayaFaceBSTargetsMixin, May
         use_layers = options.keep_joints and not (c.objExists(fit + ".GameEngine") and c.getAttr(fit + ".GameEngine"))
         if use_layers and (not c.objExists("FaceGroup.version") or float(c.getAttr("FaceGroup.version")) < 5.791):
             raise FitSkeletonValidationError("Mixed 转换要求原版 Face 版本不低于 5.791")
+        if use_layers:
+            from .maya_native_node_cast import prepare_native_node_cast
+            prepare_native_node_cast(self)
         controls = []
         for parent in c.listRelatives("ctrlBox", children=True, type="transform") or []:
             children = c.listRelatives(parent, children=True, type="transform") or []

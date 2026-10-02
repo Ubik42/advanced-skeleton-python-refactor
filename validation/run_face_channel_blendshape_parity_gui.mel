@@ -1,0 +1,1 @@
+python("import sys; sys.path.insert(0, r'D:/3D/_tools/_DCC/advanced-skeleton-python-refactor/validation'); import maya_face_channel_parity as reference; reference.OUTPUT = reference.ROOT / 'validation/results/face-channel-blendshape-parity'; reference.main(kinds=('arkit_connect', 'arkit_quick'), source_kind='blendshape', driver_values=(0., .5, 1., 2., -1.))");

@@ -21,7 +21,7 @@ def node_ids():
     return set(c.ls(c.ls(long=True) or [], uuid=True) or [])
 
 
-def fixture(kind, alternate=False):
+def fixture(kind, alternate=False, blendshape=False):
     from maya import cmds as c
     from adv_py.core.face_arkit import ARKIT_SHAPES
     c.file(str(SCENE), open=True, force=True, executeScriptNodes=False)
@@ -43,10 +43,22 @@ def fixture(kind, alternate=False):
         node = c.createNode('transform', name='ctrlRobloxHead_M')
         c.sets(node, add='FaceControlSet')
     if kind in ('arkit_quick', 'arkit_connect'):
-        source = c.createNode('transform', name='ExternalARKit')
-        for name in ARKIT_SHAPES:
+        if blendshape:
+            model = c.polyCube(name='ARKitSourceModel', constructionHistory=False)[0]
+            source = c.blendShape(model, name='ExternalARKit')[0]
+        else:
+            source = c.createNode('transform', name='ExternalARKit')
+        for index, name in enumerate(ARKIT_SHAPES):
             attr = name.replace('Right', '_R').replace('Left', '_L') if alternate else name
-            c.addAttr(source, longName=attr, attributeType='double', keyable=True)
+            if blendshape:
+                target = c.duplicate(model, name=attr, returnRootsOnly=True)[0]
+                c.blendShape(source, edit=True, target=(model, index, target, 1))
+                plug = source + '.weight[%d]' % index
+                if c.aliasAttr(plug, query=True) != attr:
+                    c.aliasAttr(attr, plug)
+                c.delete(target)
+            else:
+                c.addAttr(source, longName=attr, attributeType='double', keyable=True)
         # The source reads the option menu even for a transform attribute source.
         if c.optionMenu('asConnectARKitBSOptionMenu', exists=True):
             c.deleteUI('asConnectARKitBSOptionMenu')
@@ -56,9 +68,11 @@ def fixture(kind, alternate=False):
     return node
 
 
-def sample(driver, maximum, namespace=''):
+def sample(driver, maximum, namespace='', driver_values=None):
     from maya import cmds as c
     attrs = c.listAttr(driver, userDefined=True, keyable=True) or []
+    if c.nodeType(driver) == 'blendShape':
+        attrs = (c.aliasAttr(driver, query=True) or [])[::2]
     prefix = namespace + ':' if namespace else ''
     controls = c.sets(prefix + 'FaceControlSet', query=True) or []
     controls += c.ls(prefix + 'SDK*', type='transform') or []
@@ -69,7 +83,7 @@ def sample(driver, maximum, namespace=''):
     result = {}
     for attr in attrs:
         plug = driver + '.' + attr
-        for value in (0., maximum / 2., maximum):
+        for value in driver_values if driver_values is not None else (0., maximum / 2., maximum):
             c.setAttr(plug, value)
             result[plug.removeprefix(prefix) + '=' + str(value)] = {
                 'plugs': {p.removeprefix(prefix): c.getAttr(p) for p in plugs},
@@ -78,14 +92,14 @@ def sample(driver, maximum, namespace=''):
     return result
 
 
-def observe(driver, maximum, namespace=''):
+def observe(driver, maximum, namespace='', driver_values=None):
     # Sampling drives attributes but must not put those edits above the build
     # chunk. Otherwise undo/redo would only test the last sampled attribute.
     from maya import cmds as c
     state = c.undoInfo(query=True, state=True)
     c.undoInfo(stateWithoutFlush=False)
     try:
-        return sample(driver, maximum, namespace)
+        return sample(driver, maximum, namespace, driver_values)
     finally:
         c.undoInfo(stateWithoutFlush=state)
 
@@ -108,11 +122,12 @@ def compare(native, python):
     return {'poses': len(native), 'maximum_error': maximum, 'worst': worst}
 
 
-def main(kinds=None):
+def main(kinds=None, source_kind='transform', driver_values=None):
     from maya import cmds as c, mel
     from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
     OUTPUT.mkdir(parents=True, exist_ok=True)
     report = {'status': 'running', 'cases': {}}
+    (OUTPUT / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf8')
     try:
         mel.eval('source "' + (ROOT / 'local/adv_6_925/AdvancedSkeleton.mel').as_posix() + '";')
         c.optionVar(intValue=('asHaveRanThisVersion', 1))
@@ -123,15 +138,15 @@ def main(kinds=None):
             if kinds is not None and kind not in kinds:
                 continue
             print('CHANNEL CASE', kind, flush=True)
-            driver = fixture(kind, alternate)
+            driver = fixture(kind, alternate, blendshape=source_kind == 'blendshape')
             if kind == 'roblox':
                 mel.eval('asFaceRobloxHead;')
             else:
                 mel.eval('asConnectARKit "";')
             maximum = 1 if kind in ('arkit_quick', 'arkit_connect') else 10
-            native = observe(driver, maximum)
+            native = observe(driver, maximum, driver_values=driver_values)
             (OUTPUT / (kind + '-native.json')).write_text(json.dumps(native), encoding='utf8')
-            driver = fixture(kind, alternate)
+            driver = fixture(kind, alternate, blendshape=source_kind == 'blendshape')
             host = MayaOriginalFaceBuildHost()
             previous = node_ids()
             with host.transaction('Face 来源通道对照'):
@@ -140,7 +155,7 @@ def main(kinds=None):
                 else:
                     host.connect_original_face_arkit(driver if kind in ('arkit_quick', 'arkit_connect') else None)
             generated = node_ids() - previous
-            python = observe(driver, maximum)
+            python = observe(driver, maximum, driver_values=driver_values)
             report['cases'][kind] = compare(native, python)
             c.file(rename=str(OUTPUT / (kind + '.mb')))
             c.file(save=True, type='mayaBinary', force=True)
@@ -151,9 +166,9 @@ def main(kinds=None):
             c.redo()
             # Native SDK redo can recreate implicit nodes with new UUIDs;
             # verify every driven value and production point after redo.
-            report['cases'][kind]['undo_redo'] = compare(python, observe(driver, maximum))
+            report['cases'][kind]['undo_redo'] = compare(python, observe(driver, maximum, driver_values=driver_values))
             c.file(str(OUTPUT / (kind + '.mb')), open=True, force=True, executeScriptNodes=False)
-            report['cases'][kind]['reopened'] = compare(python, observe(driver, maximum))
+            report['cases'][kind]['reopened'] = compare(python, observe(driver, maximum, driver_values=driver_values))
             (OUTPUT / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf8')
         report['status'] = 'passed' if all(row['undo_clean'] for row in report['cases'].values()) else 'failed'
     except Exception:
@@ -161,4 +176,7 @@ def main(kinds=None):
         report['error'] = traceback.format_exc()
     finally:
         (OUTPUT / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf8')
-        c.quit(force=True)
+        # Startup -script is still executing here; schedule exit after it
+        # returns instead of leaving an idle graphical Maya behind.
+        from maya import utils
+        utils.executeDeferred(c.quit, force=True)

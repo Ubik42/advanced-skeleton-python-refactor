@@ -42,7 +42,7 @@ class MayaFaceBSCleanupMixin:
             for geometry in source["target_geometry"]:
                 if geometry == source["geometry"]:
                     continue
-                skin = self._original_pupil_skin(self.scene_address(geometry), exclude_prefix=False)
+                skin = self.original_face_bs_skin(geometry)
                 try:
                     raw.skinPercent(skin, self.scene_address(geometry), transformValue=((self.scene_address(source["head"]), 1),))
                 except RuntimeError:
@@ -117,7 +117,7 @@ class MayaFaceBSCleanupMixin:
             if nodes:
                 c.delete(nodes)
         for geometry in source["all_head"]:
-            skin = self._original_pupil_skin(self.scene_address(geometry), exclude_prefix=False)
+            skin = self.original_face_bs_skin(geometry)
             try:
                 raw.skinPercent(skin, self.scene_address(geometry), normalize=True)
             except RuntimeError:

@@ -18,11 +18,13 @@ BlendShape 目标保留 Maya 已正确创建的别名，避免重复 aliasAttr �
 
 ## 明确未通过
 
-ARKit Quick 首次构建的 156 组姿态与原版一致，但真正撤销存在隐式 animCurve/blendWeighted 残留，重做后 `SDKEye_L.rotateX` 差异达 30，未验收。未修改原版在相同操作的撤销中触发 Maya 2024 `TcurrentTimeCmd::undoIt` 崩溃；Python 避开零帧重复时间命令后不再在同处崩溃，但这不代表撤销重做已经修复。
+ARKit Quick 已修复 Maya 2024 多驱动 setDrivenKeyframe 隐式节点的撤销缺陷。保留来源的曲线类型、键值、线性切线、BlendWeighted 插入与 infinity 设置，显式登记同样的节点和接线。Transform 来源的 156 组及真实 BlendShape 别名来源的 260 组姿态，初次、重做、保存重开差异均 0；撤销无新建曲线或混合节点残留。真实 BlendShape 额外覆盖 0、0.5、1、2、-1，避免仅对照正常范围。
 
-ARKit Disconnect 首次断开及构建姿态恢复与原版差异 0；撤销重做后连接模式的 ARKit 控制器值出现 7.5 差异，未验收。不能用初次调用通过掩盖生命周期缺口。
+ARKit Disconnect 已修复删除曲线重做后 Maya 保留旧缓存的问题：仅对本次删图变成可写的数值通道，登记来源恢复姿态后已经算出的相同值，不新增默认值或改变未记录通道。连接及 Quick 两类，各 156 组初次、重做、保存重开对照均 0。
 
-Mixed 来源和 Python 在 OPM 完整图上都已运行到转换结束，矩阵名称和复制层 DAG 路径缺口已修复；严格对照在中性 FaceMesh 点位发现首个差异 `0.02105712890625`，因此完整转换数值及生命周期仍未验收。非 OPM 下原版在 ctrlBox2 的无条件矩阵重连处报错，保留为来源限制，不凭空新增绑定图绕过它。
+独立 FaceActor 的 Quick 已通过；五类可选链均保留其他对象身份和活动空间，Quick 外部驱动连接只读来源、写入本角色创建的曲线。
+
+Mixed 现已修复 Skin 历史查询：严格采用 asGetSkinCluster 的 pruneDagObjects=True、interestLevel=2 并取最后一个 Skin，避免误取 BlendShape 目标层的蒙皮。97 个目标、10 个 BS 节点、11 组姿态来源差异均 0。完整撤销仍未验收：Maya 原生 nodeCast 会切断外层撤销记录，最小复现已确认；使用相同原生交换的显式撤销命令最小场景通过，完整转换仍在验证。非 OPM 的原版 ctrlBox2 无条件重连错误仍是来源限制。
 
 普通/多层瞳孔结果不覆盖 Cyclops、面组件、多眼球子模型及所有非对称组合。程序化 Face 网格用于绑定逻辑对照，不能代表默认 ADV 模型外观或全界面布局一致。
 
@@ -30,4 +32,4 @@ Mixed 来源和 Python 在 OPM 完整图上都已运行到转换结束，矩阵�
 
 `validation/maya_face_pupil_parity.py`、`maya_face_channel_parity.py`、`maya_face_conversion_parity.py`、`maya_face_optional_namespace.py`、`maya_face_optional_full_build.py`、`maya_face_channel_disconnect_parity.py` 配套图形 Maya 启动文件。结果在本机忽略目录 `validation/results/face-*`；`face-conversion-parity/bs-modes-report.json` 保存两类纯 BS 的通过记录，Mixed 的独立重跑使用 `report.json`。
 
-继续修复 Quick/Disconnect 的完整撤销图与 Mixed，之后处理已有完整 AutoPlace、Body 70/71 及其余覆盖缺口。整体 Maya 复刻仍未完成；确认后才进入绑定结果不变的性能/架构优化，再迁移 Blender Body+Face。Goal 保持活跃。
+继续完成 Mixed 的完整撤销图，之后处理已有完整 AutoPlace、Body 70/71 及其余覆盖缺口。整体 Maya 复刻仍未完成；确认后才进入绑定结果不变的性能/架构优化，再迁移 Blender Body+Face。Goal 保持活跃。

@@ -6,7 +6,7 @@ class MayaFaceBSMixedMixin:
         c = self._cmds
         raw = getattr(c, "raw", c)
         for geometry in source["all_head"]:
-            skin = self._original_pupil_skin(self.scene_address(geometry), exclude_prefix=False)
+            skin = self.original_face_bs_skin(geometry)
             for joint in c.listConnections(skin + ".matrix") or []:
                 raw.setAttr(self.scene_address(joint) + ".liw", not bool(c.sets(joint, isMember="FaceAllSet")))
             raw.setAttr(self.scene_address(source["head"]) + ".liw", False)

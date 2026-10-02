@@ -101,7 +101,8 @@ class MayaFaceBSAttachersMixin:
             remaining = c.listRelatives(layered, shapes=True, noIntermediate=True) or []
             instanced = bool(remaining and len(c.listRelatives(remaining[0], allParents=True) or []) > 1)
             if not instanced:
-                c.nodeCast(layered, control, swapNames=True)
+                from .maya_native_node_cast import native_node_cast
+                native_node_cast(self, layered, control, swap_names=True)
             if item not in ("upperTeeth_M", "lowerTeeth_M", "Tongue0_M", "upperFace_M", "middleFace_M", "lowerFace_M"):
                 multiply = c.createNode("multiplyDivide", name=stem + "SubtractMultiplyDivide" + side)
                 c.setAttr(multiply + ".input2", -1, -1, -1, type="float3")

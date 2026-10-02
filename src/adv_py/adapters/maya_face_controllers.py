@@ -1,8 +1,9 @@
 """Shared original Face controller and two-space follow graph builders."""
 from __future__ import annotations
 import re
+from .maya_face_sdk_insert import MayaFaceSDKInsertMixin
 
-class MayaFaceControllersMixin:
+class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
     def original_face_matrix_values(self,plug):
         """Read native matrix attributes independent of array return shape."""
         values=self._cmds.getAttr(plug)
@@ -339,7 +340,7 @@ class MayaFaceControllersMixin:
         if value==start or not c.objExists(driven): return
         node,attr=driven.split(".",1)
         driver_node,driver_attr=driver.split(".",1)
-        driver_attr=c.attributeQuery(driver_attr,node=driver_node,longName=True)
+        driver_attr=self.original_face_sdk_attribute(driver_node,driver_attr)
         attr_root=attr.split("[",1)[0]
         attr=c.attributeQuery(attr_root,node=node,longName=True)+attr[len(attr_root):]
         driver=driver_node+"."+driver_attr
@@ -377,15 +378,25 @@ class MayaFaceControllersMixin:
             if start and not destination.endswith("[0]"): value-=1; start-=1
         if c.objExists("ARKitQuickConnecting"):
             destination=driven
-        before=set(c.listConnections(destination,source=True,destination=False,type="animCurve") or [])
-        for dv,v in ((0,start),(driver_value,value)):
-            c.setDrivenKeyframe(destination,currentDriver=driver,driverValue=dv,value=v,
-                                inTangentType="linear",outTangentType="linear")
-        after=c.listConnections(destination,source=True,destination=False,type="animCurve") or []
+        before=set(c.listConnections(bw+".input",source=True,destination=False,
+                                     type="animCurve",skipConversionNodes=True) or [])
+        keys=((0,start),(driver_value,value))
+        if c.objExists("ARKitQuickConnecting"):
+            self.set_original_face_sdk_keys(driver,destination,keys)
+        else:
+            for dv,v in keys:
+                c.setDrivenKeyframe(destination,currentDriver=driver,driverValue=dv,value=v,
+                                    inTangentType="linear",outTangentType="linear")
+        # asDsSdk compares curves on the ensured BW, not the target channel.
+        # Quick SDK transforms may be behind an existing BW/unitConversion;
+        # querying the target would miss their new curves and infinity flags.
+        after=c.listConnections(bw+".input",source=True,destination=False,
+                                type="animCurve",skipConversionNodes=True) or []
         for curve in after:
             if curve not in before:
-                if node.rsplit("|",1)[-1].startswith("SDK"):
-                    curve=c.rename(curve,node.rsplit("|",1)[-1]+"_"+attr)
+                leaf=node.rsplit("|",1)[-1].rsplit(":",1)[-1]
+                if leaf.startswith("SDK"):
+                    curve=c.rename(curve,leaf+"_"+attr)
                 c.setAttr(curve+".preInfinity",4); c.setAttr(curve+".postInfinity",4)
         self._transaction_changed=True
 

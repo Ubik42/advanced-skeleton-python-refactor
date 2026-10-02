@@ -106,4 +106,5 @@ def main(kinds=None):
         report['status'] = 'failed'; report['error'] = traceback.format_exc()
     finally:
         (OUTPUT / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf8')
-        c.quit(force=True)
+        from maya import utils
+        utils.executeDeferred(c.quit, force=True)

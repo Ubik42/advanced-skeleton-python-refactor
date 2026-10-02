@@ -49,7 +49,7 @@ class MayaFaceBSLayersMixin:
         for geometry in source["all_head"]:
             suffix = "_" + self._original_bs_geo_tag(geometry, first_colon=True)
             bs = "asFaceBS" if geometry == source["geometry"] else "asFaceBS" + suffix
-            skin = self._original_pupil_skin(self.scene_address(geometry), exclude_prefix=False)
+            skin = self.original_face_bs_skin(geometry)
             template = self._original_bs_clean_duplicate(geometry, "TemplateLayer" + suffix, "TemplateLayer")
             layer = "FaceJointsLayer" + suffix
             c.duplicate(template, name=layer)

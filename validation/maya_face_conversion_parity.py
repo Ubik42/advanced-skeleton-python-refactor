@@ -132,6 +132,7 @@ def main(modes=None):
     from adv_py.application.face_conversion import ConvertOriginalFaceToBlendShapes
     OUTPUT.mkdir(parents=True, exist_ok=True)
     report = {'status': 'running', 'cases': {}}
+    (OUTPUT / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf8')
     try:
         mel.eval('source "' + (ROOT / 'local/adv_6_925/AdvancedSkeleton.mel').as_posix() + '";')
         c.optionVar(intValue=('asHaveRanThisVersion', 1)); c.optionVar(intValue=('asDock', 0)); mel.eval('AdvancedSkeleton;')
@@ -146,20 +147,31 @@ def main(modes=None):
             mel.eval('asBSConvertDStoBS;')
             native = observe()
             (OUTPUT / (name + '-native.json')).write_text(json.dumps(native), encoding='utf8')
+            c.file(rename=str(OUTPUT / (name + '-native.mb')))
+            c.file(save=True, type='mayaBinary', force=True)
             c.file(str(checkpoint), open=True, force=True, executeScriptNodes=False)
+            # A source operation can leave Maya's global undo switch off.
+            # Validate the Python transaction with undo explicitly enabled,
+            # as the channel and complete-build parity runners do.
+            c.undoInfo(state=True)
             result = ConvertOriginalFaceToBlendShapes(MayaOriginalFaceBuildHost()).apply(keep_joints=keep_joints, keep_targets=keep_targets)
             python = observe()
             # Preserve both graphs and numeric records even when the strict
             # comparison fails; the next correction starts at that boundary.
             (OUTPUT / (name + '-python.json')).write_text(json.dumps(python), encoding='utf8')
-            c.file(rename=str(OUTPUT / (name + '-python.mb')))
-            c.file(save=True, type='mayaBinary', force=True)
             row = {'targets': len(result['targets']),
                    'blendshape_nodes': len(python['neutral']['blendshapes']), 'poses': len(python),
                    'source_comparison_passed': False}
             report['cases'][name] = row
-            row['maximum_error'] = compare(native, python)
+            try:
+                row['maximum_error'] = compare(native, python)
+            except Exception:
+                c.file(rename=str(OUTPUT / (name + '-python.mb')))
+                c.file(save=True, type='mayaBinary', force=True)
+                raise
             row['source_comparison_passed'] = True
+            row['undo_enabled'] = c.undoInfo(query=True, state=True)
+            row['undo_name'] = c.undoInfo(query=True, undoName=True)
             c.undo(); assert not c.objExists('asFaceBS')
             c.redo(); assert c.objExists('asFaceBS')
             row['undo_redo_error'] = compare(python, observe())
@@ -174,4 +186,5 @@ def main(modes=None):
         report['status'] = 'failed'; report['error'] = traceback.format_exc()
     finally:
         (OUTPUT / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf8')
-        c.quit(force=True)
+        from maya import utils
+        utils.executeDeferred(c.quit, force=True)
