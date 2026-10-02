@@ -154,9 +154,12 @@ def main(modes=None):
             (OUTPUT / (name + '-python.json')).write_text(json.dumps(python), encoding='utf8')
             c.file(rename=str(OUTPUT / (name + '-python.mb')))
             c.file(save=True, type='mayaBinary', force=True)
-            row = {'maximum_error': compare(native, python), 'targets': len(result['targets']),
-                   'blendshape_nodes': len(python['neutral']['blendshapes']), 'poses': len(python)}
+            row = {'targets': len(result['targets']),
+                   'blendshape_nodes': len(python['neutral']['blendshapes']), 'poses': len(python),
+                   'source_comparison_passed': False}
             report['cases'][name] = row
+            row['maximum_error'] = compare(native, python)
+            row['source_comparison_passed'] = True
             c.undo(); assert not c.objExists('asFaceBS')
             c.redo(); assert c.objExists('asFaceBS')
             row['undo_redo_error'] = compare(python, observe())
