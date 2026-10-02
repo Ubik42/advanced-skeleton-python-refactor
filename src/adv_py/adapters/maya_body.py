@@ -1801,15 +1801,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 keyable=True,
             )
             for axis in "XYZ":
-                self._cmds.connectAttr(
-                    plan.scale_source,
-                    f"{control}.scale{axis}",
-                )
-                self._cmds.setAttr(
-                    f"{control}.scale{axis}",
-                    keyable=False,
-                    channelBox=False,
-                )
+                receiver=offset if plan.native_scale_channels else control
+                self._cmds.connectAttr(plan.scale_source, f"{receiver}.scale{axis}")
+                self._cmds.setAttr(f"{control}.scale{axis}",
+                                  keyable=plan.native_scale_channels,
+                                  channelBox=plan.native_scale_channels)
             scale_node = self._cmds.createNode(
                 "multiplyDivide", name=plan.scale_node_name,
                 skipSelect=True,
@@ -1831,7 +1827,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 scale_input = tuple(
                     f"{extra_scale}.output{axis}" for axis in "XYZ")
             for axis in "XYZ":
-                self._cmds.setAttr(f"{scale_node}.input2{axis}", 1.0)
+                if plan.native_scale_channels:
+                    self._cmds.connectAttr(plan.scale_source,f"{scale_node}.input2{axis}")
+                else:
+                    self._cmds.setAttr(f"{scale_node}.input2{axis}", 1.0)
                 self._cmds.connectAttr(
                     scale_input["XYZ".index(axis)],
                     f"{scale_node}.input1{axis}",
@@ -2438,6 +2437,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 )
                 if plan.spine_root_scale is not None else None
             ),
+            uniform_scale_sources=tuple(source(plan.offset_path+".scale"+axis) for axis in "XYZ"),
+            scale_node_input2_sources=tuple(source(plan.scale_node_name+".input2"+axis) for axis in "XYZ"),
             scale_node_input_sources=tuple(
                 source(f"{plan.scale_node_name}.input1{axis}")
                 for axis in "XYZ"
@@ -10203,6 +10204,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     def create_source_internal_ik_local(self, spec) -> None:
         from .maya_source_internal_ik_local import create
         create(self,spec)
+
+    def create_source_rp_follows(self,body,limbs,global_control,root,*,leg_aim=()):
+        from .maya_source_rp_follow import create
+        return create(self,body,limbs,global_control,root,leg_aim=leg_aim)
 
     def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None, *,source_pole_targets=True,source_x_translation=True,source_part_scale=True,instances=(),inbetween_segments=()):
         from .maya_source_rp_dynamics import create

@@ -37,134 +37,152 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,
     leg_targets={ik.side.value:ik.handle_parent+'|AdvPy_Leg_RP_'+ik.side.value+'_Target'
                  for limb in limbs if limb.label=='Leg' for ik in limb.ik.limbs}
     by_body={joint.path:joint for joint in body.joints}
-    for limb in limbs:
-        for ik in limb.ik.limbs:
-            stem='AdvPy_'+limb.label+'_RP_'+ik.side.value
-            from .maya_source_graph_connections import SourceGraphConnections
-            connections=SourceGraphConnections(host,stem)
-            start_name=stem+'_Start'
-            target_name=stem+'_Target'
-            start_path=limb.mechanisms.root_path+'|'+start_name
-            target_parent=ik.handle_parent
-            target_path=target_parent+'|'+target_name
-            chain=tuple(c.ikHandle(ik.handle_name,query=True,jointList=True) or ())
-            chain=tuple(host._resolve_connected_node(path) for path in chain)
-            if not chain or chain[0]!=ik.chain[0]:
-                raise CharacterRegistryError('来源 RP solver 链起点不一致')
-            chain+= (ik.chain[-1],)
-            translations=tuple(tuple(float(v) for v in c.getAttr(joint+'.translate')[0])
-                               for joint in chain[1:])
-            from adv_py.core.source_fit_identity import source_fit_side_sign
-            end_body=next(joint.source_joint for joint in limb.mechanisms.joints
-                          if joint.path==ik.chain[-1])
-            plan=plan_source_rp_dynamics(limb.label,ik.side.value,
-                ik.wrist_control_path,ik.pole_control_path,start_path,target_path,
-                global_control.control_path+'.worldInverseMatrix[0]',
-                global_control.effective_scale_source('Y'),chain,translations,
-                source_pole_targets=source_pole_targets,pole_end_anchor=leg_targets.get(ik.side.value),
-                source_x_translation=source_x_translation,
-                pole_sign=source_fit_side_sign(end_body.rsplit('|',1)[-1],instances),
-                allow_shortening=ik.chain[0]==ik.chain[1])
-            if any(host.find_name_collisions(name) for name in
-                   (start_name,target_name,*(node.name for node in plan.nodes))):
-                raise CharacterRegistryError('来源 RP 拉伸网络名称被占用：'+limb.label)
-            attributes=(('stretchy',0.,0.,10.),('antiPop',0.,0.,10.),('volume',10.,None,None))
-            attributes+=tuple((segment.length_attribute,1.,None,None) for segment in plan.segments)
-            attributes+=tuple((segment.fatness_attribute,0.,None,None) for segment in plan.segments)
-            if any(c.objExists(ik.wrist_control_path+'.'+attr) for attr,_,_,_ in attributes):
-                raise CharacterRegistryError('来源 RP 拉伸属性已存在')
-            if c.objExists(ik.pole_control_path+'.lock'):
-                raise CharacterRegistryError('来源 RP Pole.lock 已存在')
-            for segment in plan.segments:
-                if c.listConnections(segment.joint+'.translate',source=True,destination=False):
-                    raise CharacterRegistryError('来源 RP solver 位移已有输入：'+segment.joint)
-            start_source=next((spec.control_path for spec in internal_local
-                               if spec.target==ik.chain[0]),None)
-            if start_source is None:
-                start_body=next(joint.source_joint for joint in limb.mechanisms.joints
-                                if joint.path==ik.chain[0])
-                parent=by_body[start_body].parent_path
-                while parent in by_body and 'Part' in by_body[parent].name:
-                    parent=by_body[parent].parent_path
-                start_source=root_follow if parent==body.root and root_follow else parent
-            start=c.createNode('transform',name=start_name,parent=limb.mechanisms.root_path,skipSelect=True)
-            c.xform(start,worldSpace=True,translation=c.xform(ik.chain[0],query=True,worldSpace=True,translation=True))
-            if start_source:
-                c.parentConstraint(start_source,start,maintainOffset=True,
-                    name=stem+'_StartFollow',skipRotate=('x','y','z'))
-            c.setAttr(start+'.visibility',False)
-            target=c.createNode('transform',name=target_name,parent=target_parent,skipSelect=True)
-            c.xform(target,worldSpace=True,translation=c.xform(ik.handle_name,query=True,worldSpace=True,translation=True))
-            c.setAttr(target+'.visibility',False)
-            for attr,default,minimum,maximum in attributes:
-                args=dict(longName=attr,attributeType='double',defaultValue=default,keyable=True)
-                if minimum is not None:args['minValue']=minimum
-                if maximum is not None:args['maxValue']=maximum
-                if attr=='volume':args.update(softMinValue=0.,softMaxValue=10.)
-                c.addAttr(ik.wrist_control_path,**args)
-            c.addAttr(ik.pole_control_path,longName='lock',attributeType='double',
-                      minValue=0.,maxValue=10.,defaultValue=0.,keyable=True)
-            for node in plan.nodes:
-                c.createNode(node.kind,name=node.name,skipSelect=True)
-                for attr,value in node.values:c.setAttr(node.name+'.'+attr,value)
-            rest=plan.rest_length
-            shortening=ik.chain[0]==ik.chain[1]
-            normal_keys=((rest,rest,'spline','linear'),(rest*1.2,rest*1.2,'spline','spline'))
-            for curve,keys in ((plan.normal_curve,((rest,rest,'spline','linear'),(rest*1.2,rest*1.2,'spline','spline'))),
-                (plan.anti_pop_curve,normal_keys if shortening else ((rest*.1,rest,'spline','spline'),(rest*.7,rest,'linear','spline'),
-                (rest*.85,rest*.9,'spline','spline'),(rest,rest,'spline','linear'),
-                (rest*1.2,rest*1.2,'spline','spline')))):
-                for driver,value,in_tangent,out_tangent in keys:
-                    c.setKeyframe(curve,float=driver,value=value,
-                                  inTangentType=in_tangent,outTangentType=out_tangent)
-                c.setAttr(curve+'.postInfinity',1)
-            for node in plan.nodes:
-                for source,attribute in node.connections:
-                    target=node.name+'.'+attribute
-                    if source.split('.',1)[0] in leg_targets.values() and not c.objExists(source):
-                        deferred.append((connections,source,target))
-                    else:connections.connect(source,target)
-            for source,destination in plan.outputs:
-                connections.connect(source,destination)
-            # Original volume goes to ScaleBlend, not solver joint scales:
-            # joint scaling would double-count length in the IK solve.
-            primary=[joint for joint in limb.mechanisms.joints if joint.side is ik.side
-                     and joint.role.value=='ik' and joint.source_joint.rsplit('|',1)[-1]
-                     .rsplit('_',1)[0] in limb.joint_names]
-            outputs=list(plan.outputs)
-            for joint in primary[:-1]:
-                blend_joint=next(row for side in limb.blend.sides if side.side is ik.side
-                                 for row in side.joints if row.ik_driver==joint.path)
-                scale=blend_joint.constraint_name+'Scale'
-                compound=c.connectionInfo(scale+'.color1',sourceFromDestination=True)
-                if compound:c.disconnectAttr(compound,scale+'.color1')
-                fat_index=next((index for index,segment in enumerate(plan.segments,1)
-                                if segment.previous==joint.path),None)
-                for axis,component in zip('XYZ','RGB'):
-                    destination=scale+'.color1'+component
-                    source=c.connectionInfo(destination,sourceFromDestination=True)
-                    if source:c.disconnectAttr(source,destination)
-                    output=(stem+'_Fatness'+str(fat_index)+'.output1D'
-                            if axis in ('Y','Z') and fat_index is not None else plan.volume)
-                    connections.connect(output,destination)
-                    outputs.append((output,destination))
-            if source_part_scale:
-                from .maya_source_rp_part_scale import configure
-                part_nodes,part_outputs=configure(host,plan,limb,ik,inbetween_segments,connections)
-                plan=replace(plan,nodes=plan.nodes+part_nodes)
-                outputs.extend(part_outputs)
-            plan=replace(plan,outputs=tuple(outputs))
-            if source_pole_targets:
-                c.addAttr(start,longName='advPySourceRpPoleSources',attributeType='bool',defaultValue=True)
-                c.setAttr(start+'.advPySourceRpPoleSources',True,lock=True)
-            if source_x_translation:
-                c.addAttr(start,longName='advPySourceRpXTranslation',attributeType='bool',defaultValue=True)
-                c.setAttr(start+'.advPySourceRpXTranslation',True,lock=True)
-            if source_part_scale:
-                c.addAttr(start,longName='advPySourceRpPartScale',attributeType='bool',defaultValue=True)
-                c.setAttr(start+'.advPySourceRpPartScale',True,lock=True)
-            plans.append(plan)
-            graphs.append(connections)
+    # MEL analyzes listRelatives -ad, then creates all source-side handles
+    # before the mirrored side. Alphabetical limb planning is a different
+    # order and changes objExists-based Pole.lock targets.
+    source_by_output={instance.output_name:instance.source_joint for instance in instances}
+    fit_roots={instance.source_joint.split('|')[1] for instance in instances
+               if instance.source_joint.startswith('|')}
+    source_order={}
+    for root_name in fit_roots:
+        for index,path in enumerate(c.listRelatives('|'+root_name,allDescendents=True,
+                                                   type='joint',fullPath=True) or ()):
+            source_order[path]=index
+    pairs=[(limb,ik) for limb in limbs for ik in limb.ik.limbs]
+    def source_key(pair):
+        limb,ik=pair
+        end=next(joint.source_joint for joint in limb.mechanisms.joints if joint.path==ik.chain[-1])
+        source=source_by_output.get(end.rsplit('|',1)[-1])
+        return (ik.side.value=='L',source_order.get(source,len(source_order)))
+    pairs.sort(key=source_key)
+    for limb,ik in pairs:
+        stem='AdvPy_'+limb.label+'_RP_'+ik.side.value
+        from .maya_source_graph_connections import SourceGraphConnections
+        connections=SourceGraphConnections(host,stem)
+        start_name=stem+'_Start'
+        target_name=stem+'_Target'
+        start_path=limb.mechanisms.root_path+'|'+start_name
+        target_parent=ik.handle_parent
+        target_path=target_parent+'|'+target_name
+        chain=tuple(c.ikHandle(ik.handle_name,query=True,jointList=True) or ())
+        chain=tuple(host._resolve_connected_node(path) for path in chain)
+        if not chain or chain[0]!=ik.chain[0]:
+            raise CharacterRegistryError('来源 RP solver 链起点不一致')
+        chain+= (ik.chain[-1],)
+        translations=tuple(tuple(float(v) for v in c.getAttr(joint+'.translate')[0])
+                           for joint in chain[1:])
+        from adv_py.core.source_fit_identity import source_fit_side_sign
+        end_body=next(joint.source_joint for joint in limb.mechanisms.joints
+                      if joint.path==ik.chain[-1])
+        plan=plan_source_rp_dynamics(limb.label,ik.side.value,
+            ik.wrist_control_path,ik.pole_control_path,start_path,target_path,
+            global_control.control_path+'.worldInverseMatrix[0]',
+            global_control.effective_scale_source('Y'),chain,translations,
+            source_pole_targets=source_pole_targets,pole_end_anchor=(leg_targets.get(ik.side.value)
+                if leg_targets.get(ik.side.value) and c.objExists(leg_targets[ik.side.value]) else None),
+            source_x_translation=source_x_translation,
+            pole_sign=source_fit_side_sign(end_body.rsplit('|',1)[-1],instances),
+            allow_shortening=ik.chain[0]==ik.chain[1])
+        if any(host.find_name_collisions(name) for name in
+               (start_name,target_name,*(node.name for node in plan.nodes))):
+            raise CharacterRegistryError('来源 RP 拉伸网络名称被占用：'+limb.label)
+        attributes=(('stretchy',0.,0.,10.),('antiPop',0.,0.,10.),('volume',10.,None,None))
+        attributes+=tuple((segment.length_attribute,1.,None,None) for segment in plan.segments)
+        attributes+=tuple((segment.fatness_attribute,0.,None,None) for segment in plan.segments)
+        if any(c.objExists(ik.wrist_control_path+'.'+attr) for attr,_,_,_ in attributes):
+            raise CharacterRegistryError('来源 RP 拉伸属性已存在')
+        if c.objExists(ik.pole_control_path+'.lock'):
+            raise CharacterRegistryError('来源 RP Pole.lock 已存在')
+        for segment in plan.segments:
+            if c.listConnections(segment.joint+'.translate',source=True,destination=False):
+                raise CharacterRegistryError('来源 RP solver 位移已有输入：'+segment.joint)
+        start_source=next((spec.control_path for spec in internal_local
+                           if spec.target==ik.chain[0]),None)
+        if start_source is None:
+            start_body=next(joint.source_joint for joint in limb.mechanisms.joints
+                            if joint.path==ik.chain[0])
+            parent=by_body[start_body].parent_path
+            while parent in by_body and 'Part' in by_body[parent].name:
+                parent=by_body[parent].parent_path
+            start_source=root_follow if parent==body.root and root_follow else parent
+        start=c.createNode('transform',name=start_name,parent=limb.mechanisms.root_path,skipSelect=True)
+        c.xform(start,worldSpace=True,translation=c.xform(ik.chain[0],query=True,worldSpace=True,translation=True))
+        if start_source:
+            c.parentConstraint(start_source,start,maintainOffset=True,
+                name=stem+'_StartFollow',skipRotate=('x','y','z'))
+        c.setAttr(start+'.visibility',False)
+        target=c.createNode('transform',name=target_name,parent=target_parent,skipSelect=True)
+        c.xform(target,worldSpace=True,translation=c.xform(ik.handle_name,query=True,worldSpace=True,translation=True))
+        c.setAttr(target+'.visibility',False)
+        for attr,default,minimum,maximum in attributes:
+            args=dict(longName=attr,attributeType='double',defaultValue=default,keyable=True)
+            if minimum is not None:args['minValue']=minimum
+            if maximum is not None:args['maxValue']=maximum
+            if attr=='volume':args.update(softMinValue=0.,softMaxValue=10.)
+            c.addAttr(ik.wrist_control_path,**args)
+        c.addAttr(ik.pole_control_path,longName='lock',attributeType='double',
+                  minValue=0.,maxValue=10.,defaultValue=0.,keyable=True)
+        for node in plan.nodes:
+            c.createNode(node.kind,name=node.name,skipSelect=True)
+            for attr,value in node.values:c.setAttr(node.name+'.'+attr,value)
+        rest=plan.rest_length
+        shortening=ik.chain[0]==ik.chain[1]
+        normal_keys=((rest,rest,'spline','linear'),(rest*1.2,rest*1.2,'spline','spline'))
+        for curve,keys in ((plan.normal_curve,((rest,rest,'spline','linear'),(rest*1.2,rest*1.2,'spline','spline'))),
+            (plan.anti_pop_curve,normal_keys if shortening else ((rest*.1,rest,'spline','spline'),(rest*.7,rest,'linear','spline'),
+            (rest*.85,rest*.9,'spline','spline'),(rest,rest,'spline','linear'),
+            (rest*1.2,rest*1.2,'spline','spline')))):
+            for driver,value,in_tangent,out_tangent in keys:
+                c.setKeyframe(curve,float=driver,value=value,
+                              inTangentType=in_tangent,outTangentType=out_tangent)
+            c.setAttr(curve+'.postInfinity',1)
+        for node in plan.nodes:
+            for source,attribute in node.connections:
+                target=node.name+'.'+attribute
+                if source.split('.',1)[0] in leg_targets.values() and not c.objExists(source):
+                    deferred.append((connections,source,target))
+                else:connections.connect(source,target)
+        for source,destination in plan.outputs:
+            connections.connect(source,destination)
+        # Original volume goes to ScaleBlend, not solver joint scales:
+        # joint scaling would double-count length in the IK solve.
+        primary=[joint for joint in limb.mechanisms.joints if joint.side is ik.side
+                 and joint.role.value=='ik' and joint.source_joint.rsplit('|',1)[-1]
+                 .rsplit('_',1)[0] in limb.joint_names]
+        outputs=list(plan.outputs)
+        for joint in primary[:-1]:
+            blend_joint=next(row for side in limb.blend.sides if side.side is ik.side
+                             for row in side.joints if row.ik_driver==joint.path)
+            scale=blend_joint.constraint_name+'Scale'
+            compound=c.connectionInfo(scale+'.color1',sourceFromDestination=True)
+            if compound:c.disconnectAttr(compound,scale+'.color1')
+            fat_index=next((index for index,segment in enumerate(plan.segments,1)
+                            if segment.previous==joint.path),None)
+            for axis,component in zip('XYZ','RGB'):
+                destination=scale+'.color1'+component
+                source=c.connectionInfo(destination,sourceFromDestination=True)
+                if source:c.disconnectAttr(source,destination)
+                output=(stem+'_Fatness'+str(fat_index)+'.output1D'
+                        if axis in ('Y','Z') and fat_index is not None else plan.volume)
+                connections.connect(output,destination)
+                outputs.append((output,destination))
+        if source_part_scale:
+            from .maya_source_rp_part_scale import configure
+            part_nodes,part_outputs=configure(host,plan,limb,ik,inbetween_segments,connections)
+            plan=replace(plan,nodes=plan.nodes+part_nodes)
+            outputs.extend(part_outputs)
+        plan=replace(plan,outputs=tuple(outputs))
+        if source_pole_targets:
+            c.addAttr(start,longName='advPySourceRpPoleSources',attributeType='bool',defaultValue=True)
+            c.setAttr(start+'.advPySourceRpPoleSources',True,lock=True)
+        if source_x_translation:
+            c.addAttr(start,longName='advPySourceRpXTranslation',attributeType='bool',defaultValue=True)
+            c.setAttr(start+'.advPySourceRpXTranslation',True,lock=True)
+        if source_part_scale:
+            c.addAttr(start,longName='advPySourceRpPartScale',attributeType='bool',defaultValue=True)
+            c.setAttr(start+'.advPySourceRpPartScale',True,lock=True)
+        plans.append(plan)
+        graphs.append(connections)
     for connections,source,target in deferred:connections.connect(source,target)
     from adv_py.core.character_registry import canonical
     plans=tuple(replace(plan,nodes=connections.describe_nodes(plan.nodes),

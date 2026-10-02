@@ -131,6 +131,15 @@ class MayaBodyFkScaleCompensationMixin:
             source_world = om.MMatrix(_matrix(c.getAttr(
                 spec.scale_source_path + ".worldMatrix[0]")))
             local = tuple(bind_world * source_world.inverse())
+        rotation_offset=None
+        if spec.use_offset_parent_matrix and not spec.independent_parent:
+            # MEL separates NoShear translation from FKMM bind rotation.
+            # Applying bind rotation before removing shear changes the axes
+            # under non-uniform parent scale (Cup/fingers and Spine).
+            from maya.api import OpenMaya as om
+            translation_only=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,*local[12:15],1.)
+            rotation_offset=tuple(bind_world * (om.MMatrix(translation_only)*source_world).inverse())
+            local=translation_only
         if len(local) != 16:
             raise RuntimeError("FK Offset 局部矩阵无效：" + offset)
         self._transaction_changed = True
@@ -172,10 +181,13 @@ class MayaBodyFkScaleCompensationMixin:
                           relative + ".matrixIn[1]")
             c.setAttr(offset + ".inheritsTransform", False)
         else:
+            index=1 if rotation_offset is not None else 0
+            if rotation_offset is not None:
+                c.setAttr(relative+".matrixIn[0]",*rotation_offset,type="matrix")
             c.connectAttr(pick + ".outputMatrix",
-                          relative + ".matrixIn[0]")
+                          relative + f".matrixIn[{index}]")
             c.connectAttr(parent + ".worldInverseMatrix[0]",
-                          relative + ".matrixIn[1]")
+                          relative + f".matrixIn[{index+1}]")
         c.setAttr(offset + ".translate", 0, 0, 0)
         c.setAttr(offset + ".rotate", 0, 0, 0)
         c.setAttr(offset + ".scale", 1, 1, 1)
@@ -259,10 +271,11 @@ class MayaBodyFkScaleCompensationMixin:
                 (pick + ".outputMatrix", relative + ".matrixIn[1]"),
             )
         else:
+            index=1 if spec.use_offset_parent_matrix else 0
             links += ((pick + ".outputMatrix",
-                       relative + ".matrixIn[0]"),)
+                       relative + f".matrixIn[{index}]"),)
             links += ((spec.parent_control_path + ".worldInverseMatrix[0]",
-                       relative + ".matrixIn[1]"),)
+                       relative + f".matrixIn[{index+1}]"),)
         if spec.use_offset_parent_matrix:
             output = relative + ".matrixSum"
             if spec.use_offset_parent_matrix and not spec.independent_parent:

@@ -39,9 +39,9 @@ def create(host,spec):
             for attr in ('blender',*(color+axis for color in ('color1','color2') for axis in 'RGB'))
             for incoming in (c.connectionInfo(scale_node+'.'+attr,sourceFromDestination=True),)
             if incoming)),)
-    for name,output,offset,matrix,scale,guide in zip(
+    for deform_index,(name,output,offset,matrix,scale,guide) in enumerate(zip(
             spec.deform_names,spec.micro_output_names,spec.micro_offset_names,
-            spec.deform_matrix_names,spec.deform_scale_mult_names,spec.motion_transform_names):
+            spec.deform_matrix_names,spec.deform_scale_mult_names,spec.motion_transform_names)):
         joint=(c.ls(name,long=True,type='joint') or [None])[0]
         source=(c.ls(output,long=True,type='transform') or [None])[0]
         parent=(c.listRelatives(joint,parent=True,fullPath=True) or [None])[0] if joint else None
@@ -77,9 +77,22 @@ def create(host,spec):
         outputs=((matrix+'.matrixSum',joint+'.offsetParentMatrix'),)
         graph.connect(*outputs[0])
         graph.connect(scale+'.output',offset+'.scale')
+        # MEL retains ScaleBlend on Part local scale after replacing its OPM
+        # with MicroX. Start Body local scale is reset. Both layers are needed.
+        local_scale=()
+        if deform_index and base_connections:
+            inputs=dict((attr,source) for source,attr in base_connections)
+            if 'input1' in inputs:
+                node,attr=inputs['input1'].rsplit('.',1)
+                components='RGB' if attr=='output' and c.nodeType(node)=='blendColors' else 'XYZ'
+                inputs={
+                    'input1'+axis:node+'.'+attr+component
+                    for axis,component in zip('XYZ',components)}
+            local_scale=tuple((inputs['input1'+axis],joint+'.scale'+axis) for axis in 'XYZ')
+            for incoming,target in local_scale:graph.connect(incoming,target)
         # The Body record owns its matrix and scale-input graph. Offset scale
         # is checked separately because it is an upstream controller output.
-        plan=SourceBodyMatrixPlan(joint,shared_nodes+graph.describe_nodes(nodes),graph.describe_outputs(outputs))
+        plan=SourceBodyMatrixPlan(joint,shared_nodes+graph.describe_nodes(nodes),graph.describe_outputs(outputs),graph.describe_outputs(local_scale))
         c.addAttr(joint,longName='advPySourceBendyMatrix',dataType='string')
         c.setAttr(joint+'.advPySourceBendyMatrix',canonical(asdict(plan)),type='string',lock=True)
     host._transaction_changed=True
@@ -115,7 +128,10 @@ def audit_joint(host,joint):
         for incoming,attr in node.connections:
             if not c.isConnected(incoming,node.name+'.'+attr):
                 raise CharacterRegistryError('来源 Bendy 变形矩阵连接变化')
-    for attr,expected in (('translate',0.),('rotate',0.),('jointOrient',0.),('scale',1.)):
+    for source,target in plan.local_scale:
+        if not c.isConnected(source,target):
+            raise CharacterRegistryError('来源 Bendy Part 本地 ScaleBlend 连接变化')
+    for attr,expected in (('translate',0.),('rotate',0.),('jointOrient',0.),*((('scale',1.),) if not plan.local_scale else ())):
         if (c.listConnections(joint+'.'+attr,source=True,destination=False)
                 or any(abs(float(value)-expected)>1e-8 for value in c.getAttr(joint+'.'+attr)[0])):
             raise CharacterRegistryError('来源 Bendy OPM 本地变换变化：'+joint)

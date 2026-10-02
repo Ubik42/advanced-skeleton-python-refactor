@@ -136,6 +136,11 @@ class BodyCharacterGlobalPlan:
     spine_root_scale: BodySpineRootScaleSpec | None = None
     root_fk_scale: BodyRootFkScaleSpec | None = None
 
+    @property
+    def native_scale_channels(self) -> bool:
+        return any(tuple(part.rsplit(":",1)[-1] for part in root.split("|") if part)[-3:]
+                   == ("Group","MotionSystem","FKSystem") for root in self.driven_roots)
+
     def driven_transform_kinds(self, path: str) -> tuple[str, ...]:
         # MEL 78888 scales FKSystem itself: Inbetween Part offsets are
         # siblings of the ordinary control root and must share Main scale.
@@ -243,6 +248,8 @@ class BodyCharacterGlobalPlan:
         return f"{self.control_path}.{self.scale_attribute}"
 
     def effective_scale_source(self, axis: str) -> str:
+        if self.native_scale_channels:
+            return f"{self.scale_node_name}.output{axis}"
         if not self.extra_control_paths:
             return self.scale_source
         return f"MainScaleMultiplyDivide{len(self.extra_control_paths)}.output{axis}"
@@ -380,6 +387,8 @@ class BodyCharacterGlobalSnapshot:
     control_shape_visibility_source: str | None = None
     spine_root_scale_state: tuple | None = None
     root_fk_scale_state: tuple | None = None
+    uniform_scale_sources: tuple = ()
+    scale_node_input2_sources: tuple = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -657,7 +666,8 @@ def audit_body_character_global(
         and abs(snapshot.scale_attribute_value - plan.scale_default) <= tolerance
         and snapshot.scale_attribute_minimum is not None
         and abs(snapshot.scale_attribute_minimum - plan.scale_minimum) <= tolerance
-        and snapshot.control_scale_sources == (scale_plug, scale_plug, scale_plug)
+        and snapshot.control_scale_sources == ((None,)*3 if plan.native_scale_channels else (scale_plug,)*3)
+        and (not plan.native_scale_channels or snapshot.uniform_scale_sources == (scale_plug,)*3)
     ):
         issues.append(BodyCharacterGlobalIssue(
             "control_mismatch",
@@ -834,6 +844,7 @@ def audit_body_character_global(
         for axis in "XYZ")
     if (snapshot.scale_node_input_sources != expected_inputs
             or snapshot.scale_node_operation != 1
+            or (plan.native_scale_channels and snapshot.scale_node_input2_sources != (plan.scale_source,)*3)
             or not _close(snapshot.scale_node_input2, one, tolerance)
             or not _close(snapshot.scale_node_output, one, tolerance)):
         issues.append(BodyCharacterGlobalIssue(

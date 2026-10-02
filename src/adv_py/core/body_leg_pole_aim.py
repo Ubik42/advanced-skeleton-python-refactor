@@ -23,6 +23,7 @@ class BodyLegPoleAimSpec:
     swivel_name: str
     local_name: str
     follow_name: str | None = None
+    aligned_orientation_source: str | None = None
 
     @property
     def frame_path(self):

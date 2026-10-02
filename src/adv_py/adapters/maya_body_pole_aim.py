@@ -12,7 +12,7 @@ class MayaBodyPoleAimMixin:
                 raise FitSkeletonValidationError('PoleAim 输入路径无效：' + path)
         if (c.ls(spec.parent_source, long=True) or []) != [spec.parent_source] or c.nodeType(spec.parent_source) not in ('joint', 'transform'):
             raise FitSkeletonValidationError('PoleAim 父级来源无效')
-        if not c.isConnected(spec.swivel_plug, spec.handle_twist):
+        if not c.isConnected(spec.swivel_plug, spec.handle_twist,ignoreUnitConversion=True):
             raise FitSkeletonValidationError('PoleAim 接管前 swivel 输入已变化')
         if any(self.find_name_collisions(name) for name in spec.node_names):
             raise FitSkeletonValidationError('PoleAim 节点名称已占用')
@@ -29,8 +29,13 @@ class MayaBodyPoleAimMixin:
                            name=spec.frame_name + 'Constraint')
         aligned = c.createNode('transform', name=spec.aligned_name,
                                parent=spec.ankle_frame_parent, skipSelect=True)
+        # MEL 80914 aligns IKFKAlignedOffset to the deformation end joint,
+        # before PoleAim reads its Z reference; world-oriented IK is different.
+        orientation_source=spec.aligned_orientation_source or spec.ankle_control
+        if not c.objExists(orientation_source):
+            raise FitSkeletonValidationError('PoleAim 对齐来源缺失')
         c.xform(aligned, worldSpace=True,
-                rotation=c.xform(spec.ankle_control, query=True,
+                rotation=c.xform(orientation_source, query=True,
                                  worldSpace=True, rotation=True))
         aim = c.createNode('transform', name=spec.aim_name,
                            parent=spec.ik_root, skipSelect=True)
@@ -57,7 +62,10 @@ class MayaBodyPoleAimMixin:
         c.xform(target, worldSpace=True,
                 translation=c.xform(spec.pole_offset, query=True,
                                     worldSpace=True, translation=True))
-        c.disconnectAttr(spec.swivel_plug, spec.handle_twist)
+        if spec.aligned_orientation_source:
+            c.xform(target,worldSpace=True,rotation=c.xform(
+                spec.pole_offset,query=True,worldSpace=True,rotation=True))
+        c.disconnectAttr(c.connectionInfo(spec.handle_twist,sourceFromDestination=True), spec.handle_twist)
         c.connectAttr(spec.swivel_plug, swivel + '.inputRotateX')
         if spec.follow_name:
             c.parentConstraint(target, spec.pole_offset,
@@ -110,7 +118,7 @@ class MayaBodyPoleAimMixin:
             (spec.local_name + '.matrixSum',
              spec.aim_path + '.offsetParentMatrix'),
         )
-        if any(not c.isConnected(source, target)
+        if any(not c.isConnected(source, target,ignoreUnitConversion=True)
                for source, target in edges):
             raise FitSkeletonValidationError('PoleAim 矩阵或 swivel 连接不完整')
         if c.connectionInfo(spec.handle_twist,

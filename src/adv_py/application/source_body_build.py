@@ -111,6 +111,7 @@ class SourceBodyRigPlan:
     leg_aim: tuple = ()
     source_rp_scale_axes: bool = True
     source_use_offset_parent_matrix: bool = True
+    rp_follows: tuple = ()
 
     @property
     def all_splines(self):
@@ -188,7 +189,8 @@ def source_character_channels(rig):
                     if attribute not in locked.get(node, ()))
     add("global", p.global_control.control_path,
         tuple(kind + axis for kind in ("translate", "rotate") for axis in "XYZ")
-        + (p.global_control.scale_attribute,))
+        + (p.global_control.scale_attribute,)
+        + (tuple("scale"+axis for axis in "XYZ") if p.global_control.native_scale_channels else ()))
     for index, node in enumerate(p.global_control.extra_control_paths, 1):
         add(f"global.extra.{index}", node, trs)
     if p.root is not None:
@@ -212,6 +214,14 @@ def source_character_channels(rig):
             tuple(segment.length_attribute for segment in spec.segments)+
             tuple(segment.fatness_attribute for segment in spec.segments))
         add(key+'.pole',spec.pole,('lock',))
+    for plan in p.rp_follows:
+        foot_swivel=any(side.ankle_control_path==plan.control and 'swivel' in side.attributes
+                        for limb in p.limbs if limb.foot for side in limb.foot.sides)
+        if not foot_swivel:
+            add('source.rp.swivel.'+plan.control.rsplit('|',1)[-1],plan.control,('swivel',))
+        for spec in plan.spaces:
+            add('source.rp.follow.'+spec.fk_control.rsplit('|',1)[-1],spec.fk_control,
+                tuple('follow'+target.label for target in spec.targets))
     for spec in p.leg_aim:
         add('source.legAim.'+spec.label+'.'+spec.side,spec.control,('legAim',))
     if p.hip_swing is not None:
@@ -679,6 +689,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
      advanced_constraints, aim_at, geo_attach, proximity_pin) = build_source_body_follow(
         host, metadata, body, fk, limbs, splines, global_control,
         root_control_path=root.root_x.control_path)
+    rp_follows=host.create_source_rp_follows(body,limbs,global_control,root,leg_aim=leg_aim)
     fk, wheels, curve_guides, tweakers = build_source_body_options(
         host, build, body, fk, limbs, splines, global_control, part_result)
     # Wheel creates its final FKX receiver through the existing constraints.
@@ -730,7 +741,7 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         fit_follows, named_follows, follow_spaces, ik_follows,
         advanced_constraints, aim_at, geo_attach, proximity_pin,
         wheels, curve_guides, tweakers, splines[1:],root,center_between_feet,internal_ik_local,hip_swing,rp_dynamics,leg_aim,
-        generic_fk_policy is None or generic_fk_policy.source_rp_scale_axes is not False,options.use_offset_parent_matrix)
+        generic_fk_policy is None or generic_fk_policy.source_rp_scale_axes is not False,options.use_offset_parent_matrix,rp_follows)
     rig = SourceBodyRigResult(rig_plan, body)
     # ADV gives implicitly created unit conversions their final names at
     # the end of construction. Freeze those names before capturing registry

@@ -9,6 +9,7 @@ class SourceBodyMatrixPlan:
     body: str
     nodes: tuple[SourceRpNode,...]
     outputs: tuple[tuple[str,str],...]
+    local_scale: tuple[tuple[str,str],...]=()
 
 
 def _valid_offsets(sources,values):
@@ -75,7 +76,8 @@ def decode_source_body_matrix(text):
     """Closed native graph record, using scene plugs rather than object loading."""
     import re
     from .character_registry import safe_json,exact,path,identifier,finite,CharacterRegistryError
-    raw=exact(safe_json(text),('body','nodes','outputs'))
+    raw=safe_json(text)
+    raw=exact(raw,('body','nodes','outputs','local_scale') if isinstance(raw,dict) and 'local_scale' in raw else ('body','nodes','outputs'))
     def attribute(value):
         if not isinstance(value,str) or not re.fullmatch(
                 r'[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])?(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])?)*',value):
@@ -105,4 +107,8 @@ def decode_source_body_matrix(text):
     if (len({node.name for node in nodes})!=len(nodes) or len(outputs)!=1
             or outputs[0][1]!=body+'.offsetParentMatrix'):
         raise CharacterRegistryError('来源 FK Body 矩阵输出身份无效')
-    return SourceBodyMatrixPlan(body,tuple(nodes),outputs)
+    local_scale=tuple((plug(source),plug(target)) for source,target in raw.get('local_scale',()))
+    if local_scale and (len(local_scale)!=3 or {target for _,target in local_scale}!=
+            {body+'.scale'+axis for axis in 'XYZ'}):
+        raise CharacterRegistryError('来源 Bendy Part 本地缩放身份无效')
+    return SourceBodyMatrixPlan(body,tuple(nodes),outputs,local_scale)

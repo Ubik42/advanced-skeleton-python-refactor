@@ -44,6 +44,9 @@ class MayaBodyGameRootMotionMixin:
         from .maya_source_body_matrix import rebase_fk_records
         rebase_fk_records(self,before,((old_root,new_root),))
 
+        from .maya_source_rp_follow import rebase_records as rebase_follow_records
+        rebase_follow_records(self,(binding.ik_control for binding in before.source_limbs),
+                       ((old_root,new_root),))
         def rewrite(value):
             if isinstance(value, str):
                 if (value == old_root or value.startswith(old_root + "|")

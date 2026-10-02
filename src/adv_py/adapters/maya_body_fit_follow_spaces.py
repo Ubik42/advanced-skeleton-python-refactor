@@ -126,7 +126,7 @@ class MayaBodyFitFollowSpacesMixin:
 
     def capture_body_fit_follow_spaces(
         self, spec: BodyFitFollowSpacesSpec,
-        state: BodyFitFollowSpacesState,
+        state: BodyFitFollowSpacesState, *, check_initial_pose: bool = True,
     ) -> bool:
         from maya.api import OpenMaya as om
 
@@ -173,8 +173,9 @@ class MayaBodyFitFollowSpacesMixin:
                     for a, b in zip(actual, expected))
                     or not c.attributeQuery(attr, node=spec.fk_control,
                                             exists=True)
-                    or abs(float(c.getAttr(spec.fk_control + "." + attr))
-                           - target.weight) > 1e-8
+                    or (check_initial_pose and abs(float(c.getAttr(spec.fk_control + "." + attr))
+                           - target.weight) > 1e-8)
+                    or tuple(c.attributeQuery(attr,node=spec.fk_control,listDefault=True) or ()) != (target.weight,)
                     or abs(float(c.getAttr(target.weight_node + ".input2"))
                            - 0.1) > 1e-8):
                 return False
@@ -190,10 +191,9 @@ class MayaBodyFitFollowSpacesMixin:
             ))
         return (bool(c.getAttr(spec.fk_offset + ".inheritsTransform"))
                 == state.inherits_transform
-                and all(c.connectionInfo(destination,
-                                     sourceFromDestination=True) == source
+                and all(c.isConnected(source,destination,ignoreUnitConversion=True)
                     for source, destination in links)
-                and all(abs(a - b) <= 1e-4 for a, b in zip(
+                and (not check_initial_pose or all(abs(a - b) <= 1e-4 for a, b in zip(
                     _matrix(c.xform(spec.fk_offset, query=True,
                                     worldSpace=True, matrix=True)),
-                    state.offset_world)))
+                    state.offset_world))))
