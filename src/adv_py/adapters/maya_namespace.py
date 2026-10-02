@@ -37,6 +37,11 @@ _NODE_ARGS |= {'polyListComponentConversion'}
 _NODE_RESULTS |= {'polyListComponentConversion'}
 _READ |= {'polyListComponentConversion'}
 _GLOBAL |= {'jointDisplayScale'}
+_GLOBAL |= {'polySelectConstraint','getModifiers','refresh'}
+_NODE_ARGS |= {'deltaMush'}
+_NODE_RESULTS |= {'deltaMush'}
+_CREATE |= {'deltaMush'}
+_NODE_ARGS |= {'copySkinWeights'}
 _NODE_ARGS |= {'spaceLocator'}
 _NODE_RESULTS |= {'spaceLocator'}
 _CREATE |= {'spaceLocator'}
@@ -168,7 +173,7 @@ class MayaCharacterCommands:
                 args=[self._map(a,identity.to_scene) for a in args]
             elif name in _NODE_ARGS or name in ('select','listAttr'):
                 args=[address(a) for a in args]
-            for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject','curve'):
+            for flag in ('name','n','parent','p','node','startJoint','sj','endEffector','ee','worldUpObject','curve','sourceSkin','destinationSkin'):
                 # addAttr(parent=...) identifies another attribute on this
                 # node, not a DAG parent and never carries a namespace.
                 if name=='addAttr' and flag in ('parent','p'):

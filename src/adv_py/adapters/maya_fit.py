@@ -1613,6 +1613,14 @@ class MayaFitJointHost:
         from .maya_fit_auto_scale import capture
         return capture(self,container,skin,all_objects,right_eye)
 
+    def finish_fit_auto_place(self,container,skin,all_objects):
+        from .maya_fit_auto_place_guides import finish
+        return finish(self,container,skin,all_objects)
+
+    def auto_place_fit(self,container,skin,all_objects,right_eye):
+        from .maya_fit_auto_place import run
+        return run(self,container,skin,all_objects,right_eye)
+
     def apply_fit_auto_scale(self,plan,right_eye,skin,all_objects):
         from .maya_fit_auto_scale import apply
         return apply(self,plan,right_eye,skin,all_objects)

@@ -159,7 +159,7 @@ def _remove_softmods(host,plan,skin,group):
     raw.delete(softmods)
 
 
-def apply(host,plan,right_eye,skin,all_objects):
+def apply(host,plan,right_eye,skin,all_objects,*,keep_guides=False):
     host._require_transaction();c=host._cmds
     host._transaction_changed=True
     selection=c.ls(selection=True,long=True) or []
@@ -183,6 +183,11 @@ def apply(host,plan,right_eye,skin,all_objects):
             ends=[joint.path for joint in plan.before.joints if joint.path.rsplit('|',1)[-1].rsplit(':',1)[-1]=='EyeEnd']
             if len(ends)>1:raise ValueError('EyeEnd Fit 关节不唯一')
             if ends:c.setAttr(ends[0]+'.translateX',radius)
+            if keep_guides:
+                pivot=c.createNode('transform',name='asFitPivotEye',parent='asFitPivots',skipSelect=True)
+                c.xform(pivot,worldSpace=True,translation=position)
+                c.addAttr(pivot,longName='radius',attributeType='double',defaultValue=radius)
+        if keep_guides:return bool(right_eye)
         _remove_softmods(host,plan,skin,group)
         for mesh in dict.fromkeys((*skin,*all_objects)):
             # Skin / All are explicit preparation inputs and can belong to an

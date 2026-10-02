@@ -1,0 +1,61 @@
+"""Source component casting, inversion and leap to adjacent polygon shells."""
+from .maya_fit_auto_place_guides import stock_wrap
+
+
+def cast(components,destination):
+    return [destination+'.'+component.split('.',1)[1] for component in components]
+
+
+def faces(c,contained=False):
+    selected=c.ls(selection=True) or []
+    result=c.polyListComponentConversion(selected,toFace=True,internal=contained) or []
+    c.select(result,replace=True) if result else c.select(clear=True)
+    return c.ls(selection=True) or []
+
+
+def invert(c):
+    selected=c.ls(selection=True) or []
+    if not selected:return
+    objects=c.ls(selection=True,objectsOnly=True) or []
+    kind=selected[0].split('.',1)[1].split('[',1)[0]
+    flag={'vtx':'vertex','f':'face','e':'edge'}[kind]
+    count=int(c.polyEvaluate(objects[0],**{flag:True}))
+    c.select(objects[0]+'.'+kind+'[0:'+str(count-1)+']',replace=True)
+    c.select(selected,deselect=True)
+
+
+def grow_past_shell(host):
+    c=host._cmds
+    selected=c.ls(selection=True) or []
+    objects=c.ls(selection=True,objectsOnly=True) or []
+    node=objects[0]
+    if c.nodeType(node)=='mesh':node=c.listRelatives(node,parent=True)[0]
+    a=c.duplicate(node,name='tempPolyGrowPastShell1')[0]
+    b=c.duplicate(node,name='tempPolyGrowPastShell2')[0]
+    additional=[];wrap=None
+    try:
+        c.select(cast(selected,a),replace=True);faces(c);c.delete(c.ls(selection=True))
+        c.select(cast(selected,b),replace=True);faces(c);invert(c);c.delete(c.ls(selection=True))
+        wrap=stock_wrap(host,a,b,'{ "1","0","0.001", "2", "1", "0", "1", "0" }')
+        wrap=c.rename(wrap,'tempPolyGrowPastShellWrap')
+        minimum=c.getAttr(a+'.boundingBoxMin')[0];maximum=c.getAttr(a+'.boundingBoxMax')[0]
+        width=maximum[0]-minimum[0]
+        c.move(-width*2.,0,0,b,relative=True);c.setAttr(wrap+'.maxDistance',width)
+        for _ in range(10):
+            c.setAttr(wrap+'.maxDistance',c.getAttr(wrap+'.maxDistance')/10.)
+            if minimum[0]<=c.getAttr(a+'.boundingBoxMinX'):
+                for _ in range(100):
+                    c.setAttr(wrap+'.maxDistance',c.getAttr(wrap+'.maxDistance')*1.05)
+                    if minimum[0]>c.getAttr(a+'.boundingBoxMinX'):
+                        c.select(a,replace=True)
+                        c.polySelectConstraint(mode=3,type=1,d=3,db=(0,999),
+                            da=(1,0,0),dp=(999+minimum[0],0,0))
+                        chosen=c.ls(selection=True) or [];c.polySelectConstraint(mode=0)
+                        c.select(chosen,replace=True);invert(c)
+                        additional=cast(c.ls(selection=True) or [],node);break
+                break
+    finally:
+        c.delete([node for node in (a,b,wrap) if node and c.objExists(node)])
+        c.select(selected,replace=True)
+    if additional:c.select(additional,add=True)
+    return bool(additional)

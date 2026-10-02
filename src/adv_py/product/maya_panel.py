@@ -685,6 +685,7 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("从所选标准骨架创建 Fit",
                                       self._fit_from_selected_skeleton))
             auto_place_row=QtWidgets.QHBoxLayout()
+            auto_place_row.addWidget(self._button('自动放置',self._fit_auto_place))
             auto_place_row.addWidget(self._button('缩放',self._fit_auto_scale))
             form.addRow('自动放置：',auto_place_row)
             row = QtWidgets.QHBoxLayout()
@@ -2555,7 +2556,15 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _fit_auto_scale(self):
             result=self.controller.fit_auto_scale(self._namespace(),self.fit_container.text().strip())
+            if getattr(result,'finished',False):
+                return '已结束 AutoPlace 引导并还原手指、肩肘及模型'
             return f'已按 Skin 缩放 {len(result.plan.positions)} 个 Fit 关节' + ('，并放置 Eye' if result.eye_placed else '')
+
+        def _fit_auto_place(self):
+            result=self.controller.fit_auto_place(self._namespace(),self.fit_container.text().strip())
+            if getattr(result,'finished',False):return '已结束 AutoPlace 引导并还原模型'
+            if not result.guides_active:return '未识别到原版模板所需的身体与手指形态，已清理引导'
+            return f'已按原版扫描放置 {result.joints} 个 Fit 关节；可调整引导手柄，再点击自动放置结束'
 
         def _fit_from_selected_skeleton(self):
             selected_namespace = self._namespace()
