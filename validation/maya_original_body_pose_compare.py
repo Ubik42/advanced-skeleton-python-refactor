@@ -78,13 +78,41 @@ def spline_cases():
         ('spine_native_main_nonuniform',main+(mode,native)),
     )
 
-def main(native,python_scene,reference,output,*,extended=False,source_matrices=False,source_splines=False):
+def scoped_spline_cases(systems):
+    """Exercise each three-control source system and their shared parent."""
+    rows=[]
+    simultaneous=[]
+    for system in systems:
+        name,side=system.rsplit('_',1)
+        mode=('FKIK'+system+'.FKIKBlend','FKIK'+system+'.FKIKBlend',10.)
+        def control(index,attribute,value):
+            return (f'IK{name}{index+1}_{side}.{attribute}',
+                    f'AdvPy_Spline_{system}_IK{index}.{attribute}',value)
+        mid=control(1,'translateZ',.4)
+        native=control(2,'stretchEven',10.)
+        main_scale=tuple(('Main.scale'+axis,'AdvPy_Global.scale'+axis,value)
+                         for axis,value in zip('XYZ',(1.2,.85,1.1)))
+        cases=(('ik_neutral',(mode,)),('arc_bend',(mode,mid)),
+               ('native_bend',(mode,native,mid)),
+               ('native_mid_twist',(mode,native,control(1,'rotateY',25.))),
+               ('arc_mid_twist',(mode,control(1,'rotateY',25.))),
+               ('half_stretch',(mode,control(2,'stretchy',5.),mid)),
+               ('no_stretch',(mode,control(2,'stretchy',0.),control(2,'translateY',.5))),
+               ('first_not_fixed',(mode,control(0,'firstJointFixed',0.),mid)),
+               ('end_rotate',(mode,control(2,'rotateX',15.))),
+               ('main_nonuniform',main_scale+(mode,native)))
+        rows.extend((system+'_'+name,edits) for name,edits in cases)
+        simultaneous.extend((mode,mid,native))
+    return tuple(rows)+(('all_splines_native_bend',tuple(simultaneous)),)
+
+
+def main(native,python_scene,reference,output,*,extended=False,source_matrices=False,source_splines=False,spline_systems=()):
     import maya.standalone
     maya.standalone.initialize(name='python')
     from maya import cmds
     names=tuple(json.loads(reference.read_text())['neutral_body'])
     matrices={}
-    cases=CASES+(rp_cases() if extended else ())+(matrix_cases() if source_matrices else ())+(spline_cases() if source_splines else ())
+    cases=CASES+(rp_cases() if extended else ())+(matrix_cases() if source_matrices else ())+(spline_cases() if source_splines else ())+(scoped_spline_cases(spline_systems) if spline_systems else ())
     for index,(label,scene) in enumerate((('native',native),('python',python_scene))):
         matrices[label]={}
         for name,edits in cases:
@@ -106,4 +134,4 @@ def main(native,python_scene,reference,output,*,extended=False,source_matrices=F
     print([(row['case'],row['maximum_error'],row['largest'][:2]) for row in rows])
     if not passed:raise AssertionError('Whole Body pose comparison failed')
 
-if __name__=='__main__':main(*(Path(arg) for arg in sys.argv[1:5]),extended='--extended' in sys.argv[5:],source_matrices='--source-matrices' in sys.argv[5:],source_splines='--source-splines' in sys.argv[5:])
+if __name__=='__main__':main(*(Path(arg) for arg in sys.argv[1:5]),extended='--extended' in sys.argv[5:],source_matrices='--source-matrices' in sys.argv[5:],source_splines='--source-splines' in sys.argv[5:],spline_systems=tuple(arg.split('=',1)[1] for arg in sys.argv[5:] if arg.startswith('--spline-system=')))

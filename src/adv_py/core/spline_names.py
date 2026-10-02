@@ -1,6 +1,7 @@
 """Independent source Spline system names without changing graph topology."""
 from dataclasses import fields,is_dataclass,replace
 from functools import wraps
+from enum import Enum
 import re
 
 
@@ -10,6 +11,9 @@ def spline_system_valid(name):
 
 def remap_spline_value(value,system,*,canonical=False):
     prefix='AdvPy_Spline_'+system+'_'
+    # Role/side enums inherit str, but replacing names must not turn them
+    # into plain strings. Each scoped plan still carries typed identities.
+    if isinstance(value,Enum):return value
     if isinstance(value,str):
         return value.replace(prefix,'AdvPy_Spline') if canonical else re.sub(
             r'AdvPy_Spline(?=[A-Z])',prefix,value)

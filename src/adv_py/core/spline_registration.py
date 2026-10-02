@@ -49,6 +49,9 @@ def decode_spline(raw, body):
         raw={**raw,'source_ik_chain':[]}
     if isinstance(raw,dict) and 'source_solver_tail' not in raw:
         raw={**raw,'source_solver_tail':None}
+    if isinstance(raw,dict):
+        for key in ('source_simple_twist','source_forward_axis'):
+            if key not in raw:raw={**raw,key:None}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     fit_count=raw['source_fit_control_count']
     if fit_count is not None and (type(fit_count) is not int or fit_count<2
@@ -274,6 +277,12 @@ def decode_spline(raw, body):
         solver_tail=BodyLimbMechanismJointSpec(BodyLimbMechanismRole.IK,native[-1].side,
             body_paths[-1],path(row['path']),row['name'],path(row['parent_path']),
             vector(row['world_position'],3),frame)
+    simple=raw['source_simple_twist'];forward=raw['source_forward_axis']
+    if ((simple is None)!=(forward is None)
+            or simple is not None and (type(simple) is not bool or not native
+                or simple!=(len(native)==2) or type(forward) is not int or forward not in (0,1)
+                or simple and forward!=0 or forward==1 and native[0].side is not FitBuildSide.LEFT)):
+        raise CharacterRegistryError('来源 Spline 原版扭转模式或求解方向无效')
     result = BodySplinePlan(root, tuple(joints), body_paths, controls, path(raw['pelvis_control']),
                           path(raw['chest_space']), targets, positions, axes,
                           lengths, raw['use_offset_parent_matrix'],
@@ -289,7 +298,8 @@ def decode_spline(raw, body):
                           source_fixed_orient_unique=raw['source_fixed_orient_unique'],
                           source_first_translate=raw['source_first_translate'],
                           source_world_controls=raw['source_world_controls'],source_mode=source_mode,
-                          source_fit_control_count=fit_count,source_scale_indices=tuple(scale_indices),source_ik_chain=tuple(native),source_solver_tail=solver_tail)
+                          source_fit_control_count=fit_count,source_scale_indices=tuple(scale_indices),source_ik_chain=tuple(native),source_solver_tail=solver_tail,
+                          source_simple_twist=simple,source_forward_axis=forward)
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

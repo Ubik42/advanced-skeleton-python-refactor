@@ -91,6 +91,16 @@ class BodySplinePlan:
 
     source_ik_chain: tuple[BodyLimbMechanismJointSpec,...] = ()
     source_solver_tail: BodyLimbMechanismJointSpec | None = None
+    source_simple_twist: bool | None = None
+    source_forward_axis: int | None = None
+
+    @property
+    def simple_twist(self):
+        return self.source_simple_twist if self.source_simple_twist is not None else len(self.body_joints)==2
+
+    @property
+    def forward_axis(self):
+        return self.source_forward_axis if self.source_forward_axis is not None else 0
 
     @property
     def solver_ik(self):
@@ -110,6 +120,10 @@ class BodySplinePlan:
 
     @property
     def native_lengths(self):
+        if self.source_forward_axis is not None:
+            return tuple(sum((b-a)*axis for a,b,axis in zip(
+                left.world_position,right.world_position,left.world_axes[0]))
+                for left,right in zip(self.native_ik,self.native_ik[1:]))
         return tuple(sqrt(sum((b-a)**2 for a,b in zip(left.world_position,right.world_position)))
                      for left,right in zip(self.native_ik,self.native_ik[1:])) if self.source_ik_chain else self.lengths
 
@@ -301,7 +315,7 @@ class BodySplinePlan:
             'AdvPy_SplineVolumeRatioClamp','AdvPy_SplineVolumeBlend',
             'AdvPy_SplineFlipUpAxis','AdvPy_SplineFlipVector') + (
             ('AdvPy_SplineIKEndLocalStartOrient',)
-            if len(self.body_joints)>2 else ())
+            if not self.simple_twist else ())
         if self.source_solver_tail is not None:
             fixed=tuple(name for name in fixed if name!='AdvPy_SplineChestOrient')+(self.source_solver_tail.name,)
         targets=tuple(f'AdvPy_SplineIK{i}{suffix}' for i in range(len(self.targets)) for suffix in
@@ -532,7 +546,12 @@ def plan_body_spline_fk_chain(source, controls, *,
     x=root_axis
     dot=sum(a*b for a,b in zip(guide,x));y=tuple(a-dot*b for a,b in zip(guide,x));norm=sqrt(sum(v*v for v in y));y=tuple(v/norm for v in y)
     z=(x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]);axes=(x,y,z)
-    source=(replace(source[0],world_axes=axes),*source[1:])
+    if source_control_count is None:
+        source=(replace(source[0],world_axes=axes),*source[1:])
+    else:
+        # The source FKX chain retains the authored bind frame. Re-aiming
+        # its root changes the Part orientConstraint bind pose on side chains.
+        axes=source[0].world_axes
     def ik_axes(index):
         if index==len(source)-1:return source[index].world_axes
         direction=tuple((b-a)/lengths[index] for a,b in zip(source[index].world_position,source[index+1].world_position))

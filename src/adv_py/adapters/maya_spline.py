@@ -143,7 +143,7 @@ def create(host,plan):
         for kind in ('translate','rotate','scale','shear'):
             for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
                 c.setAttr(local+'.'+kind+axis,lock=True,keyable=False)
-    if n>2:
+    if not plan.simple_twist:
         end_up=host._spine_frame('AdvPy_SplineIKEndLocalStartOrient',plan.driver_targets[-1],
                                  plan.positions[-1],(host._spine_world_frame(plan.body_joints[0])[1]
                                                         if plan.source_world_controls else plan.joints[0].world_axes))
@@ -188,13 +188,13 @@ def create(host,plan):
     handle,effector=c.ikHandle(name='AdvPy_SplineIKHandle',startJoint=ik[0].path,endEffector=plan.solver_ik[-1].path,
         solver='ikSplineSolver',curve=plan.curve,createCurve=False,parentCurve=False)
     c.rename(effector,'AdvPy_SplineIKEffector');c.parent(handle,plan.root_path)
-    for attr,value in (('dTwistControlEnable',True),('dWorldUpType',3 if n==2 else 4),
-                       ('dForwardAxis',0),('dWorldUpAxis',0)):
+    for attr,value in (('dTwistControlEnable',True),('dWorldUpType',3 if plan.simple_twist else 4),
+                       ('dForwardAxis',plan.forward_axis),('dWorldUpAxis',0)):
         c.setAttr('AdvPy_SplineIKHandle.'+attr,value)
     for attr in ('dWorldUpVector','dWorldUpVectorEnd'):c.setAttr('AdvPy_SplineIKHandle.'+attr,0.,1.,0.,type='double3')
     c.connectAttr(plan.driver_targets[0]+'|AdvPy_SplineIKLocalOrient0.worldMatrix[0]',
                   'AdvPy_SplineIKHandle.dWorldUpMatrix')
-    if n>2:
+    if not plan.simple_twist:
         c.connectAttr(end_up+'.worldMatrix[0]',
                       'AdvPy_SplineIKHandle.dWorldUpMatrixEnd')
     c.addAttr(plan.settings,longName='noFlipAxis',attributeType='enum',
@@ -324,6 +324,11 @@ def create(host,plan):
                 for axis in ('XYZ' if kind!='shear' else ('XY','XZ','YZ')):
                     c.setAttr(rest+'.'+kind+axis,lock=True,keyable=False)
     c.createNode('reverse',name='AdvPy_SplineReverse',skipSelect=True);c.connectAttr(plan.mode_weight,'AdvPy_SplineReverse.inputX')
+    # Maya can prune the reverse when the last legacy constraint is replaced
+    # by a Body/Part matrix receiver. It still belongs to this saved system.
+    c.addAttr(plan.root_path,longName='advPySplineModeReverse',attributeType='message')
+    c.connectAttr('AdvPy_SplineReverse.message',plan.root_path+'.advPySplineModeReverse')
+    c.setAttr(plan.root_path+'.advPySplineModeReverse',lock=True)
     for i in range(1,n):
         for label,command in (('Point',c.pointConstraint),('Orient',c.orientConstraint),('Scale',c.scaleConstraint)):
             node=command(fk[i].path,plan.ik_outputs[i],plan.body_joints[i],name=f'AdvPy_Spline{label}{i}',maintainOffset=False)[0]
@@ -365,6 +370,10 @@ def audit(host,plan,*,source_visibility_ready=True):
         with spline_scope(host,plan) as local:
             return audit(host,local,source_visibility_ready=source_visibility_ready)
     c=host._cmds;n=len(plan.body_joints)
+    ownership=plan.root_path+'.advPySplineModeReverse'
+    if c.objExists(ownership) and (not c.getAttr(ownership,lock=True)
+            or not c.isConnected('AdvPy_SplineReverse.message',ownership)):
+        raise FitSkeletonValidationError('Spline 模式反向节点归属改变')
     if plan.source_mode:
         from .maya_source_spline_mode import audit as audit_source_mode
         audit_source_mode(host,plan)
@@ -388,7 +397,7 @@ def audit(host,plan,*,source_visibility_ready=True):
     original_range=version>=8
     terminal_without_volume=version>=10
     original_volume_graph=version>=12
-    single_segment_twist=version>=18 and n==2
+    single_segment_twist=version>=18 and plan.simple_twist
     end_local_start=version>=14 and not single_segment_twist
     flip_axis_graph=version>=16
     missing=tuple(name for name in plan.node_names
@@ -660,7 +669,7 @@ def audit(host,plan,*,source_visibility_ready=True):
         'AdvPy_SplineVolumeExponent.operation':1,'AdvPy_SplineVolume.operation':3,
         'AdvPy_SplineIKHandle.dTwistControlEnable':1,
         'AdvPy_SplineIKHandle.dWorldUpType':3 if single_segment_twist else 4,
-        'AdvPy_SplineIKHandle.dForwardAxis':0}
+        'AdvPy_SplineIKHandle.dForwardAxis':plan.forward_axis}
     if flip_axis_graph:
         if (not c.attributeQuery('noFlipAxis',node=plan.settings,exists=True)
                 or c.getAttr(plan.settings+'.noFlipAxis',type=True)!='enum'):

@@ -94,6 +94,10 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
                 parent+'|'+spline.node_name('AdvPy_SplineIKEndFake'),
                 spline.node_name('AdvPy_SplineIKEndFake'),parent,tail.world_position,tail.world_axes)
             expanded_plan=replace(expanded_plan,source_solver_tail=end_fake)
+            instance=next((item for item in instances if item.output_name==source[-1].name),None)
+            simple=len(expanded_plan.native_ik)==2
+            expanded_plan=replace(expanded_plan,source_simple_twist=simple,
+                source_forward_axis=1 if not simple and side=='L' and (instance is None or instance.mirrored) else 0)
         plans.append(expanded_plan)
     if saved_layouts is not None and len(plans)!=len(saved_layouts):
         raise FitSkeletonValidationError('来源 Spline 重建不能静默增删已保存系统')

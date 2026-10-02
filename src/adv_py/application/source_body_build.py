@@ -626,6 +626,14 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         fk.controls, build.symmetry.instances, metadata,
         use_offset_parent_matrix=options.use_offset_parent_matrix,
         generated_joint_sources=generated_sources)
+    # The extra mechanism FK base is an identity receiver below the authored
+    # start FK. Applying the Fit scale compensation again distorts Main's
+    # nonuniform scale in the start joint's rotated frame.
+    spline_bases={spline.fk_controls[0] for spline in splines
+                  if spline.body_joints[0].rsplit('|',1)[-1]!='Root_M'
+                  and spline.source_forward_axis is not None}
+    compensation=tuple(spec for spec in compensation
+                       if spec.control_path not in spline_bases)
     if part_result is not None:
         compensation = rebase_plan_paths_after_parts(compensation, part_result.final_paths)
         # The next FK Offset is driven by the last Inbetween FKX. A second

@@ -49,15 +49,28 @@ def capture_control_positions(host, plan):
             matrix = c.xform(orientation,query=True,worldSpace=True,matrix=True)
             axes.append(tuple(tuple(matrix[start:start+3]) for start in (0,4,8)))
         positions.append(tuple(plan.curve_points[-1]))
-        axes.append(plan.joints[len(plan.body_joints)-2].world_axes)
+        axes.append(host._spine_world_frame(plan.native_ik[-2].source_joint)[1]
+                    if plan.source_forward_axis is not None else plan.joints[len(plan.body_joints)-2].world_axes)
         cv_axes = []
         for index in range(len(plan.source_curve_points)):
             c.setAttr(path+'.uValue',index/(len(plan.source_curve_points)-1))
             c.setAttr(orientation+'.rotate',*c.getAttr(path+'.rotate')[0],type='double3')
             matrix = c.xform(orientation,query=True,worldSpace=True,matrix=True)
             cv_axes.append(tuple(tuple(matrix[start:start+3]) for start in (0,4,8)))
-        return replace(plan, positions=tuple(positions),source_control_axes=tuple(axes),
+        result=replace(plan, positions=tuple(positions),source_control_axes=tuple(axes),
                        source_cv_axes=tuple(cv_axes))
+        if plan.source_forward_axis is not None:
+            # MEL IKSp aligns to authored IKX frames. Re-aiming every bone
+            # makes mirrored lengths positive and defeats dForwardAxis=1.
+            native=tuple(replace(joint,world_axes=host._spine_world_frame(joint.source_joint)[1])
+                         for joint in plan.native_ik)
+            by_source={joint.source_joint:joint for joint in native}
+            count=len(plan.body_joints)
+            result=replace(result,source_ik_chain=native,
+                joints=plan.joints[:count]+tuple(by_source[joint.source_joint] for joint in plan.joints[count:]),
+                source_solver_tail=replace(plan.source_solver_tail,world_axes=native[-1].world_axes)
+                    if plan.source_solver_tail is not None else None)
+        return result
     finally:
         if path is not None:
             c.delete(path)
