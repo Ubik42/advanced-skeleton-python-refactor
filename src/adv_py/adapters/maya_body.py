@@ -4683,17 +4683,20 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         settings = (self._cmds.ls(settings, long=True) or [settings])[0]
         if settings != plan.settings_path:
             raise RuntimeError(f"{limb_label} IK/FK 设置节点路径漂移")
+        if any(joint.source_fk_target for side in plan.sides for joint in side.joints):
+            self._cmds.addAttr(settings,longName='advPySourceNonOpmFkBlendTarget',attributeType='bool')
+            self._cmds.setAttr(settings+'.advPySourceNonOpmFkBlendTarget',True,lock=True)
         for side in plan.sides:
             self._cmds.addAttr(settings, longName=side.attribute, attributeType="double", minValue=0.0, maxValue=1.0, defaultValue=0.0, keyable=True)
             plug = f"{settings}.{side.attribute}"
             reverse = self._cmds.createNode("reverse", name=side.reverse_name)
             self._cmds.connectAttr(plug, f"{reverse}.inputX")
             for joint in side.joints:
-                if any(not self._cmds.objExists(path) for path in (joint.body_joint, joint.fk_driver, joint.ik_driver)):
+                if any(not self._cmds.objExists(path) for path in (joint.body_joint, joint.fk_target, joint.ik_driver)):
                     raise FitSkeletonValidationError(
                         f"{limb_label} IK/FK 驱动或 Body joint 失效"
                     )
-                constraint = self._cmds.orientConstraint(joint.fk_driver, joint.ik_driver, joint.body_joint, maintainOffset=False, name=joint.constraint_name)[0]
+                constraint = self._cmds.orientConstraint(joint.fk_target, joint.ik_driver, joint.body_joint, maintainOffset=False, name=joint.constraint_name)[0]
                 aliases = self._cmds.orientConstraint(constraint, query=True, weightAliasList=True) or []
                 if len(aliases) != 2:
                     raise RuntimeError(
@@ -4703,7 +4706,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 self._cmds.connectAttr(plug, f"{constraint}.{aliases[1]}")
                 if joint.translation_constraint_name:
                     point = self._cmds.pointConstraint(
-                        joint.fk_driver,
+                        joint.fk_target,
                         joint.ik_driver,
                         joint.body_joint,
                         maintainOffset=False,
@@ -10051,6 +10054,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             skipSelect=True,
         )
         joint = (self._cmds.ls(joint, long=True) or [joint])[0]
+        if spec.rotation_order is not None:
+            self._cmds.setAttr(joint+'.rotateOrder',spec.rotation_order)
+            self._cmds.addAttr(joint,longName='advPySourceIkRotationOrder',attributeType='bool',defaultValue=True)
+            self._cmds.setAttr(joint+'.advPySourceIkRotationOrder',lock=True)
         self._cmds.xform(
             joint,
             worldSpace=True,
@@ -10132,6 +10139,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     world_position=tuple(float(value) for value in position),
                     world_axes=world_axes,
                     rotation=tuple(float(value) for value in rotation),
+                    rotation_order=int(self._cmds.getAttr(path+'.rotateOrder')),
                 )
             )
         source_ancestors: set[str] = set()
@@ -10212,6 +10220,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
     def finalize_source_limb_root_frames(self,specs):
         from .maya_source_limb_root_frame import finalize
         finalize(self,specs)
+
+    def configure_source_fk_follower_parent_scale(self,plan,driver_by_body):
+        from .maya_source_fk_follower_scale import configure
+        configure(self,plan,driver_by_body)
+
+    def configure_source_fk_inverse_scale(self,plan):
+        from .maya_source_fk_follower_scale import configure_inverse_scale
+        configure_inverse_scale(self,plan)
 
     def create_source_fk_part_matrices(self,segments):
         from .maya_source_fk_part_matrix import configure

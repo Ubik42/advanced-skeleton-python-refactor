@@ -52,8 +52,13 @@ class FitBendyChainSpec:
     mel_main_influence_follow: bool = False
     source_deform_matrix: bool = False
     source_scale_plugs: tuple[str, ...] = ()
+    source_control_parent: bool = False
+    source_child_aim: bool = False
+    source_micro_no_offset: bool = False
 
     def __post_init__(self) -> None:
+        if any(type(value) is not bool for value in (self.source_control_parent,self.source_child_aim,self.source_micro_no_offset)):
+            raise ValueError('来源 Bendy 父层及末段朝向策略无效')
         if (not self.part_names
                 or len(self.part_positions) != len(self.part_names)
                 or any(len(position) != 3
@@ -241,10 +246,11 @@ class FitBendyChainSpec:
                 f"AdvPy_{self.prefix}EndWorld_{self.side}",
                 f"AdvPy_{self.prefix}StartBlend_{self.side}",
                 f"AdvPy_{self.prefix}EndBlend_{self.side}",
-                *(f"AdvPy_{name}Follow" for name in self.control_names),
+                *(f"AdvPy_{name}Follow" for index,name in enumerate(self.control_names)
+                  if not (self.source_control_parent and index==1)),
                 *(name + "Offset" for name in self.control_names),
                 *self.control_extra_names,
-                *(self.end_follow_matrix_names if self.child_start_influence
+                *(self.end_follow_node_names if self.child_start_influence
                   else (f"AdvPy_{self.end_proxy_name}Follow",)),
                 *((self.circular_name,) if self.has_master_circular
                   else ()),
@@ -278,6 +284,21 @@ class FitBendyChainSpec:
         prefix = f"AdvPy_{self.end_proxy_name}"
         return (prefix + "TranslateScale", prefix + "Rotate",
                 prefix + "World")
+
+    @property
+    def source_end_local_follow(self) -> bool:
+        return self.source_control_parent and bool(self.child_start_influence)
+
+    @property
+    def end_follow_decompose_name(self) -> str:
+        return self.end_follow_matrix_names[2]+'DM'
+
+    @property
+    def end_follow_node_names(self) -> tuple[str,...]:
+        translation,rotation,world=self.end_follow_matrix_names
+        if self.source_end_local_follow:
+            return (translation,world)+((self.end_follow_decompose_name,) if not self.opm_offset_only_scale else ())
+        return (translation,rotation,world)
 
     @property
     def circular_graph_names(self) -> tuple[str, str, str, str]:
@@ -397,6 +418,18 @@ class FitBendyChainSpec:
     def motion_transform_names(self) -> tuple[str, ...]:
         return tuple(f"BendMPX{self.stem}{index}_{self.side}"
                      for index in range(len(self.part_names) + 1))
+
+    def micro_target(self, index: int) -> str:
+        if index + 1 < len(self.motion_transform_names):
+            return self.motion_transform_names[index + 1]
+        if self.source_child_aim and self.child_start_control:
+            return self.child_start_control.replace('Bend','BendMPX',1)
+        return self.end_proxy_name
+
+    def control_offset_ancestors(self, control: str) -> tuple[str, ...]:
+        frame=((self.parent_untwist_names[3],) if self.source_control_parent
+               and control!=self.control_names[0] else ())
+        return (control+'Offset',*frame,'AdvPy_BendSystem')
 
     @property
     def deform_names(self) -> tuple[str, ...]:

@@ -1573,6 +1573,8 @@ class MayaCharacterRegistryMixin:
         audit_source_rp_follow(self,plan)
         from .maya_source_limb_root_frame import audit_registered as audit_ik_frames
         audit_ik_frames(self,plan)
+        from .maya_source_fk_follower_scale import audit_registered as audit_fk_follower_scale
+        audit_fk_follower_scale(self,plan)
         from .maya_source_inbetween_matrix import audit_registered as audit_source_inbetween
         audit_source_inbetween(self,plan)
         from .maya_source_nonopm_parts import audit_registered as audit_source_part_receivers

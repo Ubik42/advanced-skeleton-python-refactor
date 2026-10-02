@@ -62,6 +62,16 @@ def attach_measurement(host,spec,measurement):
 
 def audit_registered(host,registration):
     c=host._cmds
+    # All native IKX joints retain Fit's rotation order, not just the root
+    # offset or IK end. Their existing source message identifies the order.
+    for node in registration.nodes:
+        marker=node.path+'.advPySourceIkRotationOrder'
+        if not c.objExists(marker):continue
+        source=c.listConnections(node.path+'.advPySourceJoint',source=True,destination=False,type='joint') or []
+        if (node.node_type!='joint' or len(source)!=1 or not c.getAttr(marker)
+                or not c.getAttr(marker,lock=True) or c.connectionInfo(marker,isDestination=True)
+                or c.getAttr(node.path+'.rotateOrder')!=c.getAttr(source[0]+'.rotateOrder')):
+            raise CharacterRegistryError('来源 IK 机制关节旋转顺序或来源改变：'+node.path)
     for node in registration.nodes:
         plug=node.path+'.'+MARKER
         if not c.objExists(plug):continue

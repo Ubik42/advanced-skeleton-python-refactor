@@ -123,6 +123,13 @@ def capture_fk_policy(host, registration):
         source_rp_measurement_frame=any(record.measurements for record in frames),
         source_twist_reference_main_scale=any(
             node.rsplit('|',1)[-1].endswith('_FitPartTwistMainScaleCM') for node in owned),
+        source_bendy_parent_frames=any(c.objExists(node+'.advPyBendySourceControlParent') for node in owned),
+        source_bendy_child_aim=any(c.objExists(node+'.advPyBendySourceChildAim') for node in owned),
+        source_bendy_micro_no_offset=any(c.objExists(node+'.advPyBendySourceMicroNoOffset') for node in owned),
+        source_ik_rotation_orders=any(c.objExists(node+'.advPySourceIkRotationOrder') for node in owned),
+        source_fk_follower_parent_scale=any(c.objExists(node+'.advPySourceFkFollowerParentScale') for node in owned),
+        source_nonopm_fk_blend_targets=any(c.objExists(node+'.advPySourceNonOpmFkBlendTarget') for node in owned),
+        source_nonopm_inverse_scale=any(c.objExists(node+'.advPySourceFkInverseScale') for node in owned),
         source_spline_layouts=tuple(plan for plan in
             (registration.spine,*registration.additional_spines) if isinstance(plan,BodySplinePlan)),
         source_spline_body_root=registration.body_root,

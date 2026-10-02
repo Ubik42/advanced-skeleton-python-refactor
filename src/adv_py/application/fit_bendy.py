@@ -61,7 +61,7 @@ class FitBendyFollowSpec:
                 + self.chain.master_follow_matrix_names
                 + (self.chain.parent_untwist_names
                    if self.untwist_plug else ())
-                + (self.chain.end_follow_matrix_names
+                + (self.chain.end_follow_node_names
                    if (self.end_matrix_follow
                        and not self.chain.child_start_influence)
                    else ()))

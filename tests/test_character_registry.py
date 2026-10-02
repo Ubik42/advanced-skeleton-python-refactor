@@ -142,5 +142,27 @@ class SplineRegistrationTests(unittest.TestCase):
         self.assertIsNone(decoded.spine.source_fit_control_count)
         self.assertEqual(decoded.compatibility_digest,self.fixture().compatibility_digest)
 
+    def test_mechanism_rotation_order_keeps_legacy_records_and_closed_schema(self):
+        for fixture in (registration_fixture(), self.fixture()):
+            doc=json.loads(encode_registration(fixture))
+            for joint in doc['payload']['spine']['joints']:
+                joint.pop('rotation_order')
+            doc['digest']=digest(doc['payload'])
+            self.assertEqual(decode_registration(json.dumps(doc)),fixture)
+            joint=doc['payload']['spine']['joints'][0]
+            joint['rotation_order']=5
+            doc['digest']=digest(doc['payload'])
+            self.assertEqual(decode_registration(json.dumps(doc)).spine.joints[0].rotation_order,5)
+            for invalid in (True,6,1.5,'5'):
+                joint['rotation_order']=invalid
+                doc['digest']=digest(doc['payload'])
+                with self.assertRaises(CharacterRegistryError):
+                    decode_registration(json.dumps(doc))
+            joint['rotation_order']=None
+            joint['unexpected']=0
+            doc['digest']=digest(doc['payload'])
+            with self.assertRaises(CharacterRegistryError):
+                decode_registration(json.dumps(doc))
+
 
 if __name__=="__main__": unittest.main()

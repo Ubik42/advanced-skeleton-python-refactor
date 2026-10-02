@@ -93,7 +93,7 @@ class RegisterBendyControls:
                         path, "twistAddition")
             bend_paths = {}
             for control in chain.control_names:
-                ancestors = (control + "Offset", "AdvPy_BendSystem")
+                ancestors = chain.control_offset_ancestors(control)
                 if (control == chain.control_names[0]
                         and chain.has_master_circular):
                     ancestors = (chain.circular_name, *ancestors)
@@ -117,7 +117,7 @@ class RegisterBendyControls:
                 ancestors = (
                     chain.junction_offset_name, start_control,
                     start_control + "Extra",
-                    start_control + "Offset", "AdvPy_BendSystem")
+                    *chain.control_offset_ancestors(start_control))
                 extra_path = self._host.capture_bendy_control_path(
                     extra, ancestors)
                 path = self._host.capture_bendy_control_path(

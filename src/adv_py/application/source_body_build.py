@@ -407,6 +407,13 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         mechanism_names=source_foot_joint_names(names,foot_roles)
         mechanisms = plan_body_limb_mechanisms(
             body, limb_label=label, joint_names=mechanism_names, allow_part_parents=True,sides=sides)
+        # MEL 80413 sets every IKX rotateOrder from Fit, including middle and
+        # expanded solver joints; the control/end setup alone misses them.
+        if generic_fk_policy is None or generic_fk_policy.source_ik_rotation_orders is not False:
+            body_by_path={joint.path:joint for joint in body.joints}
+            mechanisms=replace(mechanisms,joints=tuple(replace(joint,
+                rotation_order=body_by_path[joint.source_joint].rotation_order)
+                if joint.role is BodyLimbMechanismRole.IK else joint for joint in mechanisms.joints))
         from adv_py.core.source_limb_root_frame import configure as configure_root_frames
         # MEL 80418–80452 creates these IK start layers in both modes. The
         # parent uses its forced matrix follow even when Body uses constraints.
@@ -471,7 +478,10 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             opm_offset_only_scale=options.use_offset_parent_matrix,
             source_deform_matrix=options.use_offset_parent_matrix and (
                 generic_fk_policy is None or generic_fk_policy.source_bendy_deform_matrix is not False),
-            secondary_matrix_follow=True, mel_main_influence_follow=True)
+            secondary_matrix_follow=True, mel_main_influence_follow=True,
+            source_control_parent=generic_fk_policy is None or generic_fk_policy.source_bendy_parent_frames is not False,
+            source_child_aim=generic_fk_policy is None or generic_fk_policy.source_bendy_child_aim is not False,
+            source_micro_no_offset=generic_fk_policy is None or generic_fk_policy.source_bendy_micro_no_offset is not False)
             for chain in bendy_chains)
     fk_metadata = tuple(replace(item, control=True)
                         if item.joint in ik_end_paths else item
@@ -545,6 +555,18 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
                 raise RuntimeError("来源机制关节路径漂移：" + joint.name)
         if limb.root_frames:host.finalize_source_limb_root_frames(limb.root_frames)
     host.create_body_generic_fk(fk, root_prepared=bool(splines))
+    if (not options.use_offset_parent_matrix and (generic_fk_policy is None
+            or generic_fk_policy.source_nonopm_fk_blend_targets is not False)):
+        # MEL 80519 uses FKX itself as the FK constraint target. An extra
+        # orient-constrained mechanism chain loses this frame under shear.
+        from adv_py.core.body_limb_blend import source_fk_targets
+        limbs=[replace(limb,blend=source_fk_targets(limb.blend,fk.controls)) for limb in limbs]
+    if (not options.use_offset_parent_matrix and (generic_fk_policy is None
+            or generic_fk_policy.source_fk_follower_parent_scale is not False)):
+        host.configure_source_fk_follower_parent_scale(fk, driver_by_body)
+    if (not options.use_offset_parent_matrix and (generic_fk_policy is None
+            or generic_fk_policy.source_nonopm_inverse_scale is not False)):
+        host.configure_source_fk_inverse_scale(fk)
     host.connect_source_body_root_fk(root)
     updated_limbs=[]
     for limb in limbs:

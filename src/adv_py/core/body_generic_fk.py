@@ -102,6 +102,13 @@ class GenericFkFeaturePolicy:
     source_ik_root_frames: bool | None = None
     source_rp_measurement_frame: bool | None = None
     source_twist_reference_main_scale: bool | None = None
+    source_bendy_parent_frames: bool | None = None
+    source_bendy_child_aim: bool | None = None
+    source_bendy_micro_no_offset: bool | None = None
+    source_ik_rotation_orders: bool | None = None
+    source_fk_follower_parent_scale: bool | None = None
+    source_nonopm_fk_blend_targets: bool | None = None
+    source_nonopm_inverse_scale: bool | None = None
     source_untwister_receiver: bool | None = None
     source_body_matrix: bool | None = None
     source_bendy_deform_matrix: bool | None = None

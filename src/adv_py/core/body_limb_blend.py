@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .body_limb_mechanisms import BodyLimbMechanismPlan, BodyLimbMechanismRole, body_limb_token_valid, body_limb_sides_valid
 from .body_skeleton import BodySkeletonSnapshot
@@ -18,6 +18,11 @@ class BodyLimbBlendJointSpec:
     ik_driver: str
     constraint_name: str
     translation_constraint_name: str | None
+    source_fk_target: str | None = None
+
+    @property
+    def fk_target(self) -> str:
+        return self.source_fk_target or self.fk_driver
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +38,22 @@ class BodyLimbBlendPlan:
     settings_path: str
     settings_name: str
     sides: tuple[BodyLimbBlendSideSpec, ...]
+
+
+def source_fk_targets(plan: BodyLimbBlendPlan, controls) -> BodyLimbBlendPlan:
+    """MEL 80519: use the authored FKX directly, retaining driver identity."""
+    by_driver = {control.driven_joint: control for control in controls}
+    sides = []
+    for side in plan.sides:
+        joints = []
+        for joint in side.joints:
+            control = by_driver.get(joint.fk_driver)
+            if control is not None:
+                joint = replace(joint, source_fk_target=(control.source_override_path
+                    or control.sub_control_path or control.control_path))
+            joints.append(joint)
+        sides.append(replace(side, joints=tuple(joints)))
+    return replace(plan, sides=tuple(sides))
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,7 +217,7 @@ def audit_body_limb_blend(
             current = actual[name]
             if (
                 current.body_joint != wanted.body_joint
-                or current.targets != (wanted.fk_driver, wanted.ik_driver)
+                or current.targets != (wanted.fk_target, wanted.ik_driver)
                 or current.fk_weight_source != f"{spec.reverse_name}.outputX"
                 or current.ik_weight_source != plug
             ):
@@ -219,7 +240,7 @@ def audit_body_limb_blend(
                 current.translation_constraint_name
                 != wanted.translation_constraint_name
                 or current.translation_targets
-                != (wanted.fk_driver, wanted.ik_driver)
+                != (wanted.fk_target, wanted.ik_driver)
                 or current.translation_fk_weight_source
                 != f"{spec.reverse_name}.outputX"
                 or current.translation_ik_weight_source != plug

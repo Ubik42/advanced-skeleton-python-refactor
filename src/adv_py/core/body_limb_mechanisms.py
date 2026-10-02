@@ -59,6 +59,11 @@ class BodyLimbMechanismJointSpec:
     parent_path: str
     world_position: Vector3
     world_axes: AxisFrame
+    rotation_order: int | None = None
+
+    def __post_init__(self):
+        if self.rotation_order is not None and (type(self.rotation_order) is not int or not 0<=self.rotation_order<=5):
+            raise BodyLimbMechanismValidationError('来源四肢机制旋转顺序无效')
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +84,7 @@ class BodyLimbMechanismJointState:
     world_position: Vector3
     world_axes: AxisFrame
     rotation: Vector3
+    rotation_order: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +203,8 @@ def audit_body_limb_mechanisms(
             (state.parent_path == spec.parent_path, "driver_parent_mismatch", f"{plan.limb_label} 驱动父链不一致"),
             (state.side is spec.side, "driver_side_mismatch", f"{plan.limb_label} 驱动 side 不一致"),
             (state.source_joint == spec.source_joint, "driver_source_mismatch", f"{plan.limb_label} 驱动来源不一致"),
+            (spec.rotation_order is None or state.rotation_order==spec.rotation_order,
+             'driver_rotation_order_mismatch',f'{plan.limb_label} 驱动旋转顺序不一致'),
         )
         if check_initial_pose:
             checks += (

@@ -27,6 +27,13 @@ def exact(value, names):
     return value
 
 
+def mechanism_joint_fields(value):
+    """Keep pre-rotation-order scene records readable without relaxing the schema."""
+    if isinstance(value, dict) and 'rotation_order' not in value:
+        value = {**value, 'rotation_order': None}
+    return exact(value, (field.name for field in fields(BodyLimbMechanismJointSpec)))
+
+
 def finite(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
         raise CharacterRegistryError("登记数值必须有限")
@@ -314,14 +321,14 @@ def decode_registration(text):
                 raise CharacterRegistryError("Spine FK 位置来源开关无效")
             joints = []
             for row in raw["joints"]:
-                exact(row,(f.name for f in fields(BodyLimbMechanismJointSpec)))
+                row = mechanism_joint_fields(row)
                 node = path(row["path"])
                 if row["name"] != node.split("|")[-1]:
                     raise CharacterRegistryError("Spine 关节名称与路径不一致")
                 axes = tuple(vector(v,3) for v in row["world_axes"])
                 if len(axes) != 3:
                     raise CharacterRegistryError("Spine 朝向维度错误")
-                joints.append(BodyLimbMechanismJointSpec(BodyLimbMechanismRole(row["role"]),FitBuildSide(row["side"]),path(row["source_joint"]),node,row["name"],path(row["parent_path"]),vector(row["world_position"],3),axes))
+                joints.append(BodyLimbMechanismJointSpec(BodyLimbMechanismRole(row["role"]),FitBuildSide(row["side"]),path(row["source_joint"]),node,row["name"],path(row["parent_path"]),vector(row["world_position"],3),axes,row['rotation_order']))
             if len(joints) != 6 or tuple(j.role.value for j in joints) != ("fk",)*3+("ik",)*3:
                 raise CharacterRegistryError("Spine 机制链不完整")
             values = {k:path(v) for k,v in raw.items() if k not in ("joints","fk_controls","body_joints","pole_position","lengths","solver_joint_list","use_offset_parent_matrix","ik_sub_path","ik_extra_curve","fk_root_point_from_receiver","fk_sources")}

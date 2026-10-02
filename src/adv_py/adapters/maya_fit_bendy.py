@@ -762,7 +762,7 @@ class MayaFitBendyMixin:
                         c.disconnectAttr(source, destination)
             c.xform(joint, worldSpace=True, matrix=poses[name])
             driver = (c.ls(output, long=True, type="transform") or [])[0]
-            c.parentConstraint(driver, joint, maintainOffset=True,
+            c.parentConstraint(driver, joint, maintainOffset=not spec.source_micro_no_offset,
                                name=constraint)
             after = c.xform(joint, query=True, worldSpace=True, matrix=True)
             if any(abs(a - float(b)) > 1e-3
@@ -854,6 +854,8 @@ class MayaFitBendyMixin:
             targets = c.parentConstraint(constraint, query=True,
                                          targetList=True) or []
             if len(targets) != 1 or targets[0].rsplit("|", 1)[-1] != output:
+                return False
+            if spec.source_micro_no_offset and not self._bendy_constraint_no_offset(constraint):
                 return False
             for attribute in ("translate", "rotate"):
                 for axis in "XYZ":
@@ -1090,6 +1092,12 @@ class MayaFitBendyMixin:
                       attributeType="bool", defaultValue=True)
             c.setAttr(controls[0] + ".advPyBendyMainInfluenceFollow",
                       lock=True)
+        for enabled,attribute in ((spec.source_control_parent,'advPyBendySourceControlParent'),
+                                  (spec.source_child_aim,'advPyBendySourceChildAim'),
+                                  (spec.source_micro_no_offset,'advPyBendySourceMicroNoOffset')):
+            if enabled:
+                c.addAttr(controls[0],longName=attribute,attributeType='bool',defaultValue=True)
+                c.setAttr(controls[0]+'.'+attribute,lock=True)
         for control, projection in zip(
                 controls, spec.twist_projection_names):
             c.createNode("transform", name=projection[0],
@@ -1269,6 +1277,16 @@ class MayaFitBendyMixin:
                                   parent=offset, skipSelect=True)
             c.setAttr(extra + ".rotateOrder", chain.rotation_order)
             c.parent(control, extra, absolute=True)
+            # MEL 83641 parents every numbered Bend offset under the complete
+            # untwisted source frame. Keep its scale/shear in both modes.
+            if chain.source_control_parent and index>0:
+                c.parent(offset,parent_proxy,absolute=True)
+                if index==1:
+                    from adv_py.core.character_registry import canonical
+                    c.addAttr(offset,longName='advPyBendySourceParentBind',dataType='string')
+                    c.setAttr(offset+'.advPyBendySourceParentBind',canonical(tuple(
+                        c.xform(offset,query=True,objectSpace=True,matrix=True))),type='string',lock=True)
+                    continue
             if index == 0 and spec.master_aim_follow:
                 self._create_fit_bendy_master_aim_follow(
                     chain, offset, start_proxy, end_proxy,
@@ -1290,7 +1308,9 @@ class MayaFitBendyMixin:
                     raise RuntimeError("Bendy 跟随约束权重数量不正确")
                 c.setAttr(constraint + "." + weights[0], 1.0 - fraction)
                 c.setAttr(constraint + "." + weights[1], fraction)
-        if chain.child_start_influence or spec.end_matrix_follow:
+        if chain.source_end_local_follow:
+            self._create_source_bendy_end_local_follow(chain)
+        elif chain.child_start_influence or spec.end_matrix_follow:
             translate_name, rotate_name, world_name = (
                 chain.end_follow_matrix_names)
             translation = c.createNode("pickMatrix",
@@ -1330,6 +1350,58 @@ class MayaFitBendyMixin:
                                maintainOffset=True,
                                name=f"AdvPy_{chain.end_proxy_name}Follow")
         self._transaction_changed = True
+
+    def _create_source_bendy_end_local_follow(self, chain):
+        """MEL 83670: filter the child influence in the actual parent frame."""
+        c=self._cmds
+        pick_name,_,matrix_name=chain.end_follow_matrix_names
+        matrix=c.createNode('multMatrix',name=matrix_name,skipSelect=True)
+        pick=c.createNode('pickMatrix',name=pick_name,skipSelect=True)
+        end=chain.end_proxy_name
+        c.connectAttr(chain.child_start_influence+'.worldMatrix[0]',matrix+'.matrixIn[0]')
+        c.connectAttr(parent_world_inverse(self,end),matrix+'.matrixIn[1]')
+        c.connectAttr(matrix+'.matrixSum',pick+'.inputMatrix')
+        c.setAttr(pick+'.useRotate',False)
+        c.setAttr(pick+'.useShear',False)
+        for attr,value in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.)):
+            c.setAttr(end+'.'+attr,value,value,value,type='double3')
+        if chain.opm_offset_only_scale:
+            c.connectAttr(pick+'.outputMatrix',end+'.offsetParentMatrix')
+        else:
+            dm=c.createNode('decomposeMatrix',name=chain.end_follow_decompose_name,skipSelect=True)
+            c.setAttr(dm+'.inputRotateOrder',c.getAttr(end+'.rotateOrder'))
+            c.connectAttr(pick+'.outputMatrix',dm+'.inputMatrix')
+            for kind in ('Translate','Rotate','Scale'):
+                c.connectAttr(dm+'.output'+kind,end+'.'+kind.lower())
+            c.connectAttr(dm+'.outputShear',end+'.shear')
+
+    def _capture_source_bendy_end_local_follow(self, chain):
+        c=self._cmds
+        pick,rotation,matrix=chain.end_follow_matrix_names
+        end=chain.end_proxy_name
+        if (c.objExists(rotation) or not c.objExists(pick) or c.nodeType(pick)!='pickMatrix'
+                or not c.objExists(matrix) or c.nodeType(matrix)!='multMatrix'
+                or c.getAttr(pick+'.useRotate') or c.getAttr(pick+'.useShear')
+                or not c.getAttr(pick+'.useTranslate') or not c.getAttr(pick+'.useScale')):
+            return False
+        edges=[(chain.child_start_influence+'.worldMatrix[0]',matrix+'.matrixIn[0]'),
+               (parent_world_inverse(self,end),matrix+'.matrixIn[1]'),
+               (matrix+'.matrixSum',pick+'.inputMatrix')]
+        if chain.opm_offset_only_scale:
+            edges.append((pick+'.outputMatrix',end+'.offsetParentMatrix'))
+            if any(abs(value-default)>1e-8
+                   for attribute,default in (('translate',0.),('rotate',0.),('scale',1.),('shear',0.))
+                   for value in c.getAttr(end+'.'+attribute)[0]):
+                return False
+        else:
+            dm=chain.end_follow_decompose_name
+            if (not c.objExists(dm) or c.nodeType(dm)!='decomposeMatrix'
+                    or c.getAttr(dm+'.inputRotateOrder')!=c.getAttr(end+'.rotateOrder')):
+                return False
+            edges.append((pick+'.outputMatrix',dm+'.inputMatrix'))
+            edges.extend((dm+'.output'+kind,end+'.'+kind.lower()) for kind in ('Translate','Rotate','Scale'))
+            edges.append((dm+'.outputShear',end+'.shear'))
+        return all(c.isConnected(source,target,ignoreUnitConversion=True) for source,target in edges)
 
     def _create_fit_bendy_parent_untwist(
             self, chain: FitBendyChainSpec, start_proxy: str,
@@ -1597,6 +1669,9 @@ class MayaFitBendyMixin:
                     or _bendy_parent_name(c, extra) != extra_parent
                     or _bendy_parent_name(c, control) != extra):
                 return False
+            if spec.chain.source_control_parent and _bendy_parent_name(c,offset)!=(
+                    _GROUPS[0] if index==0 else parent_proxy):
+                return False
             expected_position = (
                 spec.chain.master_position if index == 0
                 else spec.chain.control_positions[index - 1])
@@ -1619,6 +1694,17 @@ class MayaFitBendyMixin:
                 if not self._capture_fit_bendy_master_aim_follow(
                         spec.chain, offset, names[0], names[1],
                         parent_proxy, spec.start_control_blend):
+                    return False
+            elif spec.chain.source_control_parent and index==1:
+                from adv_py.core.character_registry import safe_json
+                marker=offset+'.advPyBendySourceParentBind'
+                if (c.objExists(follow) or _bendy_parent_name(c,offset)!=parent_proxy
+                        or not c.objExists(marker) or not c.getAttr(marker,lock=True)):
+                    return False
+                stored=safe_json(c.getAttr(marker))
+                actual=c.xform(offset,query=True,objectSpace=True,matrix=True)
+                if (not isinstance(stored,list) or len(stored)!=16 or
+                        any(type(b) not in (int,float) or abs(a-b)>1e-8 for a,b in zip(actual,stored))):
                     return False
             elif spec.chain.secondary_matrix_follow and index >= 2:
                 # The secondary curve replaces this initial constraint with
@@ -1646,6 +1732,8 @@ class MayaFitBendyMixin:
                for actual, expected in zip(
                    end_position, chain.end_position)):
             return False
+        if chain.source_end_local_follow:
+            return self._capture_source_bendy_end_local_follow(chain)
         if chain.child_start_influence or spec.end_matrix_follow:
             translation, rotation, world = chain.end_follow_matrix_names
             end = chain.end_proxy_name
@@ -1846,9 +1934,7 @@ class MayaFitBendyMixin:
             c.createNode("transform", name=output_name,
                          parent=control, skipSelect=True)
             c.connectAttr(master + ".microVis", offset + ".visibility")
-            target = (spec.motion_transform_names[index + 1]
-                      if index + 1 < len(spec.motion_transform_names)
-                      else spec.end_proxy_name)
+            target = spec.micro_target(index)
             if spec.micro_matrix_aim:
                 names = spec.micro_matrix_orientation_names[index]
                 second_name, third_name = names[-2:]
@@ -1938,7 +2024,7 @@ class MayaFitBendyMixin:
                                 worldUpType="objectrotation",
                                 worldUpObject=up,
                                 name=guide_name + "Aim")
-            c.parentConstraint(guide_name, offset, maintainOffset=True,
+            c.parentConstraint(guide_name, offset, maintainOffset=not spec.source_micro_no_offset,
                                name=guide_name + "MicroFollow")
             twist_add_name, twist_mult_names = spec.micro_twist_names[index]
             twist_add = c.createNode("plusMinusAverage",
@@ -2096,6 +2182,12 @@ class MayaFitBendyMixin:
         return (self._cmds.objExists(guide+"MicroFollow")
                 and self._cmds.nodeType(guide+"MicroFollow")=="parentConstraint")
 
+    def _bendy_constraint_no_offset(self, constraint):
+        c=self._cmds
+        return all(abs(value)<=1e-8
+                   for attribute in ('target[0].targetOffsetTranslate','target[0].targetOffsetRotate')
+                   for value in c.getAttr(constraint+'.'+attribute)[0])
+
     def _capture_fit_bendy_micro_aim(
             self, spec: FitBendyChainSpec, index: int,
             guide: str, up_matrix: str) -> bool:
@@ -2105,9 +2197,7 @@ class MayaFitBendyMixin:
             return (c.objExists(constraint)
                     and c.nodeType(constraint) == "aimConstraint")
         compose, aim, decompose = spec.micro_aim_matrix_names[index]
-        target = (spec.motion_transform_names[index + 1]
-                  if index + 1 < len(spec.motion_transform_names)
-                  else spec.end_proxy_name)
+        target = spec.micro_target(index)
         if (not c.objExists(compose)
                 or c.nodeType(compose) != "composeMatrix"
                 or not c.objExists(aim)
@@ -2243,6 +2333,9 @@ class MayaFitBendyMixin:
                     or not self._capture_source_micro_follow(offset,guide)
                     or not c.isConnected(master + ".microVis", offset + ".visibility", ignoreUnitConversion=True)):
                 return False
+            if spec.source_micro_no_offset and not c.objExists(offset+'.advPySourceBendyMicroMatrix'):
+                if not self._bendy_constraint_no_offset(guide+'MicroFollow'):
+                    return False
             if spec.micro_yz_scale_only:
                 if (spec.non_opm_additive_micro_scale
                         or spec.opm_offset_only_scale) and c.objExists(
@@ -2525,6 +2618,12 @@ class MayaFitBendyMixin:
                       + ".advPyBendyMainInfluenceFollow")
             if (not c.objExists(marker) or not c.getAttr(marker)
                     or not c.getAttr(marker, lock=True)):
+                return False
+        for enabled,attribute in ((spec.source_control_parent,'advPyBendySourceControlParent'),
+                                  (spec.source_child_aim,'advPyBendySourceChildAim'),
+                                  (spec.source_micro_no_offset,'advPyBendySourceMicroNoOffset')):
+            marker=spec.control_names[0]+'.'+attribute
+            if enabled and (not c.objExists(marker) or not c.getAttr(marker) or not c.getAttr(marker,lock=True)):
                 return False
         if spec.parent_bendy and any(
                 not c.objExists(name) or c.nodeType(name) != "transform"
