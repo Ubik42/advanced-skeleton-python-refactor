@@ -1,0 +1,1 @@
+python("import sys; sys.path.insert(0, r'D:/3D/_tools/_DCC/advanced-skeleton-python-refactor/validation'); import maya_geometry_operations_parity as parity; parity.main(standalone=False); from maya import cmds; cmds.quit(force=True)");
