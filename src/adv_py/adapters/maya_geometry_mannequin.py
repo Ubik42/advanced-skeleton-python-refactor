@@ -1,231 +1,171 @@
-"""Duplicate and bind original ADV Mannequin templates onto Body joints."""
+"""Original ADV Mannequin: templates, native constraints and fixed Skin rules."""
 from __future__ import annotations
 
-from math import sqrt
+from contextlib import contextmanager
 from uuid import uuid4
+import re
 
 from adv_py.core.geometry_mannequin import MannequinPiece, MannequinSegment
+from adv_py.core.adv_icon_axis import icon_axis_offset
 from .maya_geometry_skeleton import MayaSkeletonGeometryHost, geometry_asset
 
 
-def _unit(vector):
-    magnitude = sqrt(sum(value * value for value in vector))
-    if magnitude < 1e-8:
-        raise ValueError("Mannequin 足部方向长度为零")
-    return tuple(value / magnitude for value in vector)
-
-
 class MayaMannequinHost(MayaSkeletonGeometryHost):
-    def __init__(self, namespace: str = "") -> None:
+    def __init__(self, namespace: str = '') -> None:
         super().__init__(namespace)
-        self._mannequin_created: list[tuple[str, str]] = []
+        self._mannequin_created=[]
 
-    def _fit_heel(self, joint: str) -> tuple[float, float, float] | None:
-        c = self.cmds
-        stem = self._leaf(joint)[:-2]
-        if not stem.startswith("Ankle"):
-            return None
-        fit_joint = self._name(stem)
-        if not c.objExists(fit_joint):
-            return None
-        children = c.listRelatives(fit_joint, children=True,
-                                   type="joint", fullPath=True) or []
+    @contextmanager
+    def transaction(self,label):
+        from .maya_fit_geometry import MayaFitGeometryHost
+        with super().transaction(label):
+            with MayaFitGeometryHost(self.namespace).namespace_scope():yield
+
+    def _main(self):
+        for name in ('Main','AdvPy_Global'):
+            if self.cmds.objExists(self._name(name)):return self._name(name)
+        raise ValueError('Mannequin 缺少角色主控制器')
+
+    def _source_offset(self,joint):
+        c=self.cmds;main=self._main();fit=self._name('FitSkeleton')
+        # The registered Python Main has the same Fit axis identity.
+        source=main
+        if not c.objExists(main+'.primaryAxis') and self._leaf(main)=='AdvPy_Global':source=fit
+        primary=self._axis(source,'primaryAxis','X');secondary=self._axis(source,'secondaryAxis','Y')
+        if c.objExists(fit+'.worldmatch') and c.getAttr(fit+'.worldmatch') and c.objExists(joint+'.primaryAxis'):
+            primary=self._axis(joint,'primaryAxis',primary);secondary=self._axis(joint,'secondaryAxis',secondary)
+        return icon_axis_offset(primary,secondary)
+
+    def _rla_child(self,joint,tolerance):
+        c=self.cmds;children=c.listRelatives(joint,children=True,type='joint',fullPath=True) or []
+        x=c.xform(joint,q=True,ws=True,t=True)[0];center=-tolerance<x<tolerance;result=''
         for child in children:
-            label = (str(c.getAttr(child + ".otherType") or "")
-                     if c.getAttr(child + ".drawLabel")
-                     and int(c.getAttr(child + ".type")) == 18 else "")
-            if "Heel" not in label and "Heel" not in self._leaf(child):
-                continue
-            position = tuple(float(value) for value in c.xform(
-                child, query=True, worldSpace=True, translation=True))
-            side_factor = -1 if self._leaf(joint).endswith("_L") else 1
-            return (position[0] * side_factor, position[1], position[2])
+            x=c.xform(child,q=True,ws=True,t=True)[0]
+            if center==(-tolerance<x<tolerance):result=child;break
+        leaf=self._leaf(joint)
+        for parent_token,child_token in (('Head','Head'),('Ankle','Toes'),('Toes','Toes'),('Root','Spine')):
+            if parent_token in leaf:
+                for child in children:
+                    if child_token in self._leaf(child):result=child
+        if leaf.startswith('Wrist_'):
+            for child in children:
+                if self._leaf(child).startswith('MiddleFinger1_'):result=child
+        return result
+
+    def _fit_heel(self,joint):
+        c=self.cmds;fit_joint=self._name(self._leaf(joint)[:-2])
+        if 'Ankle' not in self._leaf(joint) or not c.objExists(fit_joint):return None
+        result=None
+        for child in c.listRelatives(fit_joint,children=True,fullPath=True) or []:
+            label=(str(c.getAttr(child+'.otherType') or '') if c.objExists(child+'.drawLabel') and c.getAttr(child+'.drawLabel') and c.getAttr(child+'.type')==18 else '')
+            if 'Heel' in label:result=child
+        if result:
+            point=c.xform(result,q=True,ws=True,t=True)
+            return (point[0]*(-1 if self._leaf(joint).endswith('_L') else 1),point[1],point[2])
         return None
 
-    def _rla_child(self, joint: str, center_tolerance: float) -> str:
-        c = self.cmds
-        children = c.listRelatives(joint, children=True,
-                                   type="joint", fullPath=True) or []
-        if not children:
-            return ""
-        stem = self._leaf(joint)
-        if stem.startswith("Wrist"):
-            for child in children:
-                if self._leaf(child).startswith("MiddleFinger1"):
-                    return child
-        preferred = ("Spine" if stem.startswith("Root") else
-                     "Toes" if stem.startswith(("Ankle", "Toes")) else
-                     "Head" if stem.startswith("Head") else "")
-        if preferred:
-            for child in children:
-                if preferred in self._leaf(child):
-                    return child
-        center = abs(float(c.xform(joint, query=True,
-                                   worldSpace=True, translation=True)[0]))
-        for child in children:
-            child_x = float(c.xform(child, query=True,
-                                    worldSpace=True, translation=True)[0])
-            if (center < center_tolerance) == (abs(child_x) < center_tolerance):
-                return child
-        return ""
-
-    def capture_mannequin_input(
-        self,
-    ) -> tuple[tuple[MannequinSegment, ...], float]:
-        c = self.cmds
-        deform = self._name("DeformSet")
-        if not c.objExists(deform):
-            raise ValueError("Mannequin 需要当前角色 DeformSet")
-        joints = sorted({self._name(self._leaf(node)) for node in
-                        c.sets(deform, query=True) or ()
-                        if c.objExists(node) and c.nodeType(node) == "joint"})
-        if not joints:
-            raise ValueError("DeformSet 没有 Body 关节")
-        fit = self._name("FitSkeleton")
-        scale = (float(c.getAttr(fit + ".scaleX"))
-                 if c.objExists(fit) else 1.0)
-        tolerance = abs(scale) * 0.01
-        segments = []
-        all_y = []
+    def capture_mannequin_input(self):
+        c=self.cmds;deform=self._name('DeformSet')
+        if not c.objExists(deform):raise ValueError('Mannequin 缺少 DeformSet')
+        # Keep Maya's set member ordering, including the source side order.
+        joints=[node for node in c.sets(deform,q=True) or [] if c.nodeType(node)=='joint']
+        fit=self._name('FitSkeleton');tolerance=.01*(c.getAttr(fit+'.scaleX') if c.objExists(fit) else 1.)
+        segments=[]
         for joint in joints:
-            position = tuple(float(value) for value in c.xform(
-                joint, query=True, worldSpace=True, translation=True))
-            all_y.append(position[1])
-            if "Part" in self._leaf(joint):
-                continue
-            child = self._rla_child(joint, tolerance)
-            while child and "Part" in self._leaf(child):
-                descendants = c.listRelatives(child, children=True,
-                                               type="joint", fullPath=True) or []
-                child = descendants[0] if len(descendants) == 1 else ""
-            if not child:
-                continue
-            end = tuple(float(value) for value in c.xform(
-                child, query=True, worldSpace=True, translation=True))
-            segments.append(MannequinSegment(self._leaf(joint),
-                self._leaf(child), position, end, self._fit_heel(joint)))
-        return tuple(segments), max(all_y) - min(all_y)
+            child=self._rla_child(joint,tolerance)
+            if not child or re.search(r'Part\d',self._leaf(joint)):continue
+            while child and re.search(r'Part\d',self._leaf(child)):
+                children=c.listRelatives(child,children=True,type='joint',fullPath=True) or []
+                child=children[0] if children else ''
+            if not child:raise ValueError('Mannequin Part 链缺少子关节：'+joint)
+            segments.append(MannequinSegment(self._leaf(joint),self._leaf(child),
+                tuple(c.xform(joint,q=True,ws=True,t=True)),tuple(c.xform(child,q=True,ws=True,t=True)),self._fit_heel(joint)))
+        return tuple(segments),float(c.getAttr(self._main()+'.height'))
 
-    def preflight_mannequin(self,
-                           plan: tuple[MannequinPiece, ...]) -> None:
-        c = self.cmds
-        if not c.objExists(self._name("Geometry")):
-            raise ValueError("Mannequin 缺少 Geometry 组")
-        if self.mannequin_exists():
-            raise ValueError("Mannequin 已存在；请先删除旧几何")
-        for piece in plan:
-            if not c.objExists(self._name(piece.joint)):
-                raise ValueError("Mannequin 缺少 Body 关节：" + piece.joint)
-            for leaf in (piece.name, piece.name + "SkinCluster"):
-                if c.objExists(self._name(leaf)):
-                    raise ValueError("Mannequin 名称已占用：" + leaf)
-        for leaf in ("shaderMannequin", "shaderMannequinSG"):
-            if c.objExists(self._name(leaf)):
-                raise ValueError("Mannequin 材质名称已占用：" + leaf)
-        self._asset = geometry_asset()
+    def preflight_mannequin(self,plan):
+        c=self.cmds
+        if not c.objExists(self._name('Geometry')):raise ValueError('Mannequin 缺少 Geometry')
+        if c.objExists(self._name('MannequinGeometry')):raise ValueError('MannequinGeometry 已存在')
+        for item in plan:
+            if not c.objExists(self._name(item.joint)):raise ValueError('Mannequin 来源关节丢失：'+item.joint)
+            if c.objExists(self._name(item.name)):raise ValueError('Mannequin 名称已占用：'+item.name)
+        self._asset=geometry_asset()
 
-    def _foot_pose(self, mesh: str, piece: MannequinPiece) -> None:
-        c = self.cmds
-        start, end = piece.start, piece.end
-        z_axis = _unit((end[0] - start[0], 0.0,
-                        end[2] - start[2]))
-        x_axis = (z_axis[2], 0.0, -z_axis[0])
-        y_axis = (0.0, 1.0, 0.0)
-        center = ((start[0] + end[0]) / 2, 0.0,
-                  (start[2] + end[2]) / 2)
-        c.xform(mesh, worldSpace=True, matrix=(
-            *x_axis, 0, *y_axis, 0, *z_axis, 0, *center, 1))
-
-    def _place_piece(self, mesh: str, piece: MannequinPiece) -> None:
-        c = self.cmds
-        joint = self._name(piece.joint)
-        if piece.source == "Mannequin_Foot":
-            self._foot_pose(mesh, piece)
+    def _place_piece(self,mesh,piece):
+        c=self.cmds;joint=self._name(piece.joint)
+        if piece.source=='Mannequin_Foot':
+            holder=c.createNode('transform',name=self._name('AdvPy_MannequinFootTarget'))
+            try:
+                center=tuple((a+b)/2 for a,b in zip(piece.start,piece.end))
+                c.xform(mesh,ws=True,t=(center[0],0,center[2]))
+                c.xform(mesh,os=True,scale=piece.scale)
+                mesh=c.parent(mesh,self._name('MannequinGeometry'))[0]
+                c.xform(holder,ws=True,t=(piece.end[0],0,piece.end[2]))
+                c.delete(c.aimConstraint(holder,mesh,offset=(0,0,0),weight=1,
+                    aimVector=(0,0,1),upVector=(0,1,0),worldUpType='vector',worldUpVector=(0,1,0)))
+            finally:
+                if c.objExists(holder):c.delete(holder)
         else:
-            c.xform(mesh, worldSpace=True, matrix=c.xform(
-                joint, query=True, worldSpace=True, matrix=True))
-            offset = self._orient_offset(joint)
-            if piece.source != "Mannequin_Sphere" and any(offset):
-                c.rotate(*offset, mesh, relative=True, objectSpace=True)
-        c.setAttr(mesh + ".scale", *piece.scale, type="double3")
-        c.makeIdentity(mesh, apply=True, translate=False,
-                       rotate=False, scale=True)
+            c.xform(mesh,os=True,scale=piece.scale)
+            if piece.source=='Mannequin_Limb' and piece.joint.endswith('_L'):
+                c.polyNormal(mesh,normalMode=0,userNormalMode=0,constructionHistory=False)
+            constraint=c.parentConstraint(joint,mesh)[0]
+            c.setAttr(constraint+'.target[0].targetOffsetRotate',*self._source_offset(joint),type='float3')
+            c.delete(constraint)
+            mesh=c.parent(mesh,self._name('MannequinGeometry'))[0]
+        try:c.makeIdentity(mesh,apply=True,translate=False,rotate=False,scale=True)
+        except RuntimeError:pass  # original catchQuiet
+        if piece.source=='Mannequin_Limb':
+            for shape in c.listRelatives(mesh,shapes=True,noIntermediate=True,type='mesh') or []:c.setAttr(shape+'.opposite',False)
+        return mesh
 
-    def create_mannequin(self, plan: tuple[MannequinPiece, ...]) -> int:
-        c = self.cmds
-        assert self._asset is not None
-        temporary = "__AdvPyMannequin_" + uuid4().hex[:12]
-        c.file(str(self._asset), i=True, namespace=temporary,
-               returnNewNodes=True, ignoreVersion=True)
+    def create_mannequin(self,plan):
+        c=self.cmds;temporary='AdvPyMannequinTemplate_'+uuid4().hex[:12]
+        imported=c.file(str(self._asset),i=True,namespace=temporary,returnNewNodes=True,ignoreVersion=True)
+        imported_ids=tuple(c.ls(imported,uuid=True))
         try:
-            root = c.createNode("transform", name=self._name(
-                "MannequinGeometry"), parent=self._name("Geometry"))
-            layer = c.createDisplayLayer(name=self._name("Mannequin"),
-                                         empty=True)
-            c.setAttr(layer + ".color", 24)
-            c.setAttr(layer + ".displayType", 2)
-            c.editDisplayLayerMembers(layer, root, noRecurse=True)
-            self._mannequin_created.clear()
+            root=c.createNode('transform',name=self._name('MannequinGeometry'))
+            c.parent(root,self._name('Geometry'))
+            layer=self._name('Mannequin')
+            if not c.objExists(layer):
+                c.createDisplayLayer(name=layer,empty=True);c.setAttr(layer+'.color',24);c.setAttr(layer+'.displayType',2)
+                c.editDisplayLayerMembers(layer,root,noRecurse=True)
+            c.setAttr(temporary+':Mannequin_Geometry.visibility',False)
+            c.setAttr(temporary+':Skeleton_Geometry.visibility',False)
+            for template in c.listRelatives(temporary+':Mannequin_Geometry',children=True,type='transform') or []:c.setAttr(template+'.visibility',True)
+            self._mannequin_created=[]
             for piece in plan:
-                source = temporary + ":" + piece.source
-                if not c.objExists(source):
-                    raise ValueError("原版 Mannequin 模板缺失：" + piece.source)
-                mesh = c.duplicate(source, name=self._name(piece.name),
-                                   returnRootsOnly=True)[0]
-                mesh = c.parent(mesh, root)[0]
-                self._take_ownership(mesh, temporary)
-                c.setAttr(mesh + ".visibility", True)
-                self._place_piece(mesh, piece)
-                skin = c.skinCluster(self._name(piece.joint), mesh,
-                    toSelectedBones=True, maximumInfluences=3,
-                    dropoffRate=4,
-                    name=self._name(piece.name + "SkinCluster"))[0]
-                self._mannequin_created.append((mesh, skin))
-            shader = c.shadingNode("lambert", asShader=True,
-                name=self._name("shaderMannequin"))
-            shading_group = c.sets(renderable=True, noSurfaceShader=True,
-                empty=True, name=self._name("shaderMannequinSG"))
-            c.connectAttr(shader + ".outColor",
-                          shading_group + ".surfaceShader", force=True)
-            c.setAttr(shader + ".color", 0.78, 0.63, 0.42,
-                      type="double3")
-            c.setAttr(shader + ".ambientColor", 0.53, 0.42, 0.25,
-                      type="double3")
-            c.sets(root, edit=True, forceElement=shading_group)
+                mesh=c.duplicate(temporary+':'+piece.source,name=self._name(piece.name))[0]
+                self._take_ownership(mesh,temporary)
+                mesh=self._place_piece(mesh,piece)
+                c.select(self._name(piece.joint),mesh,replace=True)
+                skin=c.skinCluster(toSelectedBones=True,maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False)[0]
+                self._mannequin_created.append((mesh,skin));c.refresh()
+            for name in ('shaderMannequin','shaderMannequinSG'):
+                if c.objExists(self._name(name)):c.delete(self._name(name))
+            shader=c.shadingNode('lambert',asShader=True,name=self._name('shaderMannequin'))
+            sg=c.sets(renderable=True,noSurfaceShader=True,empty=True,name=self._name('shaderMannequinSG'))
+            c.connectAttr(shader+'.outColor',sg+'.surfaceShader',force=True)
+            c.setAttr(shader+'.color',.78,.63,.42,type='float3')
+            c.setAttr(shader+'.ambientColor',.53,.42,.25,type='double3')
+            c.sets(root,edit=True,forceElement=sg);c.select(clear=True)
             return len(self._mannequin_created)
         finally:
-            if c.namespace(exists=temporary):
-                c.namespace(removeNamespace=temporary,
-                            deleteNamespaceContent=True)
+            originals=c.ls(imported_ids,long=True) or []
+            if originals:c.delete(originals)
+            if c.namespace(exists=temporary):c.namespace(removeNamespace=temporary,mergeNamespaceWithRoot=True)
 
-    def capture_mannequin(self, count: int) -> bool:
-        c = self.cmds
-        root = self._name("MannequinGeometry")
-        layer = self._name("Mannequin")
-        if (count == 0 or count != len(self._mannequin_created)
-                or not c.objExists(root) or not c.objExists(layer)
-                or c.getAttr(layer + ".color") != 24
-                or c.getAttr(layer + ".displayType") != 2
-                or not c.objExists(self._name("shaderMannequinSG"))):
-            return False
-        for mesh, skin in self._mannequin_created:
-            if (not c.objExists(mesh) or not c.objExists(skin)
-                    or not c.listRelatives(mesh, shapes=True,
-                                           noIntermediate=True, type="mesh")
-                    or (c.listRelatives(mesh, parent=True) or []) != [root]
-                    or skin not in (c.listHistory(mesh) or [])):
-                return False
-        return True
+    def capture_mannequin(self,count):
+        c=self.cmds;root=self._name('MannequinGeometry');layer=self._name('Mannequin')
+        return (count==len(self._mannequin_created) and c.objExists(root) and c.objExists(layer)
+            and c.objExists(self._name('shaderMannequinSG')) and all(c.objExists(mesh) and c.objExists(skin)
+            and skin in (c.listHistory(mesh) or []) for mesh,skin in self._mannequin_created))
 
-    def mannequin_exists(self) -> bool:
-        c = self.cmds
-        return (c.objExists(self._name("MannequinGeometry"))
-                or c.objExists(self._name("Mannequin")))
+    def mannequin_exists(self):
+        return any(self.cmds.objExists(self._name(name)) for name in ('MannequinGeometry','Mannequin'))
 
-    def delete_mannequin(self) -> None:
-        c = self.cmds
-        for leaf in ("MannequinGeometry", "Mannequin",
-                     "shaderMannequinSG", "shaderMannequin"):
-            node = self._name(leaf)
-            if c.objExists(node):
-                c.delete(node)
+    def delete_mannequin(self):
+        # Original delete deliberately leaves shaderMannequin and its SG.
+        for name in ('MannequinGeometry','Mannequin_Geometry','Mannequin','wood','woodSG','woodShader'):
+            node=self._name(name)
+            if self.cmds.objExists(node):self.cmds.delete(node)

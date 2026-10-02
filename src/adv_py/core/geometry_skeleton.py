@@ -68,7 +68,7 @@ def plan_finger_bones(joints: set[str] | frozenset[str],
         return ()
     result = []
     for joint in sorted(joints):
-        if "Finger" not in joint or not joint.endswith(("_L", "_R")):
+        if "Finger" not in joint or not joint.endswith(("_M", "_L", "_R")):
             continue
         stem, side = joint.rsplit("_", 1)
         result.append(BoneCopy("Phalanges", joint, "_" + side,
@@ -90,12 +90,10 @@ def plan_skeleton_mirror(names: set[str], source_side: str
 
 def plan_metacarpal_bones(joints: set[str] | frozenset[str],
                           fit_template: str = "") -> tuple[BoneCopy, ...]:
-    if fit_template in {"horse", "cat"}:
-        return ()
     result = []
     for joint in sorted(joints):
         if ("Finger1" not in joint or "ThumbFinger1" in joint
-                or not joint.endswith(("_L", "_R"))):
+                or not joint.endswith(("_M", "_L", "_R"))):
             continue
         stem, side = joint.rsplit("_", 1)
         result.append(BoneCopy("Metacarpal", joint, "_" + side,
@@ -129,7 +127,7 @@ def plan_horse_coffin_bones(joints: set[str] | frozenset[str],
         return ()
     result = []
     for joint in sorted(joints):
-        if not joint.endswith(("_L", "_R")):
+        if not joint.endswith(("_M", "_L", "_R")):
             continue
         stem, side = joint.rsplit("_", 1)
         if stem.endswith(("Fingers3", "Toes3")):

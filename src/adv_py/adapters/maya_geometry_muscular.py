@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from uuid import uuid4
+from contextlib import contextmanager
 
 from adv_py.core.geometry_muscular import MuscleBoneMatch
 from .maya_skin_cage import MayaSkinCageHost
@@ -38,6 +39,13 @@ class MayaMuscularHost(MayaSkinCageHost):
         self._before: set[str] = set()
         self._fitted_curves: list[str] = []
         self._mirrored_groups: list[str] = []
+        self._attached_wraps={}
+
+    @contextmanager
+    def transaction(self,label):
+        from .maya_fit_geometry import MayaFitGeometryHost
+        with super().transaction(label):
+            with MayaFitGeometryHost(self.namespace).namespace_scope():yield
 
     @staticmethod
     def _leaf(node: str) -> str:
@@ -65,6 +73,8 @@ class MayaMuscularHost(MayaSkinCageHost):
         c.namespace(moveNamespace=(":" + temporary, destination),
                     force=True)
         c.namespace(removeNamespace=":" + temporary)
+        from .maya_fit_geometry import MayaFitGeometryHost
+        MayaFitGeometryHost(self.namespace)._ensure_shaders()
         root = self._name("MuscularGeometry")
         bones = self._name("Muscular_SkeletonGeometry")
         muscles = self._name("Muscular_Muscles")
@@ -106,8 +116,10 @@ class MayaMuscularHost(MayaSkinCageHost):
                 c.setAttr(imported + ".scale" + axis, lock=False)
                 c.setAttr(imported + ".scale" + axis,
                           c.getAttr(skeleton + ".scale" + axis))
+            skeleton_shape=c.listRelatives(skeleton,shapes=True,noIntermediate=True,fullPath=True)[0]
+            imported_shape=c.listRelatives(imported,shapes=True,noIntermediate=True,fullPath=True)[0]
             blend = c.blendShape(
-                skeleton, imported,
+                skeleton_shape, imported_shape,
                 name=self._name(spec.template + "BS"))[0]
             c.setAttr(blend + ".origin", 0)
             c.setAttr(blend + ".weight[0]", 1)
@@ -132,7 +144,7 @@ class MayaMuscularHost(MayaSkinCageHost):
         return {node for node in (c.listHistory(curve) or ())
                 if c.nodeType(node) == "wrap"}
 
-    def fit_muscle_curves(self) -> int:
+    def attach_muscle_wraps(self) -> None:
         from maya import mel
 
         c = self.cmds
@@ -155,6 +167,10 @@ class MayaMuscularHost(MayaSkinCageHost):
                 wraps[curve] = c.rename(
                     next(iter(created)),
                     self._name(self._leaf(curve) + "TempWrap"))
+        self._attached_wraps=wraps
+
+    def fit_muscle_curves(self) -> int:
+        c=self.cmds;groups=self._muscle_groups();wraps=self._attached_wraps
         for index in range(1, 5):
             source = self._name(f"Muscular_ExternalObliqueALT1_curve{index}_R")
             target = self._name(f"Muscular_ExternalOblique_curve{index}_R")
@@ -206,14 +222,16 @@ class MayaMuscularHost(MayaSkinCageHost):
         c = self.cmds
         parents: dict[str, str] = {}
         current = source
+        available=set(skeleton)
         while current and current not in parents:
-            parent = c.listRelatives(current, parent=True,
-                                     type="joint", fullPath=True) or []
+            candidate=self._leaf(current).replace('Muscular_','',1)
+            if c.objExists(self._name(candidate)):available.add(candidate)
+            parent = c.listRelatives(current, parent=True,fullPath=True) or []
             parents[self._leaf(current)] = (self._leaf(parent[0])
                                             if parent else "")
             current = parent[0] if parent else ""
         leaf = resolve_muscle_influence(self._leaf(source),
-                                        parents, skeleton)
+                                        parents, available)
         return self._name(leaf)
 
     def transfer_muscle_skin(self) -> int:
@@ -222,29 +240,26 @@ class MayaMuscularHost(MayaSkinCageHost):
         transferred = 0
         for curve in self._fitted_curves:
             old = self._curve_skin(curve)
-            sources = c.skinCluster(old, query=True, influence=True) or []
+            sources = c.skinPercent(old,curve+'.cv[0:99]',ignoreBelow=0,query=True,transform=None) or []
             mapped = [self._mapped_influence(node, skeleton)
                       for node in sources]
             targets = list(dict.fromkeys(mapped))
             method = c.getAttr(old + ".skinningMethod")
             cvs = c.ls(curve + ".cv[*]", flatten=True) or []
-            weights = [c.skinPercent(old, cv, query=True, value=True)
+            weights = [c.skinPercent(old, cv,ignoreBelow=0,query=True, value=True)
                        for cv in cvs]
             if any(len(row) != len(sources) for row in weights):
                 raise RuntimeError("肌肉曲线 Skin 权重宽度不一致：" + curve)
             c.delete(old)
             skin = c.skinCluster(*(targets + [curve]),
                                  toSelectedBones=True,
-                                 maximumInfluences=3, dropoffRate=4,
+                                 maximumInfluences=3, dropoffRate=4,removeUnusedInfluence=False,
                                  name=self._name(self._leaf(curve) + "SC"))[0]
             c.setAttr(skin + ".skinningMethod", method)
-            for cv, row in zip(cvs, weights):
-                sums = {target: 0.0 for target in targets}
-                for target, value in zip(mapped, row):
-                    sums[target] += float(value)
-                c.skinPercent(skin, cv,
-                              transformValue=list(sums.items()),
-                              normalize=True)
+            # The source emits one skinPercent per influence and CV. Those
+            # normalized writes are ordered; summing aliases changes behavior.
+            for index,target in enumerate(mapped):
+                for cv,row in zip(cvs,weights):c.skinPercent(skin,cv,transformValue=(target,float(row[index])))
             transferred += 1
         return transferred
     def _mirror_loft(self, group: str, right: tuple[str, ...],
@@ -311,6 +326,11 @@ class MayaMuscularHost(MayaSkinCageHost):
             left = tuple(c.rename(node, self._name(
                 mirrored_name(self._leaf(source))))
                 for source, node in zip(right, left_unrenamed))
+            for curve in left:
+                for attribute in ('translate','rotate','scale'):
+                    c.setAttr(curve+'.'+attribute,lock=False)
+                    for axis in 'XYZ':c.setAttr(curve+'.'+attribute+axis,lock=False)
+                c.setAttr(curve+'.visibility',lock=False)
             c.makeIdentity(mirror, apply=True, translate=True,
                            rotate=True, scale=True)
             for source, target_curve in zip(right, left):
@@ -332,7 +352,7 @@ class MayaMuscularHost(MayaSkinCageHost):
                 target_skin = c.skinCluster(
                     *(list(dict.fromkeys(targets)) + [target_curve]),
                     toSelectedBones=True, maximumInfluences=3,
-                    dropoffRate=4,
+                    dropoffRate=4,removeUnusedInfluence=False,
                     name=self._name(self._leaf(target_curve) + "SC"))[0]
                 c.copySkinWeights(sourceSkin=source_skin,
                                   destinationSkin=target_skin,
@@ -343,18 +363,10 @@ class MayaMuscularHost(MayaSkinCageHost):
             self._mirrored_groups.append(mirror)
         return len(self._mirrored_groups)
     def finish_muscular(self) -> None:
-        import json
-
         c = self.cmds
         source = self._name("Muscular_Root_M")
         if c.objExists(source):
             c.delete(source)
-        root = self._name("MuscularGeometry")
-        owned = sorted(set(c.ls(dependencyNodes=True) or ()) - self._before)
-        if not c.attributeQuery("advPyCreatedNodes", node=root, exists=True):
-            c.addAttr(root, longName="advPyCreatedNodes", dataType="string")
-        c.setAttr(root + ".advPyCreatedNodes", json.dumps(owned),
-                  type="string")
         c.select(clear=True)
 
     def capture_muscular(self, curve_count: int, mirror_count: int) -> bool:
@@ -383,20 +395,9 @@ class MayaMuscularHost(MayaSkinCageHost):
             "Muscular_Root_M", "NurbsMuscles"))
 
     def delete_muscular(self) -> None:
-        import json
-
         c = self.cmds
-        root = self._name("MuscularGeometry")
-        owned = []
-        if c.objExists(root) and c.attributeQuery(
-                "advPyCreatedNodes", node=root, exists=True):
-            owned = json.loads(c.getAttr(root + ".advPyCreatedNodes") or "[]")
         for leaf in ("MuscularGeometry", "Muscular_SkeletonGeometry",
                      "Muscular_Root_M", "NurbsMuscles"):
             node = self._name(leaf)
             if c.objExists(node):
                 c.delete(node)
-        for node in reversed(owned):
-            if c.objExists(node):
-                c.delete(node)
-

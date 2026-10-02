@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import dist, isfinite
+from fnmatch import fnmatchcase
 
 
 Vec3 = tuple[float, float, float]
@@ -39,31 +40,29 @@ def plan_mannequin(segments: tuple[MannequinSegment, ...],
         joint = segment.joint
         length = dist(segment.start, segment.end)
         if (not joint.endswith(("_M", "_R", "_L"))
-                or not segment.child or length < 1e-5):
+                or not segment.child or not isfinite(length)):
             raise ValueError("Mannequin 骨段无效：" + joint)
-        if "Part" in joint:
+        if fnmatchcase(joint,'*Part[0-9]*'):
             continue
         stem = joint[:-2]
-        axial = (joint == "Root_M" or stem.startswith("Spine")
-                 or stem == "Chest" or stem.startswith("Head"))
+        axial = (joint == "Root_M" or any(fnmatchcase(joint,pattern) for pattern in
+                 ('*Spine[0-9]*','*Chest*','*Head_*')))
         if axial:
-            source = "Mannequin_Head" if stem.startswith("Head") else "Mannequin_Root"
+            source = "Mannequin_Head" if fnmatchcase(joint,'Head_*') else "Mannequin_Root"
             pieces.append(MannequinPiece(joint, segment.child, source,
                 joint + "_Root", (length, character_height / 10,
                                   character_height / 10),
                 segment.start, segment.end))
-        if (joint in ("Root_M", "Chest_M", "Jaw_M")
-                or stem.startswith(("Spine", "Head", "Eye"))):
+        if any(fnmatchcase(joint,pattern) for pattern in
+               ('Spine[0-9]*','Root_M','Chest_M','Jaw_M','Head_*','Eye_*')):
             continue
-        foot = stem.startswith(("Ankle", "Toes"))
+        foot = 'Ankle' in joint or joint.startswith('Toes')
         if foot:
             source, suffix = "Mannequin_Foot", "_Sphere"
-            foot_start = (segment.heel if stem.startswith("Ankle")
+            foot_start = (segment.heel if 'Ankle' in joint
                           and segment.heel is not None else segment.start)
             foot_length = dist(foot_start, segment.end)
-            if foot_length < 1e-5:
-                raise ValueError("Mannequin 足跟至脚趾长度无效：" + joint)
-            if stem.startswith("Ankle") and segment.heel is not None:
+            if 'Ankle' in joint and segment.heel is not None:
                 foot_length *= 0.87
             scale = (foot_length, foot_length, foot_length)
         else:
@@ -71,23 +70,24 @@ def plan_mannequin(segments: tuple[MannequinSegment, ...],
             scale = (length, length / 2, length / 2)
             if stem.startswith("Wrist"):
                 scale = (scale[0], scale[1] * 3, scale[2])
-            if stem.startswith("Finger"):
+            if 'Finger' in joint:
                 scale = (length, character_height / 70,
                          character_height / 70)
-            if stem.startswith("Neck"):
+            if 'Neck' in joint:
                 scale = (length * 1.1, character_height / 10,
                          character_height / 10)
+            if joint.endswith('_L'):scale=(-scale[0],scale[1],scale[2])
         pieces.append(MannequinPiece(joint, segment.child, source,
             joint + suffix, scale,
             foot_start if foot else segment.start, segment.end))
         sphere = length / 2
-        if stem.startswith("Finger"):
+        if 'Finger' in joint:
             sphere = character_height / 50
-        elif stem.startswith(("Neck", "Ankle")):
+        elif 'Neck' in joint or 'Ankle' in joint:
             sphere = character_height / 10
         elif stem.startswith("Wrist"):
             sphere = character_height / 20
-        elif stem.startswith(("Shoulder", "Hip")):
+        elif fnmatchcase(joint,'Shoulder_*') or fnmatchcase(joint,'Hip_*'):
             sphere = character_height / 7
         pieces.append(MannequinPiece(joint, segment.child,
             "Mannequin_Sphere", joint + ("_Sphere1" if foot else "_Sphere"),
