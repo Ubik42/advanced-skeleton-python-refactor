@@ -634,7 +634,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     # start FK. Applying the Fit scale compensation again distorts Main's
     # nonuniform scale in the start joint's rotated frame.
     spline_bases={spline.fk_controls[0] for spline in splines
-                  if spline.body_joints[0].rsplit('|',1)[-1]!='Root_M'
+                  if (not options.use_offset_parent_matrix
+                      or spline.body_joints[0].rsplit('|',1)[-1]!='Root_M')
                   and spline.source_forward_axis is not None}
     compensation=tuple(spec for spec in compensation
                        if spec.control_path not in spline_bases)
@@ -705,7 +706,8 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
             body = host.remove_body_non_deform_markers(body.root, markers)
             skeleton = replace(skeleton, snapshot=body)
     twist_steps, part_scale, bendy_chains = build_source_body_part_drivers(
-        host, build, part_result, fk, limbs, splines, bendy_chains, inbetween_segments)
+        host, build, part_result, fk, limbs, splines, bendy_chains, inbetween_segments,
+        use_offset_parent_matrix=options.use_offset_parent_matrix)
     (fit_follows, named_follows, follow_spaces, ik_follows,
      advanced_constraints, aim_at, geo_attach, proximity_pin) = build_source_body_follow(
         host, metadata, body, fk, limbs, splines, global_control,

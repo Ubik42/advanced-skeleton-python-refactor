@@ -12,7 +12,7 @@ from .fit_bendy import (
 )
 
 
-def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, bendy_chains=(), inbetween_segments=()):
+def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, bendy_chains=(), inbetween_segments=(), *,use_offset_parent_matrix=True):
     if part_result is None:
         return (), None, ()
     paths = part_result.final_paths
@@ -114,4 +114,6 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
                             if source.up_twist_plug})
         BuildFitBendyGuides(host).apply(bendy_chains, follows=follows)
         BuildFitBendyDeform(host).apply(bendy_chains)
+    if not use_offset_parent_matrix:
+        host.create_source_twist_part_positions(ordinary_parts,steps,blended,independent)
     return steps, scale_plan, bendy_chains

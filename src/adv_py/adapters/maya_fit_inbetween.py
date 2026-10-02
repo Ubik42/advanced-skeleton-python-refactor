@@ -622,13 +622,13 @@ class MayaFitInbetweenMixin:
                     and orient_targets[0].rsplit("|", 1)[-1]
                     .rsplit(":", 1)[-1]
                     == plan.start_fkx_name)
+        if (plan.downstream_fk_offset_path is not None
+                and c.objExists(plan.downstream_fk_offset_path+'.advPySourceInbetweenMatrix')):
+            from .maya_source_inbetween_matrix import audit_target
+            audit_target(self,plan.downstream_fk_offset_path)
+            return (len(orient_targets)==1
+                    and orient_targets[0].rsplit('|',1)[-1].rsplit(':',1)[-1]==plan.start_fkx_name)
         if plan.use_offset_parent_matrix:
-            if (plan.downstream_fk_offset_path is not None
-                    and c.objExists(plan.downstream_fk_offset_path+'.advPySourceInbetweenMatrix')):
-                from .maya_source_inbetween_matrix import audit_target
-                audit_target(self,plan.downstream_fk_offset_path)
-                return (len(orient_targets)==1
-                        and orient_targets[0].rsplit('|',1)[-1].rsplit(':',1)[-1]==plan.start_fkx_name)
             matrix_plan = self._inbetween_follow_matrix_plan(plan)
             return (len(orient_targets) == 1
                     and orient_targets[0].rsplit("|", 1)[-1]
@@ -1011,6 +1011,11 @@ class MayaFitInbetweenMixin:
                              sourceFromDestination=True)
                 != part.control_name + ".scale"):
             return None
+        offset_path=self._resolve_connected_node(part.offset_name)
+        if c.objExists(offset_path+'.advPySourceInbetweenMatrix'):
+            from .maya_source_inbetween_matrix import audit_target
+            audit_target(self,offset_path)
+            return part.receiver_plug
         expected = (
             (part.fk_matrix_name + ".matrixIn[1]",
              part.fkps_name + ".worldMatrix[0]"),

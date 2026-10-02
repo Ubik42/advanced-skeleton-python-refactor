@@ -94,7 +94,7 @@ def rewrite_body_mode_records(host, registration, mapping):
     """Change exact connection sources in our closed Body matrix records."""
     c = host._cmds
     for joint in registration.body:
-        for attribute in ('advPySourceFkMatrix', 'advPySourceBendyMatrix', 'advPySourceLocalScale', 'advPySourcePartPoint'):
+        for attribute in ('advPySourceFkMatrix', 'advPySourceBendyMatrix', 'advPySourceLocalScale', 'advPySourcePartPoint', 'advPySourceTwistPosition'):
             plug = joint.path + '.' + attribute
             if not c.objExists(plug):
                 continue

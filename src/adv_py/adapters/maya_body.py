@@ -10255,6 +10255,10 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_nonopm_parts import configure
         configure(self,body,segments,fk,metadata,instances)
 
+    def create_source_twist_part_positions(self,parts,steps,blended,independent):
+        from .maya_source_nonopm_parts import configure_twist_positions
+        configure_twist_positions(self,parts,steps,blended,independent)
+
     def create_source_spline_bendy_scales(self,specs):
         self._require_transaction()
         for spec in specs:
