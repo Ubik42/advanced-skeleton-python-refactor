@@ -1,172 +1,138 @@
-"""Maya realization of Geometry / Skin Cut-Up from face skin weights."""
-from __future__ import annotations
-
+"""Source CutUp: ControlMeshes face dispatch, local Shapes and Body constraints."""
 from adv_py.core.geometry_cut_up import CutUpMeshPlan
-from .maya_skin_cage import MayaSkinCageHost
+from .maya_geometry_driven import MayaDrivenGeometryHost
+from .maya_geometry_control_mapping import SourceGeometryControlMapping
 
+class MayaGeometryCutUpHost(MayaDrivenGeometryHost):
+    def __init__(self,namespace=''):
+        super().__init__(namespace);self._created=[];self._pending=[];self._control_roles={}
 
-class MayaGeometryCutUpHost(MayaSkinCageHost):
-    def __init__(self, namespace: str = "") -> None:
-        super().__init__(namespace)
-        self._created: list[tuple[str, str, int]] = []
-
-    def _leaf(self, node: str) -> str:
-        return node.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-
-    def _anchor(self, joint: str) -> str:
-        c = self.cmds
-        current = joint
-        visited = set()
-        while current and current not in visited:
-            visited.add(current)
-            leaf = self._leaf(current)
-            if "Slider" not in leaf:
-                if c.objExists(self._name("FK" + leaf)) or "Part" in leaf:
-                    return current
-            current = (c.listRelatives(current, parent=True, type="joint",
-                                       fullPath=True) or [""])[0]
-        raise ValueError("Skin Cut-Up 找不到关节控制来源：" + joint)
-
-    def capture_cut_up_inputs(self) -> tuple[tuple, ...]:
-        from maya.api import OpenMaya as om
-        from maya.api import OpenMayaAnim as oma
-
-        c = self.cmds
-        selection = c.ls(selection=True, long=True) or []
-        if not selection:
-            raise ValueError("请选择已蒙皮的网格对象")
-        meshes = tuple(dict.fromkeys(self._mesh(node) for node in selection))
-        rows = []
-        for mesh in meshes:
-            skin = self._skin(mesh)
-            if not skin:
-                raise ValueError("Skin Cut-Up 网格没有 SkinCluster：" + mesh)
-            selection_list = om.MSelectionList()
-            selection_list.add(mesh)
-            mesh_path = selection_list.getDagPath(0)
-            mesh_path.extendToShape()
-            mesh_fn = om.MFnMesh(mesh_path)
-            faces = tuple(tuple(mesh_fn.getPolygonVertices(index))
-                          for index in range(mesh_fn.numPolygons))
-            skin_selection = om.MSelectionList()
-            skin_selection.add(skin)
-            skin_fn = oma.MFnSkinCluster(skin_selection.getDependNode(0))
-            influences = tuple(path.fullPathName()
-                               for path in skin_fn.influenceObjects())
-            if not influences:
-                raise ValueError("Skin Cut-Up SkinCluster 没有影响关节")
-            component_fn = om.MFnSingleIndexedComponent()
-            component = component_fn.create(om.MFn.kMeshVertComponent)
-            component_fn.addElements(list(range(mesh_fn.numVertices)))
-            flat, width = skin_fn.getWeights(mesh_path, component)
-            if width != len(influences):
-                raise RuntimeError("Skin Cut-Up 顶点影响权重数量不一致：" + mesh)
-            weights = tuple(tuple(float(flat[vertex * width + index])
-                                  for index in range(width))
-                            for vertex in range(mesh_fn.numVertices))
-            anchors = tuple(self._anchor(joint) for joint in influences)
-            rows.append((mesh, influences, faces, weights, anchors))
+    def capture_cut_up_inputs(self,*,cut_up=True):
+        from maya.api import OpenMaya as om,OpenMayaAnim as oma
+        c=self.cmds;selected=c.ls(selection=True,long=True) or []
+        if not selected or any('.' in node for node in selected):raise ValueError('请选择已蒙皮的网格对象')
+        mapping=SourceGeometryControlMapping(self);self._mapping=mapping;rows=[]
+        for mesh in dict.fromkeys(self._mesh(node) for node in selected):
+            history=c.listHistory(mesh,pruneDagObjects=True,interestLevel=2) or []
+            skins=[node for node in history if c.nodeType(node)=='skinCluster']
+            if not skins:raise ValueError('CutUp 来源没有 SkinCluster：'+mesh)
+            skin=skins[-1]
+            selection=om.MSelectionList();selection.add(mesh);path=selection.getDagPath(0);path.extendToShape()
+            fn=om.MFnMesh(path)
+            selection=om.MSelectionList();selection.add(skin);skin_fn=oma.MFnSkinCluster(selection.getDependNode(0))
+            api_influences=tuple(node.fullPathName() for node in skin_fn.influenceObjects())
+            influences=tuple(c.ls(node,long=True)[0] for node in c.listConnections(skin+'.matrix') or [])
+            order=[api_influences.index(node) for node in influences]
+            component=om.MFnSingleIndexedComponent();obj=component.create(om.MFn.kMeshVertComponent)
+            component.addElements(range(fn.numVertices));flat,width=skin_fn.getWeights(path,obj)
+            weights=tuple(tuple(float(flat[vertex*width+index]) for index in order) for vertex in range(fn.numVertices))
+            faces=[];eligible=[]
+            for face in range(fn.numPolygons):
+                vertices=c.ls(c.polyListComponentConversion(mesh+f'.f[{face}]',fromFace=True,toVertex=True),flatten=True) or []
+                faces.append(tuple(int(vertex.rsplit('[',1)[1][:-1]) for vertex in vertices))
+                queried=c.skinPercent(skin,vertices,ignoreBelow=.001,query=True,transform=None) or []
+                eligible.append(tuple(influences.index(c.ls(joint,long=True)[0]) for joint in queried))
+            anchors=tuple(mapping.anchor(joint,cut_up=cut_up) for joint in influences)
+            for joint,control in zip(influences,anchors):
+                if control:
+                    fk=mapping.fk(joint)
+                    if fk and self._leaf(fk)==self._leaf(control):self._control_roles[control]=self._leaf(joint)
+            rows.append((mesh,influences,tuple(faces),weights,anchors,tuple(eligible)))
         return tuple(rows)
 
-    def preflight_cut_up(self, plans: tuple[CutUpMeshPlan, ...]) -> None:
-        c = self.cmds
-        if not plans:
-            raise ValueError("没有可创建的 Skin Cut-Up 分片")
-        if not c.objExists(self._name("Geometry")):
-            raise ValueError("当前角色缺少 Geometry 系统")
-        for leaf in ("CutUpGeometry", "CutUp"):
-            if c.objExists(self._name(leaf)):
-                raise ValueError("当前角色已有 CutUp 生成物；请先删除旧分片")
+    def preflight_cut_up(self,plans):
+        if not plans:raise ValueError('没有可创建的 CutUp 输入')
+        if not self.cmds.objExists(self._name('Geometry')):raise ValueError('角色没有 Geometry 组')
+        for plan in plans:
+            for piece in plan.pieces:
+                if not self.cmds.objExists(piece.joint):raise ValueError('CutUp 控制来源丢失：'+piece.joint)
 
-    def _setup(self) -> tuple[str, str]:
-        c = self.cmds
-        layer = c.createDisplayLayer(empty=True, name=self._name("CutUp"))
-        c.setAttr(layer + ".color", 29)
-        c.setAttr(layer + ".displayType", 2)
-        geometry = c.createNode("transform", name=self._name(
-            "CutUpGeometry"), parent=self._name("Geometry"),
-            skipSelect=True)
-        c.editDisplayLayerMembers(layer, geometry, noRecurse=True)
-        return geometry, layer
+    def _main(self):
+        for name in ('Main','AdvPy_Global'):
+            if self.cmds.objExists(self._name(name)):return self._name(name)
+        raise ValueError('CutUp 缺少主控制器')
 
-    def _group(self, geometry: str, joint: str) -> str:
-        c = self.cmds
-        leaf = self._leaf(joint)
-        stem, separator, side = leaf.rpartition("_")
-        if not separator:
-            raise ValueError("Skin Cut-Up 关节缺少左右侧后缀：" + leaf)
-        group = self._name(stem + "CutUp_" + side)
-        if c.objExists(group):
-            return group
-        group = c.createNode("transform", name=group, parent=geometry,
-                             skipSelect=True)
-        c.xform(group, worldSpace=True, matrix=c.xform(
-            joint, query=True, worldSpace=True, matrix=True))
-        c.parentConstraint(joint, group, maintainOffset=True)
-        return group
-
-    def _piece_name(self, joint: str) -> str:
-        leaf = self._leaf(joint)
-        stem, _, side = leaf.rpartition("_")
-        for index in range(1, 1000):
-            name = self._name(f"{stem}CutUp{index}_{side}")
-            if not self.cmds.objExists(name):
-                return name
-        raise ValueError("Skin Cut-Up 分片名称已用尽：" + leaf)
-
-    def create_cut_up(self, plan: CutUpMeshPlan) -> int:
-        c = self.cmds
-        if not c.objExists(self._name("CutUpGeometry")):
-            geometry, _ = self._setup()
-        else:
-            geometry = self._name("CutUpGeometry")
-        all_faces = set(range(plan.face_count))
-        for spec in plan.pieces:
-            group = self._group(geometry, spec.joint)
-            piece = c.duplicate(plan.mesh, returnRootsOnly=True,
-                                name=self._piece_name(spec.joint))[0]
-            remove = sorted(all_faces.difference(spec.faces))
-            if remove:
-                c.delete([piece + f".f[{index}]" for index in remove])
-            c.delete(piece, constructionHistory=True)
-            piece = c.parent(piece, group)[0]
-            shapes = c.listRelatives(piece, shapes=True,
-                                     noIntermediate=True, type="mesh") or []
-            if len(shapes) != 1:
-                raise RuntimeError("Skin Cut-Up 分片网格丢失：" + piece)
-            self._created.append((piece, group, len(spec.faces)))
+    def create_cut_up(self,plan):
+        from .maya_control_mesh import MayaControlMeshHost
+        from adv_py.core.control_mesh import ControlMeshSource,plan_control_mesh
+        c=self.cmds;group,layer=self.ensure_geometry_group('CutUp',29)
+        c.editDisplayLayerMembers(layer,group,noRecurse=True)
+        helper=MayaControlMeshHost();helper._in_transaction=True
+        source=c.listRelatives(plan.mesh,shapes=True,noIntermediate=True,type='mesh',fullPath=True)[0]
+        try:
+            for piece in plan.pieces:
+                item=plan_control_mesh(ControlMeshSource(source,piece.joint,self._main(),piece.faces,plan.face_count),
+                                       helper.existing_control_mesh_names())[0]
+                helper.create_control_mesh(item);self._pending.append(item.shape_name)
+        finally:helper._in_transaction=False
         return len(plan.pieces)
 
-    def capture_cut_up(self, plans: tuple[CutUpMeshPlan, ...]) -> bool:
-        c = self.cmds
-        expected = sum(len(plan.pieces) for plan in plans)
-        if len(self._created) != expected:
-            return False
-        for piece, group, face_count in self._created:
-            if not c.objExists(piece) or not c.objExists(group):
-                return False
-            parent = c.listRelatives(piece, parent=True, fullPath=True) or []
-            if not parent or self._leaf(parent[0]) != self._leaf(group):
-                return False
-            if not c.listRelatives(piece, shapes=True, type="mesh",
-                                   noIntermediate=True):
-                return False
-            if int(c.polyEvaluate(piece, face=True)) != face_count:
-                return False
-            if any(c.nodeType(node) == "skinCluster" for node in (
-                    c.listHistory(piece, pruneDagObjects=True) or ())):
-                return False
-            if not c.listConnections(group, type="parentConstraint"):
-                return False
+    def _joint_for_control(self,control):
+        c=self.cmds
+        if c.nodeType(control)=='joint':return control,self._leaf(control)
+        leaf=self._leaf(control);joint=self._control_roles.get(control)
+        if joint is None:
+            for source,fk in self._mapping.bindings.items():
+                if self._leaf(fk)==leaf:joint=source;break
+        if joint is None:joint=leaf[2:]
+        return self._name(joint),'FK'+joint if self._mapping.fk(joint) else leaf
+
+    def _group(self,control):
+        from .maya_body import MayaBodyBuildHost
+        from adv_py.core.body_parent_constraint import plan_body_parent_constraint
+        c=self.cmds;joint,semantic=self._joint_for_control(control)
+        if not c.objExists(joint):raise ValueError('CutUp 找不到绑定关节：'+joint)
+        stem,separator,side=semantic.rpartition('_');stem=stem if separator else semantic;side='_'+side if separator else ''
+        group=self._name(stem+'CutUp'+side)
+        if c.objExists(group):return group,stem,side
+        group=c.createNode('transform',name=group,parent=joint)
+        fk=self._mapping.fk(joint)
+        if fk:c.delete(c.orientConstraint(fk,group))
+        group=c.parent(group,self._name('CutUpGeometry'))[0]
+        fit=self._name('FitSkeleton')
+        helper=MayaBodyBuildHost(namespace=self.namespace,use_offset_parent_matrix=bool(
+            c.getAttr(fit+'.useOffsetParentMatrix')) if c.objExists(fit+'.useOffsetParentMatrix') else False)
+        helper._transaction_active=True
+        try:
+            driver=helper._cmds.identity.to_local(c.ls(joint,long=True)[0])
+            driven=helper._cmds.identity.to_local(c.ls(group,long=True)[0])
+            plan=plan_body_parent_constraint(helper.capture_parent_constraint_input(driver,driven,True))
+            helper.preflight_parent_constraint(plan);helper.create_parent_constraint(plan)
+        finally:helper._transaction_active=False
+        return group,stem,side
+
+    def finalize_cut_up(self,plans):
+        c=self.cmds;self._created=[]
+        shapes=c.ls(self._name('*MeshCtrl*'),type='mesh',noIntermediate=True) or []
+        for shape in shapes:
+            control=c.listRelatives(shape,parent=True,fullPath=True)[0]
+            group,stem,side=self._group(control)
+            for index in range(1,99):
+                name=self._name(f'{stem}CutUp{index}{side}')
+                if not c.objExists(name):break
+            piece=c.createNode('transform',name=name,parent=group)
+            shape=c.parent(shape,piece,shape=True,relative=True)[0]
+            shape=c.rename(shape,self._name(self._leaf(piece)+'Shape'))
+            c.delete(piece,constructionHistory=True)
+            self._created.append((piece,group,c.polyEvaluate(piece,face=True)))
+        c.select(clear=True);return len(self._created)
+
+    def capture_cut_up(self,plans):
+        c=self.cmds
+        if len(self._created)<sum(len(plan.pieces) for plan in plans):return False
+        for piece,group,count in self._created:
+            if not c.objExists(piece) or not c.objExists(group):return False
+            if c.polyEvaluate(piece,face=True)!=count:return False
+            if any(c.nodeType(node)=='skinCluster' for node in c.listHistory(piece) or []):return False
+            if not c.listConnections(group,source=True,destination=False,type='parentConstraint') and not c.connectionInfo(group+'.offsetParentMatrix',isDestination=True):return False
         return self.cut_up_exists()
 
-    def cut_up_exists(self) -> bool:
-        c = self.cmds
-        return (c.objExists(self._name("CutUpGeometry"))
-                or c.objExists(self._name("CutUp")))
+    def cut_up_exists(self):return any(self.cmds.objExists(self._name(name)) for name in ('CutUp','CutUpGeometry'))
 
-    def delete_cut_up(self) -> None:
-        c = self.cmds
-        for leaf in ("CutUpGeometry", "CutUp"):
-            if c.objExists(self._name(leaf)):
-                c.delete(self._name(leaf))
+    def delete_cut_up(self):
+        c=self.cmds;layer=self._name('CutUp')
+        if not c.objExists(layer):return
+        members=c.listConnections(layer+'.drawInfo') or []
+        if members:c.delete(members)
+        c.delete(layer)
+        if c.objExists(self._name('CutUpGeometry')):c.delete(self._name('CutUpGeometry'))

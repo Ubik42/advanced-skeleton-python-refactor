@@ -1,4 +1,4 @@
-"""Partition skinned polygon faces by summed joint influence."""
+"""Source ControlMeshes partition: face eligibility, last vertex and controls."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,28 +20,34 @@ class CutUpMeshPlan:
 def plan_cut_up_mesh(mesh: str, influences: tuple[str, ...],
                      faces: tuple[tuple[int, ...], ...],
                      weights: tuple[tuple[float, ...], ...],
-                     anchors: tuple[str, ...]) -> CutUpMeshPlan:
+                     anchors: tuple[str | None, ...],
+                     eligible: tuple[tuple[int,...],...] | None = None) -> CutUpMeshPlan:
     if (not mesh or not influences or not faces or not weights
             or len(influences) != len(anchors)
             or len(set(influences)) != len(influences)
             or any(len(row) != len(influences) for row in weights)):
         raise ValueError("Skin Cut-Up 蒙皮输入不完整")
-    grouped: dict[str, list[int]] = {}
+    if eligible is not None and len(eligible)!=len(faces):
+        raise ValueError('Skin Cut-Up 面影响查询数量不符')
+    grouped: dict[str, list[int]] = {control:[] for control in dict.fromkeys(anchors) if control}
     for face_index, vertices in enumerate(faces):
         if not vertices or any(index < 0 or index >= len(weights)
                                for index in vertices):
             raise ValueError("Skin Cut-Up 面顶点索引无效：" + mesh)
-        sums = [sum(weights[index][joint_index] for index in vertices
-                    if weights[index][joint_index] > 0.001)
-                for joint_index in range(len(influences))]
-        if max(sums) <= 0:
-            raise ValueError("Skin Cut-Up 面没有非零蒙皮权重：" + mesh)
-        dominant = max(range(len(influences)),
-                       key=lambda index: (sums[index], -index))
+        candidates=(eligible[face_index] if eligible is not None else tuple(
+            index for index in range(len(influences))
+            if sum(weights[vertex][index] for vertex in vertices)/len(vertices)>.001))
+        if not candidates:continue
+        # 8865 clears jointWeights on z==0 inside EACH vertex iteration.
+        # Preserve the source's last selected vertex, rather than summing all
+        # face weights as the previous reconstruction did.
+        last=vertices[-1]
+        dominant=max(candidates,key=lambda index:weights[last][index])
+        if weights[last][dominant]<=0:continue
         joint = anchors[dominant]
         if not joint:
             raise ValueError("Skin Cut-Up 影响关节缺少控制来源")
-        grouped.setdefault(joint, []).append(face_index)
+        grouped[joint].append(face_index)
     return CutUpMeshPlan(mesh, len(faces), tuple(
         CutUpPiece(joint, tuple(indices))
-        for joint, indices in grouped.items()))
+        for joint, indices in grouped.items() if indices))

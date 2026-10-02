@@ -1,189 +1,106 @@
-"""Maya surface projection of selected geometry onto driven PolyBoxes."""
-from __future__ import annotations
-
-from adv_py.core.geometry_warp import WarpSpec
+"""Source PolyBoxes Warp: constraint-first subdivision and material sampling."""
 from .maya_geometry_boolean import MayaBooleanHost
 
-
 class MayaWarpHost(MayaBooleanHost):
-    def __init__(self, namespace: str = "") -> None:
-        super().__init__(namespace)
-        self._created_warps: tuple[str, ...] = ()
+    def __init__(self,namespace=''):
+        super().__init__(namespace);self._created_warps=()
 
-    def capture_warp_names(self) -> frozenset[str]:
-        c = self.cmds
-        group = self._name("WarpGeometry")
-        if not c.objExists(group):
-            return frozenset()
-        return frozenset(self._leaf(node) for node in
-            c.listRelatives(group, children=True, type="transform") or ())
+    def capture_warp_names(self):
+        c=self.cmds;group=self._name('WarpGeometry')
+        return frozenset(self._leaf(node) for node in c.listRelatives(group,children=True,type='transform') or []) if c.objExists(group) else frozenset()
 
-    def warp_exists(self) -> bool:
-        c = self.cmds
-        return (c.objExists(self._name("Warp"))
-                or c.objExists(self._name("WarpGeometry")))
+    def warp_exists(self):return any(self.cmds.objExists(self._name(name)) for name in ('Warp','WarpGeometry'))
 
-    def preflight_warp(self, plan: tuple[WarpSpec, ...]) -> None:
-        c = self.cmds
-        if not c.objExists(self._name("Geometry")):
-            raise ValueError("Warp 缺少 Geometry 组")
-        if not c.objExists(self._name("BoxesGeometry")):
-            raise ValueError("Warp 需要先创建 PolyBoxes")
-        for spec in plan:
-            if any(not c.objExists(node) for node in (
-                    spec.source, self._name(spec.box),
-                    self._name(spec.joint))):
-                raise ValueError("Warp 来源或关节已丢失：" + spec.name)
-            if c.objExists(self._name(spec.name)):
-                raise ValueError("Warp 名称已占用：" + spec.name)
-            if not c.getAttr(spec.source + ".visibility", settable=True):
-                raise ValueError("Warp 来源网格可见性不可写：" + spec.source)
-        for leaf in ("AdvPy_WarpClosestSampler", "AdvPy_WarpPieceTemp"):
-            if c.objExists(self._name(leaf)):
-                raise ValueError("Warp 临时名称已占用：" + leaf)
-        boxes_layer = self._name("PolyBoxes")
-        if (c.objExists(boxes_layer)
-                and not c.getAttr(boxes_layer + ".visibility", settable=True)):
-            raise ValueError("PolyBoxes 显示层可见性不可写")
+    def preflight_warp(self,plan):
+        self.preflight_boolean(plan)
+        for name in ('AdvPy_WarpClosestSampler','AdvPy_WarpMaterialMesh'):
+            if self.cmds.objExists(self._name(name)):raise ValueError('Warp 临时名称已占用：'+name)
 
-    def _material_for_face(self, source: str, face: int,
-                           shading_groups: tuple[str, ...]) -> str:
-        c = self.cmds
-        for group in shading_groups:
-            if c.sets(f"{source}.f[{face}]", isMember=group):
-                return group
-        return shading_groups[0]
+    def _next_warp_name(self,box):
+        c=self.cmds;stem,side=box.rsplit('_',1)
+        for index in range(1,99):
+            candidate=self._name(f'{stem}Warp{index}_{side}')
+            if not c.objExists(candidate):return candidate
+        return self._name(f'{stem}Warp99_{side}')
 
-    def _project_warp(self, spec: WarpSpec, group: str,
-                      layer: str, sampler: str,
-                      shaders: tuple[str, ...]) -> str | None:
-        c = self.cmds
-        source_box = self._name(spec.box)
-        world = c.xform(source_box, query=True, worldSpace=True, matrix=True)
-        warp = c.duplicate(source_box, name=self._name(
-            "AdvPy_WarpPieceTemp"), returnRootsOnly=True)[0]
-        warp = c.parent(warp, group)[0]
-        c.xform(warp, worldSpace=True, matrix=world)
-        for axis in "tr":
-            for channel in "xyz":
-                plug = warp + "." + axis + channel
-                if c.getAttr(plug, lock=True):
-                    c.setAttr(plug, lock=False)
-        c.polySmooth(warp, method=0, divisions=spec.divisions,
-                     constructionHistory=True)
-        c.scale(1, 0.7, 0.7, warp + ".e[0:15]",
-                relative=True, objectCenterPivot=True)
-        c.scale(1, 0.9, 0.9,
-                warp + ".vtx[34:50]", warp + ".vtx[52]",
-                warp + ".vtx[54]", warp + ".vtx[56]",
-                warp + ".vtx[58]", warp + ".vtx[60]",
-                warp + ".vtx[62]", warp + ".vtx[64]",
-                warp + ".vtx[74:89]", relative=True,
-                objectCenterPivot=True)
-        c.transferAttributes(spec.source, warp, transferPositions=1,
-                             transferNormals=0, transferUVs=2,
-                             transferColors=2, sampleSpace=0,
-                             sourceUvSpace="map1", targetUvSpace="map1",
-                             searchMethod=3, flipUVs=False,
-                             colorBorders=True)
-        c.delete(warp, constructionHistory=True)
-        if float(c.polyEvaluate(warp, area=True)) < 1.0:
-            c.delete(warp)
-            return None
-        warp = c.rename(warp, self._name(spec.name))
-        if len(shaders) == 1:
-            c.sets(warp, edit=True, forceElement=shaders[0])
-        elif shaders:
-            count = int(c.polyEvaluate(warp, face=True))
-            for index in range(count):
-                positions = c.xform(f"{warp}.f[{index}]", query=True,
-                                    worldSpace=True, translation=True)
-                center = tuple(sum(positions[axis::3]) /
-                               (len(positions) // 3) for axis in range(3))
-                c.setAttr(sampler + ".inPosition", *center,
-                          type="double3")
-                face = int(c.getAttr(sampler + ".closestFaceIndex"))
-                material = self._material_for_face(spec.source, face, shaders)
-                c.sets(f"{warp}.f[{index}]", edit=True,
-                       forceElement=material)
-        joint = self._name(spec.joint)
-        c.parentConstraint(joint, warp, maintainOffset=True)
-        c.scaleConstraint(joint, warp, maintainOffset=True)
-        c.editDisplayLayerMembers(layer, warp, noRecurse=True)
+    def _material_source(self,source,sampler,multiple,copies):
+        c=self.cmds;shape=c.listRelatives(source,shapes=True,noIntermediate=True,type='mesh',fullPath=True)[0]
+        direct=c.listConnections(shape+'.instObjGroups') or []
+        if direct:return direct[0]
+        count=c.getAttr(shape+'.instObjGroups.objectGroups',size=True)
+        for index in range(count):
+            if index==0:
+                copy=c.duplicate(source,name=self._name('AdvPy_WarpMaterialMesh'))[0];copies.append(copy)
+                # Native tempMesh literal keeps addressing the first copy
+                # across source meshes. Retain that material-sampling choice.
+                first=self._name('AdvPy_WarpMaterialMesh')
+                self.unlock_geometry_transform(first);c.setAttr(first+'.visibility',0)
+                if c.listRelatives(first,parent=True):c.parent(first,world=True)
+                c.makeIdentity(first,apply=True,translate=True,rotate=True,scale=True)
+                shape_copy=c.listRelatives(first,shapes=True,noIntermediate=True,type='mesh')[0]
+                c.connectAttr(shape_copy+'.outMesh',sampler+'.inMesh',force=True)
+            engines=c.listConnections(shape+f'.instObjGroups.objectGroups[{index}].objectGrpColor',type='shadingEngine') or []
+            if engines:multiple.append(engines[0])
+        return None
+
+    def _project_warp(self,spec,group,layer,sampler,multiple,single):
+        c=self.cmds;box=self._name(spec.box);joint=self._name(spec.joint)
+        warp=c.duplicate(box,name=self._next_warp_name(spec.box))[0]
+        self.unlock_geometry_transform(warp);warp=c.parent(warp,group)[0]
+        c.parentConstraint(joint,warp);c.scaleConstraint(joint,warp)
+        try:
+            c.polySmooth(warp,mth=0,dv=spec.divisions,bnr=1,c=1,kb=1,ksb=1,khe=1,kt=1,kmb=1,
+                         suv=1,peh=0,sl=1,dpe=1,ps=.1,ro=1,ch=True)
+        except RuntimeError:pass  # native catch, followed by the same projection
+        c.scale(1,.7,.7,warp+'.e[0:15]',relative=True,objectCenterPivot=True)
+        c.scale(1,.9,.9,*[warp+'.vtx'+suffix for suffix in
+            ('[34:50]','[52]','[54]','[56]','[58]','[60]','[62]','[64]','[74:89]')],
+            relative=True,objectCenterPivot=True)
+        c.select(spec.source,warp,replace=True)
+        c.transferAttributes(transferPositions=1,transferNormals=0,transferUVs=2,transferColors=2,
+            sampleSpace=0,sourceUvSpace='map1',targetUvSpace='map1',searchMethod=3,flipUVs=False,colorBorders=True)
+        c.delete(warp,constructionHistory=True)
+        if c.polyEvaluate(warp,area=True)<1.:
+            c.delete(warp);return None
+        if multiple:
+            for face in range(c.polyEvaluate(warp,face=True)):
+                positions=c.xform(warp+f'.f[{face}]',query=True,worldSpace=True,translation=True)
+                center=tuple(sum(positions[axis::3])/(len(positions)//3) for axis in range(3))
+                c.setAttr(sampler+'.inPosition',*center,type='double3')
+                nearest=c.getAttr(sampler+'.closestFaceIndex')
+                for engine in multiple:
+                    if c.sets(spec.source+f'.f[{nearest}]',isMember=engine):
+                        c.sets(warp+f'.f[{face}]',edit=True,forceElement=engine)
+        elif single:
+            shape=c.listRelatives(warp,shapes=True,noIntermediate=True)[0]
+            c.sets(shape,edit=True,forceElement=single)
+        c.editDisplayLayerMembers(layer,warp,noRecurse=True);c.refresh()
         return warp
 
-    def create_warp(self, plan: tuple[WarpSpec, ...]) -> int:
-        c = self.cmds
-        layer = self._name("Warp")
-        if not c.objExists(layer):
-            layer = c.createDisplayLayer(name=layer, empty=True)
-            c.setAttr(layer + ".color", 28)
-            c.setAttr(layer + ".displayType", 2)
-        group = self._name("WarpGeometry")
-        if not c.objExists(group):
-            group = c.createNode("transform", name=group,
-                                 parent=self._name("Geometry"))
-        visibility = {source: bool(c.getAttr(source + ".visibility"))
-                      for source in {spec.source for spec in plan}}
-        boxes_layer = self._name("PolyBoxes")
-        if c.objExists(boxes_layer):
-            visibility[boxes_layer] = bool(c.getAttr(
-                boxes_layer + ".visibility"))
-        created = []
+    def create_warp(self,plan):
+        c=self.cmds;self.refresh_hidden_boxes(refresh_after_hide=False)
+        group,layer=self.ensure_geometry_group('Warp',28)
+        states=self.hide_geometry_sources(plan);created=[];copies=[];multiple=[];single=None
+        sampler=c.createNode('closestPointOnMesh',name=self._name('AdvPy_WarpClosestSampler'))
         try:
-            for node in visibility:
-                c.setAttr(node + ".visibility", 0)
             for source in dict.fromkeys(spec.source for spec in plan):
-                shape = (c.listRelatives(source, shapes=True,
-                                         noIntermediate=True,
-                                         type="mesh") or [])[0]
-                shaders = tuple(dict.fromkeys(c.listConnections(
-                    shape, type="shadingEngine") or ()))
-                sampler = c.createNode("closestPointOnMesh", name=self._name(
-                    "AdvPy_WarpClosestSampler"))
-                try:
-                    c.connectAttr(shape + ".worldMesh[0]",
-                                  sampler + ".inMesh")
-                    for spec in (item for item in plan
-                                 if item.source == source):
-                        warp = self._project_warp(spec, group, layer,
-                                                  sampler, shaders)
-                        if warp is not None:
-                            created.append(warp)
-                finally:
-                    c.delete(sampler)
+                shader=self._material_source(source,sampler,multiple,copies)
+                if shader:single=shader
+                for spec in (spec for spec in plan if spec.source==source):
+                    mesh=self._project_warp(spec,group,layer,sampler,multiple,single)
+                    if mesh:created.append(mesh)
         finally:
-            for node, value in visibility.items():
-                if c.objExists(node):
-                    c.setAttr(node + ".visibility", value)
-        self._created_warps = tuple(created)
+            if c.objExists(sampler):c.delete(sampler)
+            for copy in copies:
+                if c.objExists(copy):c.delete(copy)
+            self.restore_geometry_visibility(states)
+        c.select(clear=True);self._created_warps=tuple(created)
         return len(created)
 
-    def capture_warp(self, count: int) -> bool:
-        c = self.cmds
-        group, layer = self._name("WarpGeometry"), self._name("Warp")
-        if (not c.objExists(group) or not c.objExists(layer)
-                or c.getAttr(layer + ".color") != 28
-                or c.getAttr(layer + ".displayType") != 2
-                or len(self._created_warps) != count):
-            return False
-        for warp in self._created_warps:
-            if (not c.objExists(warp)
-                    or (c.listRelatives(warp, parent=True) or []) != [group]
-                    or not c.listRelatives(warp, shapes=True,
-                                           noIntermediate=True, type="mesh")
-                    or not c.listConnections(warp + ".translateX",
-                                             source=True,
-                                             type="parentConstraint")
-                    or not c.listConnections(warp + ".scaleX",
-                                             source=True,
-                                             type="scaleConstraint")):
-                return False
-        return True
+    def capture_warp(self,count):
+        c=self.cmds;group=self._name('WarpGeometry');layer=self._name('Warp')
+        return (c.objExists(group) and c.objExists(layer) and c.getAttr(layer+'.color')==28
+                and c.getAttr(layer+'.displayType')==2 and count==len(self._created_warps)
+                and all(self.assert_driven_mesh(node,group) for node in self._created_warps))
 
-    def delete_warp(self) -> None:
-        c = self.cmds
-        for leaf in ("WarpGeometry", "Warp"):
-            node = self._name(leaf)
-            if c.objExists(node):
-                c.delete(node)
+    def delete_warp(self):self.delete_geometry_family('Warp','*Warp*_*')

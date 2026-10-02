@@ -46,7 +46,7 @@ class CreateControlMesh:
 
 
 class CreateControlMeshes:
-    """Group each skinned mesh's faces by strongest joint and its FK control."""
+    """Apply the source's converted-vertex influence and control dispatch."""
 
     def __init__(self, host: ControlMeshHost) -> None:
         self._host = host

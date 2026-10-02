@@ -15,21 +15,26 @@ from adv_py.core.control_mesh_delete import (
 
 
 class MayaControlMeshHost:
-    def __init__(self) -> None:
+    def __init__(self, namespace: str = '') -> None:
         from maya import cmds
         from maya.api import OpenMaya
 
         self.cmds = cmds
         self.om = OpenMaya
         self._in_transaction = False
+        self.namespace=namespace.strip(':')
+
+    def _capture_namespace(self, global_control):
+        leaf=global_control.rsplit('|',1)[-1]
+        self.namespace=leaf.rsplit(':',1)[0] if ':' in leaf else ''
 
     def _mesh(self, shape: str):
         path = self.om.MSelectionList().add(shape).getDagPath(0)
         return self.om.MFnMesh(path), path
 
-    def _face_content(self, shape: str, faces: tuple[int, ...]):
+    def _face_content(self, shape: str, faces: tuple[int, ...], *, object_space=False):
         mesh, dag = self._mesh(shape)
-        points = mesh.getPoints(self.om.MSpace.kWorld)
+        points = mesh.getPoints(self.om.MSpace.kObject if object_space else self.om.MSpace.kWorld)
         shaders, assignments = mesh.getConnectedShaders(
             dag.instanceNumber())
         materials = tuple(self.om.MFnDependencyNode(shader).name()
@@ -47,38 +52,42 @@ class MayaControlMeshHost:
                          else None))
         return tuple(sorted(rows, key=repr))
 
-    def _mirror_faces(self, shape: str, faces: tuple[int, ...]
-                      ) -> tuple[int, ...]:
-        mesh, _ = self._mesh(shape)
-        points = mesh.getPoints(self.om.MSpace.kWorld)
-        selected_vertices = set()
-        for face in faces:
-            selected_vertices.update(mesh.getPolygonVertices(face))
-        mirrored_vertices = set()
-        for vertex in selected_vertices:
-            point = points[vertex]
-            reflected = self.om.MPoint(-point.x, point.y, point.z)
-            _, near_face = mesh.getClosestPoint(
-                reflected, self.om.MSpace.kWorld)
-            candidates = mesh.getPolygonVertices(near_face)
-            mirrored_vertices.add(min(candidates, key=lambda index:
-                (points[index].x - reflected.x) ** 2
-                + (points[index].y - reflected.y) ** 2
-                + (points[index].z - reflected.z) ** 2))
-        return tuple(index for index in range(mesh.numPolygons)
-                     if set(mesh.getPolygonVertices(index))
-                     <= mirrored_vertices)
+    def _mirror_faces(self, shape: str, faces: tuple[int, ...], control: str) -> tuple[int, ...]:
+        c=self.cmds
+        # The source samples world X-reflected positions against outMesh,
+        # including ConvertSelectionToVertices' treatment of the last control.
+        converted=c.polyListComponentConversion(
+            [shape+f'.f[{face}]' for face in faces]+[control],toVertex=True)
+        vertices=c.ls(converted,flatten=True) or []
+        enabled=bool(c.undoInfo(query=True,state=True))
+        sampler=None
+        c.undoInfo(stateWithoutFlush=False)
+        try:
+            sampler=c.createNode('closestPointOnMesh',name='AdvPy_ControlMeshClosestSampler',skipSelect=True)
+            c.connectAttr(shape+'.outMesh',sampler+'.inMesh')
+            mirrored=set()
+            for vertex in vertices:
+                point=c.xform(vertex,query=True,worldSpace=True,translation=True)
+                c.setAttr(sampler+'.inPosition',-point[0],point[1],point[2],type='float3')
+                mirrored.add(int(c.getAttr(sampler+'.closestVertexIndex')))
+        finally:
+            if sampler and c.objExists(sampler):c.delete(sampler)
+            c.undoInfo(stateWithoutFlush=enabled)
+        mesh,_=self._mesh(shape)
+        return tuple(face for face in range(mesh.numPolygons)
+                     if set(mesh.getPolygonVertices(face))<=mirrored)
 
     def capture_control_mesh_source(
         self, global_control: str, mirror: bool,
     ) -> ControlMeshSource:
         c = self.cmds
+        self._capture_namespace(global_control)
         selected = c.ls(selection=True, flatten=True, long=True) or []
         if len(selected) < 2 or "." in selected[-1]:
             raise ValueError("请先选一件网格的面，最后选择目标控制器")
         control = selected[-1]
-        if c.nodeType(control) != "transform":
-            raise ValueError("最后选择的对象必须是控制器 Transform")
+        if c.nodeType(control) not in ('transform','joint'):
+            raise ValueError("最后选择的对象必须是控制器 Transform 或 Joint")
         components = selected[:-1]
         if any(".f[" not in component for component in components):
             raise ValueError("控制器之前只能选择多边形面")
@@ -98,12 +107,23 @@ class MayaControlMeshHost:
         opposite = None
         mirror_faces = ()
         leaf = control.rsplit("|", 1)[-1]
-        if mirror and leaf.endswith(("_R", "_L")):
-            other_leaf = leaf[:-1] + ("L" if leaf.endswith("_R") else "R")
-            matches = c.ls(other_leaf, long=True, type="transform") or []
+        if mirror:
+            other_leaf = leaf[:-2] + ('_R' if leaf.endswith('_L') else '_L')
+            # Registered Python controls carry physical FK names; translate
+            # their identity to the same source left/right FK role first.
+            from .maya_geometry_cut_up import MayaGeometryCutUpHost
+            from .maya_geometry_control_mapping import SourceGeometryControlMapping
+            mapping=SourceGeometryControlMapping(MayaGeometryCutUpHost(self.namespace))
+            for joint,fk in mapping.bindings.items():
+                if fk.rsplit('|',1)[-1]==leaf and joint.endswith(('_R','_L')):
+                    other_joint=joint[:-1]+('L' if joint.endswith('_R') else 'R')
+                    other_leaf=mapping.fk(other_joint) or other_leaf
+                    break
+            matches = [node for node in c.ls(other_leaf,long=True) or []
+                       if c.nodeType(node) in ('transform','joint')]
             if len(matches) == 1:
                 opposite = matches[0]
-                mirror_faces = self._mirror_faces(shape, faces)
+                mirror_faces = self._mirror_faces(shape, faces, control)
                 if not mirror_faces:
                     raise ValueError("Control Mesh 镜像侧没有包含的网格面")
         return ControlMeshSource(shape, control, global_control,
@@ -137,68 +157,20 @@ class MayaControlMeshHost:
     def capture_control_mesh_batch_sources(
         self, global_control: str, controls: tuple[str, ...],
     ) -> tuple[ControlMeshSource, ...]:
-        from maya.api import OpenMayaAnim
-
-        c = self.cmds
-        selected = c.ls(selection=True, long=True) or []
-        if not selected or any("." in item or c.nodeType(item)
-                               != "transform" for item in selected):
-            raise ValueError("批量 Control Mesh 需要选择已蒙皮网格对象")
-        control_by_leaf = {}
-        for control in controls:
-            leaf = control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
-            if leaf in control_by_leaf and control_by_leaf[leaf] != control:
-                raise ValueError("已登记控制器短名称不唯一：" + leaf)
-            control_by_leaf[leaf] = control
-        sources = []
-        for transform in selected:
-            shapes = c.listRelatives(transform, shapes=True,
-                                     fullPath=True,
-                                     noIntermediate=True,
-                                     type="mesh") or []
-            if len(shapes) != 1:
-                raise ValueError("所选对象缺少唯一多边形网格：" + transform)
-            shape = shapes[0]
-            mesh, dag = self._mesh(shape)
-            clusters = tuple(dict.fromkeys(node for node in
-                (c.listHistory(shape, pruneDagObjects=True) or [])
-                if c.nodeType(node) == "skinCluster"))
-            if len(clusters) != 1:
-                raise ValueError("所选网格需要唯一 SkinCluster：" + transform)
-            skin_node = self.om.MSelectionList().add(
-                clusters[0]).getDependNode(0)
-            skin = OpenMayaAnim.MFnSkinCluster(skin_node)
-            influences = tuple(path.fullPathName()
-                               for path in skin.influenceObjects())
-            if not influences:
-                raise ValueError("SkinCluster 没有影响关节：" + clusters[0])
-            component = self.om.MFnSingleIndexedComponent().create(
-                self.om.MFn.kMeshVertComponent)
-            component_fn = self.om.MFnSingleIndexedComponent(component)
-            component_fn.addElements(list(range(mesh.numVertices)))
-            weights, influence_count = skin.getWeights(dag, component)
-            if influence_count != len(influences):
-                raise RuntimeError("SkinCluster 影响列表与权重数据不一致")
-            groups: dict[str, list[int]] = {}
-            for face in range(mesh.numPolygons):
-                vertices = mesh.getPolygonVertices(face)
-                sums = [sum(float(weights[vertex * influence_count + index])
-                            for vertex in vertices
-                            if weights[vertex * influence_count + index]
-                            > 0.001)
-                        for index in range(influence_count)]
-                strongest = max(range(influence_count),
-                                key=lambda index: sums[index])
-                if sums[strongest] <= 0.0:
-                    continue
-                control = self._control_for_influence(
-                    influences[strongest], control_by_leaf)
-                if control:
-                    groups.setdefault(control, []).append(face)
-            for control, faces in groups.items():
-                sources.append(ControlMeshSource(
-                    shape, control, global_control,
-                    tuple(faces), mesh.numPolygons))
+        from .maya_geometry_cut_up import MayaGeometryCutUpHost
+        from adv_py.core.geometry_cut_up import plan_cut_up_mesh
+        c=self.cmds
+        self._capture_namespace(global_control)
+        leaf=global_control.rsplit('|',1)[-1]
+        namespace=leaf.rsplit(':',1)[0] if ':' in leaf else ''
+        host=MayaGeometryCutUpHost(namespace)
+        sources=[]
+        for row in host.capture_cut_up_inputs(cut_up=False):
+            plan=plan_cut_up_mesh(*row)
+            shape=c.listRelatives(plan.mesh,shapes=True,noIntermediate=True,type='mesh',fullPath=True)[0]
+            for piece in plan.pieces:
+                control=c.ls(piece.joint,long=True)[0]
+                sources.append(ControlMeshSource(shape,control,global_control,piece.faces,plan.face_count))
         return tuple(sources)
 
     def existing_control_mesh_names(self) -> frozenset[str]:
@@ -209,7 +181,7 @@ class MayaControlMeshHost:
         if (not c.objExists(item.mesh_shape)
                 or c.nodeType(item.mesh_shape) != "mesh"
                 or not c.objExists(item.control)
-                or c.nodeType(item.control) != "transform"
+                or c.nodeType(item.control) not in ('transform','joint')
                 or not c.objExists(item.global_control)
                 or c.nodeType(item.global_control) != "transform"
                 or c.objExists(item.shape_name)
@@ -235,7 +207,12 @@ class MayaControlMeshHost:
         selected = c.ls(selection=True, long=True, flatten=True) or []
         c.undoInfo(openChunk=True, chunkName=label)
         try:
-            yield
+            from .maya_fit_geometry import MayaFitGeometryHost
+            with MayaFitGeometryHost(self.namespace).namespace_scope():
+                yield
+                remaining = [name for name in selected if c.objExists(name)]
+                if remaining:c.select(remaining,replace=True)
+                else:c.select(clear=True)
         except Exception:
             c.undoInfo(closeChunk=True)
             c.undo()
@@ -244,11 +221,6 @@ class MayaControlMeshHost:
             c.undoInfo(closeChunk=True)
         finally:
             self._in_transaction = False
-            remaining = [name for name in selected if c.objExists(name)]
-            if remaining:
-                c.select(remaining, replace=True)
-            else:
-                c.select(clear=True)
 
     def _visibility(self, item: ControlMeshItem, shape: str) -> None:
         c = self.cmds
@@ -266,7 +238,7 @@ class MayaControlMeshHost:
                                  fullPath=True,
                                  noIntermediate=True,
                                  type="nurbsCurve") or []
-        for curve in curves:
+        for curve in curves[:1]:
             plug = curve + ".visibility"
             if (not c.connectionInfo(plug, isDestination=True)
                     and not c.getAttr(plug, lock=True)):
@@ -288,7 +260,7 @@ class MayaControlMeshHost:
         c.setAttr(geometry + ".freezeNormals", True)
         c.connectAttr(item.control + ".worldInverseMatrix[0]",
                       geometry + ".transform")
-        c.connectAttr(item.mesh_shape + ".worldMesh[0]",
+        c.connectAttr(item.mesh_shape + ".outMesh",
                       geometry + ".inputGeometry")
         c.connectAttr(geometry + ".outputGeometry",
                       shape + ".inMesh")
@@ -305,6 +277,20 @@ class MayaControlMeshHost:
         omitted = sorted(set(range(source_count)) - set(item.faces))
         if omitted:
             c.delete([f"{shape}.f[{face}]" for face in omitted])
+        else:
+            c.delete(shape+'.f[0]')
+            deletion=c.listConnections(shape+'.inMesh',source=True,destination=False)[0]
+            c.setAttr(deletion+'.nodeState',1)
+        deletion=c.listConnections(shape+'.inMesh',source=True,destination=False)[0]
+        c.rename(deletion,item.control.rsplit('|',1)[-1]+'MCDeleteComponent')
+        control_leaf=item.control.rsplit('|',1)[-1]
+        namespace=control_leaf.rsplit(':',1)[0]+':' if ':' in control_leaf else ''
+        face_set=namespace+'FaceControlSet'
+        if c.objExists(face_set) and c.sets(item.control,isMember=face_set) and control_leaf.endswith('_R'):
+            normals=c.polyNormal(shape,normalMode=0,userNormalMode=0,constructionHistory=False) or []
+            if normals and c.objExists(normals[0]):
+                normal=c.rename(normals[0],control_leaf+'MCDeleteComponent')
+                c.setAttr(normal+'.isHistoricallyInteresting',0)
         for attribute in ("castsShadows", "receiveShadows", "motionBlur",
                           "primaryVisibility", "smoothShading",
                           "visibleInReflections", "visibleInRefractions"):
@@ -321,22 +307,33 @@ class MayaControlMeshHost:
         if parent != [item.control]:
             return False
         geometry = item.transform_name
+        def same_source(destination, expected):
+            actual=c.connectionInfo(destination,sourceFromDestination=True)
+            if not actual:return False
+            node,attribute=actual.split('.',1);wanted,wanted_attribute=expected.split('.',1)
+            return attribute==wanted_attribute and c.ls(node,long=True)==c.ls(wanted,long=True)
         if (not c.objExists(geometry)
                 or c.nodeType(geometry) != "transformGeometry"
-                or c.connectionInfo(shape + ".visibility",
-                    sourceFromDestination=True)
-                != item.global_control + ".ctrlMeshVis"
-                or c.connectionInfo(geometry + ".inputGeometry",
-                    sourceFromDestination=True)
-                != item.mesh_shape + ".worldMesh[0]"
-                or c.connectionInfo(geometry + ".transform",
-                    sourceFromDestination=True)
-                != item.control + ".worldInverseMatrix[0]"
+                or not same_source(shape+'.visibility',item.global_control+'.ctrlMeshVis')
+                or not same_source(geometry+'.inputGeometry',item.mesh_shape+'.outMesh')
+                or not same_source(geometry+'.transform',item.control+'.worldInverseMatrix[0]')
                 or int(c.polyEvaluate(shape, face=True)) != len(item.faces)):
             return False
-        if self._face_content(shape, tuple(range(len(item.faces)))) != (
-                self._face_content(item.mesh_shape, item.faces)):
-            return False
+        # transformGeometry uses float mesh storage. Validate the source faces
+        # with a geometric tolerance instead of exact rounded tuple ordering.
+        remaining=list(self._face_content(shape,tuple(range(len(item.faces)))))
+        for vertices,material in self._face_content(item.mesh_shape,item.faces,object_space=True):
+            match=None
+            for index,(other,assigned) in enumerate(remaining):
+                if assigned!=material or len(vertices)!=len(other):continue
+                unmatched=list(other)
+                for point in vertices:
+                    nearest=min(range(len(unmatched)),key=lambda i:sum((a-b)**2 for a,b in zip(point,unmatched[i])))
+                    if max(abs(a-b) for a,b in zip(point,unmatched[nearest]))>1e-5:break
+                    unmatched.pop(nearest)
+                else:match=index;break
+            if match is None:return False
+            remaining.pop(match)
         return all(not bool(c.getAttr(shape + "." + attribute))
                    for attribute in ("castsShadows", "receiveShadows",
                                      "motionBlur", "primaryVisibility",

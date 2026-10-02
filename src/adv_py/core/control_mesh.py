@@ -48,11 +48,14 @@ def plan_control_mesh(
                        or face >= source.face_count for face in faces)):
             raise ValueError("Control Mesh 面索引无效或重复")
         leaf = control.rsplit("|", 1)[-1]
-        for index in range(100):
+        for index in range(99):
             name = leaf + "MeshCtrl" + (str(index) if index else "")
-            transform_name = (leaf + "MCTransformGeometry"
-                              + (str(index) if index else ""))
-            if name not in used and transform_name not in used:
+            if name not in used:
+                base=leaf+'MCTransformGeometry'
+                transform_name=base
+                suffix=1
+                while transform_name in used:
+                    transform_name=base+str(suffix);suffix+=1
                 used.update((name, transform_name))
                 plans.append(ControlMeshItem(
                     source.mesh_shape, control, tuple(sorted(faces)),

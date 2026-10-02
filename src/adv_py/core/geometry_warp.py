@@ -29,10 +29,10 @@ def plan_warps(sources: tuple[str, ...], boxes: tuple[str, ...],
                 raise ValueError("Warp 盒体名称无效：" + box)
             stem, side = box[:-5], box[-2:]
             name = next((candidate for index in range(1, 99)
-                         if (candidate := f"{stem}Warp{index}{side}")
+                         if (candidate := f"{stem}BoxWarp{index}{side}")
                          not in names), None)
             if name is None:
-                raise ValueError("Warp 同一骨段已用尽 98 个名称：" + box)
+                name=f"{stem}BoxWarp99{side}"
             names.add(name)
             joint = stem + side
             result.append(WarpSpec(source, box, joint, name,
