@@ -2,7 +2,7 @@
 from adv_py.core.character_registry import canonical, CharacterRegistryError
 
 RECORDS=('advPySourceIkRootFrame','advPySourceRpDynamics','advPySourceFkMatrix',
-         'advPySourceBendyMatrix','advPySourceTwistReference','advPySourceInbetweenMatrix','advPySourceBendyMicroMatrix')
+         'advPySourceBendyMatrix','advPySourceLocalScale','advPySourcePartPoint','advPySourceTwistReference','advPySourceInbetweenMatrix','advPySourceBendyMicroMatrix')
 
 
 def rename_addresses(host, renames):

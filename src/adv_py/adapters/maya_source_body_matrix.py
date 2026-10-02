@@ -144,7 +144,7 @@ def rebase_fk_records(host,registration,rewrites):
             if updated!=raw:
                 c.setAttr(end_plug,lock=False)
                 c.setAttr(end_plug,canonical(updated),type='string',lock=True)
-        for attribute in ('advPySourceFkMatrix','advPySourceBendyMatrix'):
+        for attribute in ('advPySourceFkMatrix','advPySourceBendyMatrix','advPySourceLocalScale','advPySourcePartPoint'):
             plug=body+'.'+attribute
             if not c.objExists(plug):continue
             plan=decode_source_body_matrix(c.getAttr(plug))

@@ -590,11 +590,12 @@ def audit(host,plan,*,source_visibility_ready=True):
                       (decompose+'.outputScale',volume+'.input1')]
             edges += [(volume+'.output'+axis,
                        f'AdvPy_SplineBody{i}ScaleBlend.color1'+component
-                       if isinstance(i,int) and i in plan.source_body_matrix_indices else
+                       if isinstance(i,int) and (i in plan.source_body_matrix_indices or i in plan.source_local_scale_indices) else
                        'AdvPy_BendySourceScale'+plan.body_joints[i].rsplit('|',1)[-1]+'.color1'+component
                        if isinstance(i,int) and i in plan.source_bendy_matrix_indices else
                        'AdvPy_'+joint.source_joint.rsplit('|',1)[-1]+'_SourceSplinePartScaleBlend.color1'+component
-                       if not isinstance(i,int) and c.objExists(joint.source_joint+'.advPySourceFkMatrix')
+                       if not isinstance(i,int) and (c.objExists(joint.source_joint+'.advPySourceFkMatrix')
+                                                     or c.objExists(joint.source_joint+'.advPySourceLocalScale'))
                        else joint.path+'.scale'+axis)
                       for axis,component in zip('XYZ','RGB')]
             for index,weight in enumerate(spline_ik_scale_weights(*plan.native_sample(i),len(plan.targets))):
@@ -723,7 +724,7 @@ def audit(host,plan,*,source_visibility_ready=True):
     if version>=2:
         identity=(1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)
         for i in range(1,n):
-            if i in plan.source_body_matrix_indices:
+            if i in plan.source_body_matrix_indices or i in plan.source_local_scale_indices:
                 continue
             node=f'AdvPy_SplineScale{i}'
             plug=node+'.constraintParentInverseMatrix'
@@ -743,6 +744,7 @@ def audit(host,plan,*,source_visibility_ready=True):
             continue
         bendy_handoff = host.validate_body_bendy_handoff(plan.body_joints[i])
         for label,command,kind in (('Point',c.pointConstraint,'translate'),('Orient',c.orientConstraint,'rotate'),('Scale',c.scaleConstraint,'scale')):
+            if label=='Scale' and i in plan.source_local_scale_indices:continue
             node=f'AdvPy_Spline{label}{i}'
             if label!='Scale' or version==1:
                 sources=tuple(host._resolve_connected_node(p) for p in command(node,q=True,targetList=True))
@@ -766,6 +768,9 @@ def audit(host,plan,*,source_visibility_ready=True):
     if plan.source_body_matrix_indices or plan.source_bendy_matrix_indices:
         from .maya_source_spline_body_matrix import audit as audit_body_matrix
         audit_body_matrix(host,plan)
+    if plan.source_local_scale_indices:
+        from .maya_source_spline_local_scale import audit as audit_local_scale
+        audit_local_scale(host,plan)
     if plan.curved:
         for i in range(1,n):
             rest=plan.ik_outputs[i]

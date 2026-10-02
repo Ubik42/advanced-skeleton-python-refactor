@@ -459,11 +459,10 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         axes = {joint.path: joint.world_axes for joint in body.joints}
         bendy_chains = tuple(replace(chain,
             start_world_axes=axes[chain.start_body],
-            # MEL 83741 reads child.tx before OPM Part reparenting shortens
-            # the terminal local segment. Preserve that full bind span.
-            falloff_span=(dist(chain.start_position, chain.end_position)
-                          if options.use_offset_parent_matrix else
-                          host.capture_fit_bendy_end_local_length(chain.end_body)),
+            # MEL captures the full child span before Bendy Part parenting.
+            # Reading the final child's tx here returns only the last
+            # subsegment in both assembly modes and erases master falloff.
+            falloff_span=dist(chain.start_position, chain.end_position),
             scale_guide_group=not options.use_offset_parent_matrix,
             non_opm_additive_micro_scale=not options.use_offset_parent_matrix,
             opm_offset_only_scale=options.use_offset_parent_matrix,
@@ -579,9 +578,11 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
     global_control = plan_body_character_global(
         up_axis=FitUpAxis.Y, body_root=body.root, driven_roots=roots,
         fit_height=body.fit_height,
-        scale_destinations=tuple(body.root + ".scale" + axis for axis in "XYZ"),
+        scale_destinations=tuple((body.root if options.use_offset_parent_matrix
+                                 else "|Group|DeformationSystem") + ".scale" + axis for axis in "XYZ"),
         radius=scale * 12, body_root_via_controls=True,
-        root_fk_scale=BodyRootFkScaleSpec(body.root, root_control.control_path + ".scale"),
+        root_fk_scale=(BodyRootFkScaleSpec(body.root, root_control.control_path + ".scale")
+                       if options.use_offset_parent_matrix else None),
         num_main_extras=root_metadata.num_main_extras or 0,
         root_follow_main_path="|Group|MotionSystem|RootSystem|RootFollowMain",
         root_follow_use_opm=options.use_offset_parent_matrix,
@@ -603,6 +604,9 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.create_source_body_spline(spline)
         host.connect_source_body_spline_visibility(spline,fk)
     scales = list(plan_body_direct_fk_scales(body, fk.controls))
+    if not options.use_offset_parent_matrix:
+        # MEL scales DeformationSystem globally and keeps Root's scale local.
+        scales.append(BodyDirectFkScaleSpec(body.root,root_control.control_path+'.scale'))
     scales.extend(BodyDirectFkScaleSpec(control.driven_joint,
                   control.control_path + ".scale") for control in fk.controls
                   if control.driven_joint in driver_by_body.values())
@@ -728,6 +732,11 @@ def build_source_body_character(host, container, *, labels=(), scene_before=None
         host.create_source_inbetween_fk_matrices(fk,inbetween_segments,global_control,metadata,build.symmetry.instances)
         host.create_source_spline_part_matrices(body,splines,inbetween_segments)
         host.create_source_fk_part_matrices(inbetween_segments)
+    else:
+        splines=host.create_source_spline_local_scales(body,fk,splines,inbetween_segments,
+            metadata,build.symmetry.instances,
+            saved_layouts=generic_fk_policy.source_spline_layouts if generic_fk_policy else None)
+        host.create_source_nonopm_part_receivers(body,inbetween_segments,fk,metadata,build.symmetry.instances)
     # MEL selects initial IK by the actual end label containing Foot;
     # a Hip/Leg system ending in Toes alone keeps its default FK mode.
     initial_ik = tuple(limb for limb in limbs

@@ -91,11 +91,11 @@ def decode_source_body_matrix(text):
         attribute(attr)
         return value
     nodes=[]
-    if not isinstance(raw['nodes'],list) or not 1<=len(raw['nodes'])<=64:
+    if not isinstance(raw['nodes'],list) or not 0<=len(raw['nodes'])<=64:
         raise CharacterRegistryError('来源 Body 矩阵图规模无效')
     for row in raw['nodes']:
         exact(row,('name','kind','values','connections'))
-        if row['kind'] not in ('multMatrix','composeMatrix','unitConversion','blendMatrix','blendColors','multiplyDivide','pickMatrix','reverse','decomposeMatrix','addDoubleLinear'):
+        if row['kind'] not in ('multMatrix','composeMatrix','unitConversion','blendMatrix','blendColors','multiplyDivide','pickMatrix','reverse','decomposeMatrix','addDoubleLinear','pointConstraint'):
             raise CharacterRegistryError('来源 FK Body 矩阵节点类型无效')
         values=tuple((attribute(attr),finite(value)) for attr,value in row['values'])
         edges=tuple((plug(source),attribute(attr)) for source,attr in row['connections'])
@@ -104,8 +104,20 @@ def decode_source_body_matrix(text):
         nodes.append(SourceRpNode(identifier(row['name']),row['kind'],values,edges))
     outputs=tuple((plug(source),plug(target)) for source,target in raw['outputs'])
     body=path(raw['body'])
-    if (len({node.name for node in nodes})!=len(nodes) or len(outputs)!=1
-            or outputs[0][1]!=body+'.offsetParentMatrix'):
+    matrix_output=bool(nodes) and len(outputs)==1 and outputs[0][1]==body+'.offsetParentMatrix'
+    scale_output=(len(outputs)==3 and {target for _,target in outputs}==
+                  {body+'.scale'+axis for axis in 'XYZ'})
+    point_output=(bool(nodes) and len(outputs)==3 and {target for _,target in outputs}==
+                  {body+'.translate'+axis for axis in 'XYZ'})
+    if scale_output and not nodes:
+        # FK-only Parts deliberately have no calculation nodes: the original
+        # control's local scale drives the matching three Body scale axes.
+        sources={source.rsplit('.',1)[0] for source,_ in outputs}
+        if len(sources)!=1 or any(source.rsplit('.',1)[1]!=target.rsplit('.',1)[1]
+                                 for source,target in outputs):
+            raise CharacterRegistryError('来源 FK Part 直接缩放接收身份无效')
+    if (len({node.name for node in nodes})!=len(nodes)
+            or not (matrix_output or scale_output or point_output)):
         raise CharacterRegistryError('来源 FK Body 矩阵输出身份无效')
     local_scale=tuple((plug(source),plug(target)) for source,target in raw.get('local_scale',()))
     if local_scale and (len(local_scale)!=3 or {target for _,target in local_scale}!=

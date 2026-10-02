@@ -506,7 +506,9 @@ def plan_body_character_global(
         or (not body_root_via_controls and body_root not in driven_roots)
         or (body_root_via_controls and (
             body_root in driven_roots
-            or not all(f"{body_root}.scale{axis}" in scale_destinations for axis in "XYZ")
+            or not (all(f"{body_root}.scale{axis}" in scale_destinations for axis in "XYZ")
+                    or body_root.startswith("|Group|DeformationSystem|")
+                    and all(f"|Group|DeformationSystem.scale{axis}" in scale_destinations for axis in "XYZ"))
         ))
         or len(set(driven_roots)) != len(driven_roots)
         or any(

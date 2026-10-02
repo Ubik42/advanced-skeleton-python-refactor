@@ -10247,6 +10247,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_spline_body_matrix import configure
         return configure(self,body,fk,splines,excluded=excluded,saved_layouts=saved_layouts)
 
+    def create_source_spline_local_scales(self,body,fk,splines,segments,metadata,instances,*,saved_layouts=None):
+        from .maya_source_spline_local_scale import configure
+        return configure(self,body,fk,splines,segments,metadata,instances,saved_layouts=saved_layouts)
+
+    def create_source_nonopm_part_receivers(self,body,segments,fk,metadata,instances):
+        from .maya_source_nonopm_parts import configure
+        configure(self,body,segments,fk,metadata,instances)
+
     def create_source_spline_bendy_scales(self,specs):
         self._require_transaction()
         for spec in specs:

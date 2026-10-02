@@ -53,6 +53,7 @@ def decode_spline(raw, body):
         for key in ('source_simple_twist','source_forward_axis'):
             if key not in raw:raw={**raw,key:None}
         if 'source_start_volume' not in raw:raw={**raw,'source_start_volume':False}
+        if 'source_local_scale_indices' not in raw:raw={**raw,'source_local_scale_indices':[]}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
     fit_count=raw['source_fit_control_count']
     if fit_count is not None and (type(fit_count) is not int or fit_count<2
@@ -112,6 +113,13 @@ def decode_spline(raw, body):
                 or source_mode.middle_joint+'_'+side not in identities):
             raise CharacterRegistryError('来源 Spline FKIK 骨链标记与实际 Body 身份不一致')
     matrix_indices=raw['source_body_matrix_indices']
+    local_indices=raw['source_local_scale_indices']
+    if (not isinstance(local_indices,(list,tuple))
+            or any(type(index) is not int or not 0<=index<count for index in local_indices)
+            or tuple(sorted(set(local_indices)))!=tuple(local_indices)
+            or local_indices and (raw['use_offset_parent_matrix'] or not raw['source_ik_chain']
+                                  or not raw['source_curve_points'])):
+        raise CharacterRegistryError('来源 Spline 局部缩放接收索引无效')
     if (not isinstance(matrix_indices,(list,tuple))
             or any(type(index) is not int or not 0<=index<count for index in matrix_indices)
             or tuple(sorted(set(matrix_indices)))!=tuple(matrix_indices)
@@ -305,7 +313,8 @@ def decode_spline(raw, body):
                           source_first_translate=raw['source_first_translate'],
                           source_world_controls=raw['source_world_controls'],source_mode=source_mode,
                           source_fit_control_count=fit_count,source_scale_indices=tuple(scale_indices),source_ik_chain=tuple(native),source_solver_tail=solver_tail,
-                          source_simple_twist=simple,source_forward_axis=forward,source_start_volume=start_volume)
+                          source_simple_twist=simple,source_forward_axis=forward,source_start_volume=start_volume,
+                          source_local_scale_indices=tuple(local_indices))
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

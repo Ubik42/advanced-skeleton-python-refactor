@@ -479,8 +479,8 @@ class FitBendyChainSpec:
         if not 0 <= sample_index <= len(self.part_names):
             raise ValueError("Bendy 采样编号超出 Body／Part 链")
         # MEL samples world distance against child.tx at graph assembly.
-        # OPM assembly captures the complete bind span before reparenting;
-        # traditional assembly retains the final local subsegment.
+        # Source assembly records the complete span before Part parenting.
+        # The legacy fallback remains for older saved generic graphs.
         total = (dist(self.start_position, self.end_position)
                  if self.legacy_full_span_weights else
                  self.falloff_span if self.falloff_span is not None else

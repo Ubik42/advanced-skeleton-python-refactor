@@ -1575,6 +1575,8 @@ class MayaCharacterRegistryMixin:
         audit_ik_frames(self,plan)
         from .maya_source_inbetween_matrix import audit_registered as audit_source_inbetween
         audit_source_inbetween(self,plan)
+        from .maya_source_nonopm_parts import audit_registered as audit_source_part_receivers
+        audit_source_part_receivers(self,plan)
         from .maya_source_body_matrix import audit_fk
         audit_fk(self,plan)
         from .maya_source_part_reference import audit_registered as audit_twist_references

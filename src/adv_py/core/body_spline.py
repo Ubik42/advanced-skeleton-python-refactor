@@ -98,6 +98,7 @@ class BodySplinePlan:
     source_simple_twist: bool | None = None
     source_forward_axis: int | None = None
     source_start_volume: bool = False
+    source_local_scale_indices: tuple[int,...] = ()
 
     @property
     def simple_twist(self):
@@ -343,7 +344,9 @@ class BodySplinePlan:
                          for i in range(1, len(self.source_curve_points)-1))
         outputs=tuple(f'AdvPy_Spline{kind}{i}' for i in range(1,len(self.body_joints))
                       for kind in (('Length',) if i in self.source_body_matrix_indices
+                                   else ('Point','Orient','Length') if i in self.source_local_scale_indices
                                    else ('Point','Orient','Scale','Length','FKWorldScale','IKWorldScale')))
+        outputs+=tuple(f'AdvPy_SplineBody{i}ScaleBlend' for i in self.source_local_scale_indices)
         outputs+=tuple(f'AdvPy_SplineLength{key}' for key in self.native_keys if not isinstance(key,int))
         if self.source_solver_tail is not None:
             outputs+=('AdvPy_SplineLengthTail','AdvPy_SplineLengthBlendTail')+tuple(

@@ -180,7 +180,12 @@ def encode_registration(registration):
 
 
 def decode_registration(text):
-    doc = exact(safe_json(text), ("format","version","payload","digest"))
+    # Multiple original Spline systems carry their complete bounded native
+    # graphs. A count rebuild lengthens names with a staging namespace and
+    # can exceed the old single-character 2 MB budget without adding joints.
+    # Keep the small default for individual records and a finite 8 MB budget
+    # for the complete character, still validating every payload below.
+    doc = exact(safe_json(text,max_bytes=8_000_000), ("format","version","payload","digest"))
     if doc["format"] != FORMAT or type(doc["version"]) is not int or doc["version"] not in (1, 2, 3, 4, 5, 6, 7):
         raise CharacterRegistryError("不支持的角色登记版本")
     if not isinstance(doc['payload'],dict):

@@ -157,7 +157,9 @@ class MayaBodyFkScaleCompensationMixin:
         c.connectAttr(spec.control_path + ".inheritScale",
                       pick + ".useScale")
         if spec.use_offset_parent_matrix or spec.use_fkx_world_source:
-            c.setAttr(pick + ".useShear", False)
+            # MEL skips FK control/NoShear for un-authored leaf ends. Their
+            # FKX still inherits the complete parent frame, including shear.
+            c.setAttr(pick + ".useShear", spec.source_end_passthrough)
         else:
             c.connectAttr(spec.control_path + ".inheritScale",
                           pick + ".useShear")
@@ -252,7 +254,7 @@ class MayaBodyFkScaleCompensationMixin:
             (spec.control_path + ".inheritScale", pick + ".useScale"),
         )
         if spec.use_offset_parent_matrix or spec.use_fkx_world_source:
-            if (bool(c.getAttr(pick + ".useShear"))
+            if (bool(c.getAttr(pick + ".useShear")) != spec.source_end_passthrough
                     or c.connectionInfo(pick + ".useShear",
                                         sourceFromDestination=True)):
                 return False

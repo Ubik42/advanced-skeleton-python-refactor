@@ -31,6 +31,7 @@ class BodyFkScaleCompensationSpec:
     mel_non_opm_fkps_enabled: bool = True
     parent_fk_control_path: str | None = None
     use_fkx_world_source: bool = False
+    source_end_passthrough: bool = False
 
     @property
     def fkps1_name(self) -> str:
@@ -160,6 +161,9 @@ def plan_body_fk_scale_compensation(
             parent_source.rsplit("|", 1)[-1] if parent_source else "",
             use_offset_parent_matrix=use_offset_parent_matrix,
             is_finger=control.control_path in finger_control_paths)
+        source_end = (use_offset_parent_matrix and not fit.control
+                      and output_by_source_side.get((source, control.side))
+                      not in parent_outputs)
         prefix = "AdvPy_" + leaf + "_FkScaleComp"
         spec = BodyFkScaleCompensationSpec(
             control.offset_path, control.parent_path,
@@ -169,7 +173,7 @@ def plan_body_fk_scale_compensation(
              and parent_control.source_override_path is not None
              else parent_control.sub_control_path
              or parent_control.control_path),
-            control.control_path, not enabled, use_offset_parent_matrix,
+            control.control_path, source_end or not enabled, use_offset_parent_matrix,
             control.world_position, control.world_axes,
             prefix + "World", prefix + "Pick",
             prefix + "Relative", prefix + "Decompose",
@@ -187,7 +191,8 @@ def plan_body_fk_scale_compensation(
             use_fkx_world_source=(
                 use_offset_parent_matrix
                 and parent_control.source_override_joint
-                and parent_control.source_override_path is not None))
+                and parent_control.source_override_path is not None),
+            source_end_passthrough=source_end)
         if any(name in names for name in spec.node_names):
             raise ValueError("FK 缩放补偿节点名称重复：" + leaf)
         names.update(spec.node_names)

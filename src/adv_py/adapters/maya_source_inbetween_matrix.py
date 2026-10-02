@@ -94,13 +94,19 @@ def configure_fk(host,fk,segments,global_control,metadata,instances):
         if fit is None:
             fit=next((item for item in metadata if item.joint.rsplit('|',1)[-1].rsplit(':',1)[-1] in control.fit_joint_names),None)
         if fit is None:raise CharacterRegistryError('来源 Inbetween 下游缺少 Fit 身份')
+        source_output=next((item.output_path for item in instances
+                           if item.source_joint==fit.joint and item.side==control.side),None)
+        source_end=(source_output is not None and not fit.control
+                    and not any(item.parent_output_path==source_output for item in instances))
         if not c.objExists(control.control_path+'.inheritScale'):
-            c.addAttr(control.control_path,longName='inheritScale',attributeType='bool',defaultValue=not fit_segment_scale_compensate(
+            c.addAttr(control.control_path,longName='inheritScale',attributeType='bool',defaultValue=source_end or not fit_segment_scale_compensate(
                 fit,control.fit_joint_names[0],built.fk.anchor.start_body_name.rsplit('_',1)[0],use_offset_parent_matrix=True))
         stem='AdvPy_'+body_name+'_SourceInbetweenEnd';world=stem+'NoShearMM';pick=stem+'NoShearPM';matrix=stem+'MM'
         for name,kind in ((world,'multMatrix'),(pick,'pickMatrix'),(matrix,'multMatrix')):c.createNode(kind,name=name,skipSelect=True)
         c.setAttr(world+'.matrixIn[0]',*translation,type='matrix');c.connectAttr(last+'.worldMatrix[0]',world+'.matrixIn[1]')
-        c.connectAttr(world+'.matrixSum',pick+'.inputMatrix');c.setAttr(pick+'.useShear',False)
+        # MEL creates a static FKX below the final Part FKX for a leaf with
+        # no authored control. It does not insert the ordinary FK NoShear.
+        c.connectAttr(world+'.matrixSum',pick+'.inputMatrix');c.setAttr(pick+'.useShear',source_end)
         c.connectAttr(control.control_path+'.inheritScale',pick+'.useScale')
         main,reverse=_main(host,stem,global_control.control_path,control.control_path)
         c.setAttr(matrix+'.matrixIn[0]',*rotation,type='matrix');c.connectAttr(main+'.outputMatrix',matrix+'.matrixIn[1]')
