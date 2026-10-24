@@ -80,15 +80,18 @@ def _create_straight_shoulder(s,vertices):
     shoulder=_position(c,'asFitPivotShoulder')
     c.xform('asFitShoulderStraight',worldSpace=True,
             translation=(shoulder[0],(armpit[1]+neck[1])/2.,(armpit[2]+neck[2])/2.))
-    cluster=c.skinCluster(('asFitShoulderStraight','asFitShoulderStraightBase'),
-        'CombinedSkinUpper_M',name='CombinedSkinUpperSC_M',toSelectedBones=True,
-        maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False)[0]
-    c.skinPercent(cluster,'CombinedSkinUpper_M',transformValue=[('asFitShoulderStraightBase',1.)])
-    c.skinPercent(cluster,vertices,transformValue=[('asFitShoulderStraight',1.)])
+    from .maya_fit_auto_place_fingers import stock_selected
+    c.select('asFitShoulderStraight','asFitShoulderStraightBase','CombinedSkinUpper_M',replace=True)
+    created=stock_selected(s.host,'newSkinCluster "-toSelectedBones -mi 3 -dr 4 -rui false";')
+    c.rename(created[0],'CombinedSkinUpperSC_M')
+    c.skinPercent('CombinedSkinUpperSC_M','CombinedSkinUpper_M',transformValue=[('asFitShoulderStraightBase',1.)])
+    c.skinPercent('CombinedSkinUpperSC_M',vertices,transformValue=[('asFitShoulderStraight',1.)])
+    c.select('CombinedSkinUpper_M',replace=True)
     c.deltaMush('CombinedSkinUpper_M',name='asFitDeltaMush',smoothingIterations=30,
                 smoothingStep=.5,pinBorderVertices=True,envelope=1.)
     c.refresh()
-    temp=c.createNode('transform',name='tempXform1',parent='AutoPlacing',skipSelect=True)
+    temp='tempXform1'
+    c.createNode('transform',name=temp,parent='AutoPlacing',skipSelect=True)
     c.pointConstraint('asFitShoulderStraight',temp)
     c.aimConstraint('asFitPivotArmTip',temp,offset=(0,0,0),weight=1.,
                     aimVector=(-1,0,0),upVector=(0,1,0),worldUpType='scene')
@@ -152,18 +155,19 @@ def _straighten_elbow(s):
     c.skinPercent('CombinedSkinUpperSC_M',c.ls(selection=True),
                   transformValue=[('asFitElbowStraight',1.)])
     c.polySelectConstraint(mode=0)
-    locator=c.spaceLocator(name='tempLoc1')[0]
+    locator='tempLoc1'
+    c.spaceLocator(name=locator)
     c.parent(locator,'AutoPlacing',absolute=True)
     split=_position(c,'asFitPivotFirstNonFingerSplit')
     elbow=_position(c,'asFitElbowStraight')
     c.xform(locator,worldSpace=True,translation=split)
     c.parentConstraint('asFitElbowStraight','asFitPivotsFingers',maintainOffset=True)
-    constraint=c.aimConstraint(locator,'asFitElbowStraight',maintainOffset=True,
-        weight=1.,aimVector=(0,-1,0),upVector=(-1,0,0),worldUpType='scene')[0]
+    c.aimConstraint(locator,'asFitElbowStraight',maintainOffset=True,
+        weight=1.,aimVector=(0,-1,0),upVector=(-1,0,0),worldUpType='scene')
     c.refresh()
     c.xform(locator,worldSpace=True,translation=(split[0],split[1],elbow[2]))
     c.refresh()
-    c.delete(constraint,locator)
+    c.delete('asFitElbowStraight_aimConstraint1',locator)
     c.setAttr('asFitScanCurve.translateX',current)
 
 

@@ -11,13 +11,13 @@ from .maya_face import MayaFaceHost
 class MayaSourceSkeletonFitHost(MayaFaceHost):
     def capture_name_matcher_skin_boundary(self, root: str) -> tuple:
         """Track source skins by UUID so DAG renames cannot disguise a break."""
-        from maya import cmds as c
-
-        paths = c.ls(root, long=True, type='joint') or []
-        if len(paths) != 1:
+        c=getattr(self._cmds,'raw',self._cmds)
+        paths = c.ls(root, long=True) or []
+        if len(paths) != 1 or c.nodeType(paths[0]) not in ('joint','transform'):
             raise ValueError('NameMatcher 来源骨架不唯一')
-        joints = [paths[0], *(c.listRelatives(paths[0],
+        joints = [*(c.listRelatives(paths[0],
             allDescendents=True, fullPath=True, type='joint') or ())]
+        if c.nodeType(paths[0])=='joint':joints.insert(0,paths[0])
         ids = {item for joint in joints
             for item in (c.ls(joint, uuid=True) or ())}
         rows = []

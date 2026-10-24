@@ -6,6 +6,14 @@ from adv_py.core.corrective_shapes import corrective_pose_command_rows
 
 
 class MayaOriginalDriverAttributesMixin:
+    def _original_pose_address(self,address):
+        """Resolve a saved original control role at the existing host boundary."""
+        node,separator,attribute=address.partition('.')
+        if self._cmds.objExists(node):return address
+        from .maya_original_control_identity import source_control_from_role
+        target=source_control_from_role(self,node)
+        return target+(separator+attribute if separator else '')
+
     def _original_driver_time_input(self, destination):
         """Find a time curve through scalar unit conversions only."""
         raw=getattr(self._cmds,"raw",self._cmds)
@@ -126,7 +134,7 @@ class MayaOriginalDriverAttributesMixin:
                 except ValueError:
                     pass
                 if numeric is not None:
-                    c.setAttr(tokens[1], numeric)
+                    c.setAttr(self._original_pose_address(tokens[1]), numeric)
                     continue
             if tokens and tokens[0] == "xform":
                 # Decode every token, so unsupported flags cannot be silently
@@ -157,7 +165,7 @@ class MayaOriginalDriverAttributesMixin:
                         valid = False
                         break
                 if valid and options and index == len(tokens) - 1 and not tokens[-1].startswith("-"):
-                    c.xform(tokens[-1], **options)
+                    c.xform(self._original_pose_address(tokens[-1]), **options)
                     continue
             # User-authored run/udExtraAttr statements retain native eval;
             # neither sourcing ADV nor pretending an ignored command succeeded.
@@ -169,37 +177,56 @@ class MayaOriginalDriverAttributesMixin:
                 with namespace():
                     mel.eval(statement + ";")
 
-    def go_to_original_corrective_build_pose(self, *, face=None):
+    def go_to_original_corrective_build_pose(self, *, face=None, t_pose=False, preserve_main=False):
         """asGoToBuildPose catches each failed channel and continues the pose."""
         self._require_transaction();self._transaction_changed=True
         c=self._cmds;failed=[]
-        def apply(text):
+        def apply(text, *, skip_main=False):
             for statement in (text or "").split(";"):
+                if skip_main and 'Main.' in statement:continue
                 try:self._original_apply_pose_commands(statement)
                 except RuntimeError:failed.append(statement)
         for node,reader in (("buildPose",self.read_body_build_pose),("faceBuildPose",self.read_face_build_pose)):
             if face is not None and (node=="faceBuildPose")!=face:continue
             if not c.objExists(node):continue
-            if c.objExists(node+".udAttr"):apply(c.getAttr(node+".udAttr"))
+            if c.objExists(node+".udAttr"):apply(c.getAttr(node+".udAttr"),skip_main=preserve_main)
             elif c.objExists(node+".advPyPoseData"):
                 for item in reader().values:
                     plug=item.node+"."+item.attribute
+                    if preserve_main and self._original_pose_address('Main')==item.node:continue
                     try:c.setAttr(plug,item.value)
                     except RuntimeError:failed.append(plug)
-            if c.objExists(node+".udExtraAttr"):apply(c.getAttr(node+".udExtraAttr"))
-        for fit in ("FitSkeleton","FaceFitSkeleton"):
-            if face is not None and (fit=="FaceFitSkeleton")!=face:continue
-            if c.objExists(fit+".run"):apply(c.getAttr(fit+".run"))
+            if c.objExists(node+".udExtraAttr"):apply(c.getAttr(node+".udExtraAttr"),skip_main=preserve_main)
+        if t_pose:
+            from .maya_original_t_pose import apply as apply_t_pose
+            apply_t_pose(self)
         if c.objExists("GRP_faceGUI"):
+            from .maya_original_control_identity import leaf
             for control in c.listRelatives("GRP_faceGUI",allDescendents=True,type="transform") or []:
-                leaf=self._original_restore_leaf(control)
-                if not leaf.startswith("CTRL_") or "CTRL_faceGUI" in leaf:continue
+                name=leaf(control)
+                if not name.startswith("CTRL_") or "CTRL_faceGUI" in name:continue
                 for attr in c.listAttr(control,keyable=True) or []:
                     plug=control+"."+attr
                     if c.getAttr(plug,settable=True):c.setAttr(plug,1 if attr.startswith("scale") or attr=="visibility" else 0)
         raw=getattr(c,"raw",c)
+        # asGoToBuildPose resets the original wheel/rolling-ball expression
+        # state before executing the Fit run commands. A custom run value must
+        # remain the final authored override, including MetaHuman GUI values.
+        for expression in raw.ls(type='expression') or ():
+            if 'WheelExpression_' not in expression:continue
+            for control in raw.listConnections(expression,source=False,destination=True,type='transform') or ():
+                if not raw.objExists(control+'.reset'):continue
+                raw.setAttr(control+'.reset',1)
+                raw.currentTime(raw.currentTime(query=True))
+                raw.setAttr(control+'.reset',0)
+        for fit in ("FitSkeleton","FaceFitSkeleton"):
+            if face is not None and (fit=="FaceFitSkeleton")!=face:continue
+            if c.objExists(fit+".run"):apply(c.getAttr(fit+".run"))
         raw.dgdirty(allPlugs=True)
         return tuple(failed)
+
+    def go_to_original_t_pose(self):
+        return self.go_to_original_corrective_build_pose(face=False,t_pose=True)
 
     def original_driver_uses_opm(self):
         c=self._cmds

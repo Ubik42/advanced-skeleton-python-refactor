@@ -17,16 +17,21 @@ class MayaBodyPoleAimMixin:
         if any(self.find_name_collisions(name) for name in spec.node_names):
             raise FitSkeletonValidationError('PoleAim 节点名称已占用')
         self._transaction_changed = True
-        frame = c.createNode('transform', name=spec.frame_name,
-                             parent=spec.ik_root, skipSelect=True)
-        c.xform(frame, worldSpace=True,
-                translation=c.xform(spec.parent_source, query=True,
-                                    worldSpace=True, translation=True))
-        c.xform(frame, worldSpace=True,
-                rotation=c.xform(spec.parent_source, query=True,
-                                 worldSpace=True, rotation=True))
-        c.parentConstraint(spec.parent_source, frame, maintainOffset=False,
-                           name=spec.frame_name + 'Constraint')
+        if spec.source_frame:
+            frame = spec.source_frame
+            if (c.ls(frame, long=True) or []) != [frame]:
+                raise FitSkeletonValidationError('PoleAim 原版 IK 起点参考缺失')
+        else:
+            frame = c.createNode('transform', name=spec.frame_name,
+                                 parent=spec.ik_root, skipSelect=True)
+            c.xform(frame, worldSpace=True,
+                    translation=c.xform(spec.parent_source, query=True,
+                                        worldSpace=True, translation=True))
+            c.xform(frame, worldSpace=True,
+                    rotation=c.xform(spec.parent_source, query=True,
+                                     worldSpace=True, rotation=True))
+            c.parentConstraint(spec.parent_source, frame, maintainOffset=False,
+                               name=spec.frame_name + 'Constraint')
         aligned = c.createNode('transform', name=spec.aligned_name,
                                parent=spec.ankle_frame_parent, skipSelect=True)
         # MEL 80914 aligns IKFKAlignedOffset to the deformation end joint,
@@ -54,15 +59,31 @@ class MayaBodyPoleAimMixin:
         local = c.createNode('multMatrix', name=spec.local_name)
         c.connectAttr(swivel + '.outputMatrix', local + '.matrixIn[0]')
         c.connectAttr(matrix + '.outputMatrix', local + '.matrixIn[1]')
-        c.connectAttr(spec.ik_root + '.worldInverseMatrix[0]',
-                      local + '.matrixIn[2]')
-        c.connectAttr(local + '.matrixSum', aim + '.offsetParentMatrix')
+        if spec.source_frame:
+            if spec.use_offset_parent_matrix:
+                c.connectAttr(local+'.matrixSum', aim+'.offsetParentMatrix')
+            else:
+                dm = c.createNode('decomposeMatrix', name=spec.aim_name+'DM')
+                c.setAttr(dm+'.inputRotateOrder', c.getAttr(aim+'.rotateOrder'))
+                c.connectAttr(local+'.matrixSum', dm+'.inputMatrix')
+                for kind in ('Translate', 'Rotate', 'Scale'):
+                    for axis in 'XYZ':
+                        c.connectAttr(dm+'.output'+kind+axis, aim+'.'+kind.lower()+axis)
+                for axis, component in zip('XYZ', ('XY', 'XZ', 'YZ')):
+                    c.connectAttr(dm+'.outputShear'+axis, aim+'.shear'+component)
+            c.xform(aim, objectSpace=True, translation=(0.,0.,0.), rotation=(0.,0.,0.))
+        else:
+            c.connectAttr(spec.ik_root+'.worldInverseMatrix[0]', local+'.matrixIn[2]')
+            c.connectAttr(local+'.matrixSum', aim+'.offsetParentMatrix')
         target = c.createNode('transform', name=spec.target_name,
                               parent=aim, skipSelect=True)
         c.xform(target, worldSpace=True,
                 translation=c.xform(spec.pole_offset, query=True,
                                     worldSpace=True, translation=True))
-        if spec.aligned_orientation_source:
+        if spec.source_frame:
+            # MEL 81765 aligns translation only before absolute parenting.
+            c.xform(target, worldSpace=True, rotation=(0.,0.,0.))
+        elif spec.aligned_orientation_source:
             c.xform(target,worldSpace=True,rotation=c.xform(
                 spec.pole_offset,query=True,worldSpace=True,rotation=True))
         c.disconnectAttr(c.connectionInfo(spec.handle_twist,sourceFromDestination=True), spec.handle_twist)
@@ -84,14 +105,15 @@ class MayaBodyPoleAimMixin:
         for path, kind in expected:
             if (c.ls(path, long=True, type=kind) or []) != [path]:
                 raise FitSkeletonValidationError('PoleAim 节点缺失：' + path)
-        constraint = spec.frame_name + 'Constraint'
-        if not c.objExists(constraint) or c.nodeType(constraint) != 'parentConstraint':
-            raise FitSkeletonValidationError('PoleAim 父级参考约束缺失')
-        sources = c.parentConstraint(constraint, query=True,
-                                     targetList=True) or []
-        if tuple(self._resolve_connected_node(node)
-                 for node in sources) != (spec.parent_source,):
-            raise FitSkeletonValidationError('PoleAim 父级参考框架变化')
+        if not spec.source_frame:
+            constraint = spec.frame_name + 'Constraint'
+            if not c.objExists(constraint) or c.nodeType(constraint) != 'parentConstraint':
+                raise FitSkeletonValidationError('PoleAim 父级参考约束缺失')
+            sources = c.parentConstraint(constraint, query=True,
+                                         targetList=True) or []
+            if tuple(self._resolve_connected_node(node)
+                     for node in sources) != (spec.parent_source,):
+                raise FitSkeletonValidationError('PoleAim 父级参考框架变化')
         if spec.follow_name:
             if (not c.objExists(spec.follow_name)
                     or c.nodeType(spec.follow_name) != 'parentConstraint'):
@@ -113,11 +135,24 @@ class MayaBodyPoleAimMixin:
              spec.local_name + '.matrixIn[0]'),
             (spec.matrix_name + '.outputMatrix',
              spec.local_name + '.matrixIn[1]'),
-            (spec.ik_root + '.worldInverseMatrix[0]',
-             spec.local_name + '.matrixIn[2]'),
-            (spec.local_name + '.matrixSum',
-             spec.aim_path + '.offsetParentMatrix'),
         )
+        if spec.source_frame:
+            if spec.use_offset_parent_matrix:
+                edges += ((spec.local_name+'.matrixSum', spec.aim_path+'.offsetParentMatrix'),)
+            else:
+                dm = spec.aim_name+'DM'
+                if c.nodeType(dm) != 'decomposeMatrix' or c.getAttr(dm+'.inputRotateOrder') != c.getAttr(spec.aim_path+'.rotateOrder'):
+                    raise FitSkeletonValidationError('PoleAim 原版分解矩阵变化')
+                edges += ((spec.local_name+'.matrixSum', dm+'.inputMatrix'),)
+                edges += tuple((dm+'.output'+kind+axis, spec.aim_path+'.'+kind.lower()+axis)
+                               for kind in ('Translate','Rotate','Scale') for axis in 'XYZ')
+                edges += tuple((dm+'.outputShear'+axis, spec.aim_path+'.shear'+component)
+                               for axis,component in zip('XYZ',('XY','XZ','YZ')))
+            if c.connectionInfo(spec.local_name+'.matrixIn[2]', sourceFromDestination=True):
+                raise FitSkeletonValidationError('PoleAim 原版输出多出了父级逆矩阵')
+        else:
+            edges += ((spec.ik_root+'.worldInverseMatrix[0]', spec.local_name+'.matrixIn[2]'),
+                      (spec.local_name+'.matrixSum', spec.aim_path+'.offsetParentMatrix'))
         if any(not c.isConnected(source, target,ignoreUnitConversion=True)
                for source, target in edges):
             raise FitSkeletonValidationError('PoleAim 矩阵或 swivel 连接不完整')

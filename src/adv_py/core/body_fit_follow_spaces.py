@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .fit_metadata import FitJointMetadata
+from .source_fit_identity import source_fit_build_name, source_fit_control_matches
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,10 +25,15 @@ class BodyFitFollowSpacesSpec:
     targets: tuple[BodyFitFollowSpaceTarget, ...]
     blend_node: str
     output_node: str
+    source_native: bool = False
+    use_offset_parent_matrix: bool = True
+    source_rp: bool = False
+    source_rp_pole_target: str | None = None
 
     @property
     def node_names(self) -> tuple[str, ...]:
-        return (self.blend_node, self.output_node) + tuple(
+        return (self.blend_node,) + (() if (self.source_native or self.source_rp) and self.use_offset_parent_matrix
+                                    else (self.output_node,)) + tuple(
             node for target in self.targets
             for node in (target.matrix_node, target.weight_node))
 
@@ -45,7 +51,8 @@ class BodyFitFollowSpacesState:
 def plan_body_fit_follow_spaces(
     metadata: tuple[FitJointMetadata, ...], controls: tuple,
     body_joints: tuple, *, main_path: str, root_path: str,
-    main_extra_paths: tuple[str, ...] = (),
+    main_extra_paths: tuple[str, ...] = (), instances: tuple = (),
+    source_native: bool = False, use_offset_parent_matrix: bool = True,
 ) -> tuple[BodyFitFollowSpacesSpec, ...]:
     if (not isinstance(main_extra_paths, tuple)
             or any(not isinstance(path, str) or not path.startswith("|")
@@ -68,8 +75,10 @@ def plan_body_fit_follow_spaces(
         if not item.follow_spaces:
             continue
         source_name = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if instances:
+            source_name = source_fit_build_name(source_name)
         for control in controls:
-            if source_name not in control.fit_joint_names:
+            if not source_fit_control_matches(item, control, instances):
                 continue
             if control.control_path in used:
                 raise ValueError("Follow Spaces 来源 FK 控制重复："
@@ -118,7 +127,8 @@ def plan_body_fit_follow_spaces(
             result.append(BodyFitFollowSpacesSpec(
                 source_body, control.control_path, control.offset_path,
                 control.offset_path.rsplit("|", 1)[0], targets,
-                stem + "BM", stem + "OutputMM"))
+                stem + "BM", stem + ("OutputDM" if source_native and not use_offset_parent_matrix else "OutputMM"),
+                source_native, use_offset_parent_matrix))
     names = tuple(name for spec in result for name in spec.node_names)
     if len(names) != len(set(names)):
         raise ValueError("Follow Spaces 生成节点名称重复")

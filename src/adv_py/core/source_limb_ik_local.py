@@ -68,9 +68,9 @@ def plan_source_internal_ik_local(body,fk,limbs,metadata, *,instances=()):
     return tuple(rows)
 
 
-def configure_source_limb_ik(ik,mechanisms,body,metadata,end_name, *,instances=(),source_pole_placement=True):
+def configure_source_limb_ik(ik,mechanisms,body,metadata,end_name, *,instances=(),source_pole_placement=True,fit_hierarchy=None):
     by_name={joint.name:joint for joint in body.joints}
-    from .source_fit_identity import source_fit_metadata,source_fit_reference
+    from .source_fit_identity import source_fit_metadata,source_fit_reference,source_fit_ik_length
     specs=[]
     for spec in ik.limbs:
         end=by_name[end_name+'_'+spec.side.value]
@@ -94,8 +94,11 @@ def configure_source_limb_ik(ik,mechanisms,body,metadata,end_name, *,instances=(
             source_pole_joint_paths=(tuple(joint.source_joint for joint in chain)
                                      if source_pole_placement else ()),
             source_pole_middle_index=index,
-            source_pole_length=sum(sum((x-y)**2 for x,y in zip(a.world_position,
-                b.world_position))**.5 for a,b in reversed(tuple(zip(chain,chain[1:])))),
+            source_pole_length=(source_fit_ik_length(fit_hierarchy,
+                start.source_joint.rsplit('|',1)[-1].rsplit('_',1)[0],end_name)
+                if fit_hierarchy is not None else
+                sum(sum((x-y)**2 for x,y in zip(a.world_position,
+                    b.world_position))**.5 for a,b in reversed(tuple(zip(chain,chain[1:]))))),
             source_fit_joint_names=((source_fit_reference(end.name,instances)
                 or end.name.rsplit('_',1)[0]).rsplit('|',1)[-1].rsplit(':',1)[-1],),
             source_align_joint_path=end.path,

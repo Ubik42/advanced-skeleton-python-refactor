@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 TONGUE_FIT_NAMES = ("FaceFitTongue", "FaceFitTongueGeo", "FaceFitTongueCurve",
-                    "FaceFitTongueLoc", "TongueCurve", "TongueCylinder",
+                    "FaceFitTongueLoc", "TongueCurve",
                     *(f"Tongue{i}" for i in range(5)))
 GNM_TONGUE_JAW_FACES = ("14566:14597","14614:14625","14658:14661","14674:14677",
     "14682:14729","14750:14765","14806:14837","14898:14901","14906:14909",

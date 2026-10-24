@@ -40,7 +40,7 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,
     # MEL analyzes listRelatives -ad, then creates all source-side handles
     # before the mirrored side. Alphabetical limb planning is a different
     # order and changes objExists-based Pole.lock targets.
-    source_by_output={instance.output_name:instance.source_joint for instance in instances}
+    instance_by_output={instance.output_name:instance for instance in instances}
     fit_roots={instance.source_joint.split('|')[1] for instance in instances
                if instance.source_joint.startswith('|')}
     source_order={}
@@ -52,8 +52,11 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,
     def source_key(pair):
         limb,ik=pair
         end=next(joint.source_joint for joint in limb.mechanisms.joints if joint.path==ik.chain[-1])
-        source=source_by_output.get(end.rsplit('|',1)[-1])
-        return (ik.side.value=='L',source_order.get(source,len(source_order)))
+        instance=instance_by_output.get(end.rsplit('|',1)[-1].rsplit(':',1)[-1])
+        source=instance.source_joint if instance is not None else None
+        # Authored left/noMirror branches are in b=1, regardless of _L suffix.
+        mirrored=instance.mirrored if instance is not None else ik.side.value=='L'
+        return (mirrored,source_order.get(source,len(source_order)))
     pairs.sort(key=source_key)
     for limb,ik in pairs:
         stem='AdvPy_'+limb.label+'_RP_'+ik.side.value
@@ -84,7 +87,8 @@ def create(host,body,limbs,global_control,internal_local=(),root_follow=None, *,
                 if leg_targets.get(ik.side.value) and c.objExists(leg_targets[ik.side.value]) else None),
             source_x_translation=source_x_translation,
             pole_sign=source_fit_side_sign(end_body.rsplit('|',1)[-1],instances),
-            allow_shortening=ik.chain[0]==ik.chain[1])
+            allow_shortening=ik.chain[0]==ik.chain[1],
+            fit_rest_length=ik.source_pole_length if ik.source_original_pole else None)
         if any(host.find_name_collisions(name) for name in
                (start_name,target_name,*(node.name for node in plan.nodes))):
             raise CharacterRegistryError('来源 RP 拉伸网络名称被占用：'+limb.label)
@@ -213,6 +217,7 @@ def audit(host,registration):
     """Require persisted native graphs through save, namespace and rebuild."""
     from adv_py.core.source_rp_dynamics import decode_source_rp_dynamics
     c=host._cmds
+    from .maya_character_body_retirement import is_connected_or_retired,retired_joint
     for binding in registration.source_limbs:
         if not binding.dynamics_root:
             continue
@@ -228,7 +233,7 @@ def audit(host,registration):
             if not c.objExists(node.name) or c.nodeType(node.name)!=node.kind:
                 raise CharacterRegistryError('来源 RP 原生驱动节点缺失：'+node.name)
             for source,attribute in node.connections:
-                if not c.isConnected(source,node.name+'.'+attribute):
+                if not is_connected_or_retired(host,source,node.name+'.'+attribute):
                     raise CharacterRegistryError('来源 RP 原生驱动连接变化：'+node.name+'.'+attribute)
             for attribute,value in node.values:
                 plug=node.name+'.'+attribute
@@ -242,7 +247,7 @@ def audit(host,registration):
                 if abs(float(c.getAttr(plug))-expected)>1e-8:
                     raise CharacterRegistryError('来源 RP 原生驱动常量变化：'+node.name+'.'+attribute)
         for source,destination in plan.outputs:
-            if not c.isConnected(source,destination):
+            if not is_connected_or_retired(host,source,destination):
                 raise CharacterRegistryError('来源 RP 拉伸或体积输出变化：'+destination)
         if c.objExists(plan.start_anchor+'.advPySourceRpXTranslation'):
             for segment in plan.segments:
@@ -254,6 +259,7 @@ def audit(host,registration):
         for _,destination in plan.outputs:
             if destination.endswith('.offsetParentMatrix'):
                 joint=destination.removesuffix('.offsetParentMatrix')
+                if retired_joint(host,joint) is not None:continue
                 for attr,expected in (('translate',0.),('rotate',0.),('scale',1.),('jointOrient',0.)):
                     if any(abs(float(v)-expected)>1e-8 for v in c.getAttr(joint+'.'+attr)[0]):
                         raise CharacterRegistryError('来源 RP Inbetween OPM 本地变换未归零：'+joint)

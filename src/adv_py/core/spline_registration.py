@@ -55,7 +55,11 @@ def decode_spline(raw, body):
         if 'source_start_volume' not in raw:raw={**raw,'source_start_volume':False}
         if 'source_local_scale_indices' not in raw:raw={**raw,'source_local_scale_indices':[]}
         if 'source_native_follow' not in raw:raw={**raw,'source_native_follow':False}
+        if 'source_alignment_frames' not in raw:raw={**raw,'source_alignment_frames':False}
     exact(raw, (field.name for field in fields(BodySplinePlan)))
+    if (type(raw['source_alignment_frames']) is not bool
+            or raw['source_alignment_frames'] and not raw['source_curve_points']):
+        raise CharacterRegistryError('来源 Spline AlignIKTo 标记无效')
     if (type(raw['source_native_follow']) is not bool or raw['source_native_follow'] and
             (not raw['source_follow_parent'] or not raw['source_hybrid_graph'])):
         raise CharacterRegistryError('来源 Spline 原生跟随布局标记无效')
@@ -318,7 +322,8 @@ def decode_spline(raw, body):
                           source_world_controls=raw['source_world_controls'],source_mode=source_mode,
                           source_fit_control_count=fit_count,source_scale_indices=tuple(scale_indices),source_ik_chain=tuple(native),source_solver_tail=solver_tail,
                           source_simple_twist=simple,source_forward_axis=forward,source_start_volume=start_volume,
-                          source_local_scale_indices=tuple(local_indices),source_native_follow=raw['source_native_follow'])
+                          source_local_scale_indices=tuple(local_indices),source_native_follow=raw['source_native_follow'],
+                          source_alignment_frames=raw['source_alignment_frames'])
     if result.source_hybrid_graph and any(
             offset.rsplit('|',1)[0]!=result.target_parent(index)
             for index,offset in enumerate(result.offset_targets)):

@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import fields, is_dataclass, replace
+from dataclasses import replace
 
 from adv_py.core.body_game_root_motion import (
     GameRootMotionInput, GameRootMotionPlan, GameRootMotionState,
 )
 from adv_py.core.character_registry import (
-    REGISTRY_NAME, CharacterBindJoint, CharacterChannel,
+    REGISTRY_NAME, CharacterChannel,
     CharacterRegistration, encode_registration,
 )
 from .maya_source_parent_inverse import parent_world_inverse
@@ -34,65 +34,69 @@ class MayaBodyGameRootMotionMixin:
         plan: GameRootMotionPlan,
     ) -> None:
         """Rebase owned Body identities after the root joint changes parent."""
-        old_root = before.body_root
+        if before is None:
+            return
         new_root = self._root_motion_local(plan.body_path)
-        from .maya_source_limb_aim import rebase_registered_records
-        rebase_registered_records(self,before,((old_root,new_root),))
-        from .maya_source_rp_dynamics import rebase_records
-        rebase_records(self,(binding.dynamics_root for binding in before.source_limbs),
-                       ((old_root,new_root),))
-        from .maya_source_body_matrix import rebase_fk_records
-        rebase_fk_records(self,before,((old_root,new_root),))
-
-        from .maya_source_rp_follow import rebase_records as rebase_follow_records
-        rebase_follow_records(self,(binding.ik_control for binding in before.source_limbs),
-                       ((old_root,new_root),))
+        from adv_py.core.fit_part import FitPartFinalPaths, rebase_plan_paths_after_parts
+        from .maya_original_control_orient import _by_uuid, _parent
+        removed_paths = set() if plan.create else {
+            self._root_motion_local(value) for value in (
+                plan.joint_path, plan.offset_path, plan.follow_path,
+                plan.extra_path, plan.control_path)}
+        rewrites = []
+        retained = []
+        for node in before.nodes:
+            try:
+                current = _by_uuid(self, node.uuid)
+            except ValueError:
+                offset = self._root_motion_local(plan.offset_path)
+                if not plan.create and (node.path in removed_paths or node.path.startswith(offset + '|')):
+                    removed_paths.add(node.path)
+                    continue
+                raise
+            if self._cmds.nodeType(current) != node.node_type:
+                raise ValueError("Root Motion 改变了原节点类型")
+            retained.append(node)
+            if current != node.path:
+                rewrites.append((node.path, current))
+        mapping = FitPartFinalPaths((), (), tuple(rewrites))
+        if not plan.create:
+            from .maya_game_scaling_state import remember_removed_joints
+            remember_removed_joints(self, removed_paths)
+        from .maya_driving_registration import _rebase_records
+        _rebase_records(self, replace(before, nodes=tuple(retained)), mapping, (), None)
         def rewrite(value):
-            if isinstance(value, str):
-                if (value == old_root or value.startswith(old_root + "|")
-                        or value.startswith(old_root + ".")):
-                    return new_root + value[len(old_root):]
-                return value
-            if isinstance(value, tuple):
-                return tuple(rewrite(item) for item in value)
-            if isinstance(value, list):
-                return [rewrite(item) for item in value]
-            if isinstance(value, dict):
-                return {rewrite(key): rewrite(item)
-                        for key, item in value.items()}
-            if is_dataclass(value) and not isinstance(value, type):
-                return replace(value, **{
-                    field.name: rewrite(getattr(value, field.name))
-                    for field in fields(value) if field.init})
-            return value
+            return rebase_plan_paths_after_parts(value, mapping)
 
         body = tuple(replace(
             joint, path=rewrite(joint.path),
-            parent=(new_root.rsplit("|", 1)[0]
-                    if joint.path == old_root else rewrite(joint.parent)))
+            parent=_parent(self._cmds, rewrite(joint.path)))
             for joint in before.body)
         channels = tuple(rewrite(channel) for channel in before.channels)
         control = self._root_motion_local(plan.control_path)
         extra = self._root_motion_local(plan.extra_path)
         owned_controls = {control, extra}
         if plan.create:
+            key_prefix = "game.rootMotion."
+            if any(channel.key.startswith(key_prefix) for channel in channels):
+                key_prefix += plan.source.root_joint_name + "."
             channels += tuple(CharacterChannel(
-                "game.rootMotion." + kind + axis, control,
+                key_prefix + kind + axis, control,
                 kind + axis)
                 for kind in ("translate", "rotate")
                 for axis in "XYZ")
             channels += tuple(CharacterChannel(
-                "game.rootMotion.extra." + kind + axis, extra,
+                key_prefix + "extra." + kind + axis, extra,
                 kind + axis)
                 for kind in ("translate", "rotate")
                 for axis in "XYZ")
             channels += (CharacterChannel(
-                "game.rootMotion.followMain", control, "followMain",
+                key_prefix + "followMain", control, "followMain",
                 0.0, 10.0),)
         else:
             channels = tuple(channel for channel in channels
-                             if channel.node not in owned_controls)
-        paths = {rewrite(node.path) for node in before.nodes}
+                             if channel.node not in owned_controls and channel.node not in removed_paths)
+        paths = {rewrite(node.path) for node in retained}
         new_nodes = {self._root_motion_local(path) for path in (
             plan.joint_path, plan.offset_path, plan.follow_path,
             plan.extra_path, plan.control_path)}
@@ -102,7 +106,7 @@ class MayaBodyGameRootMotionMixin:
             paths.difference_update(new_nodes)
         # Preserve existing member order so create/delete restores the exact
         # original registration, including previously appended Part nodes.
-        ordered_paths = tuple(rewrite(node.path) for node in before.nodes
+        ordered_paths = tuple(rewrite(node.path) for node in retained
                               if rewrite(node.path) in paths)
         ordered_paths += tuple(sorted(paths.difference(ordered_paths)))
         user_plugs = {channel.node + "." + channel.attribute for channel in channels}
@@ -114,7 +118,7 @@ class MayaBodyGameRootMotionMixin:
         updated = CharacterRegistration(
             new_root, before.container, channels, body, nodes,
             rewrite(before.spine), rewrite(before.spaces),
-            rewrite(before.additional_spines),rewrite(before.source_limbs))
+            rewrite(before.additional_spines),rewrite(before.source_limbs),rewrite(before.retired_body))
         document = encode_registration(updated)
         c = self._cmds
         member_plug = REGISTRY_NAME + ".members"
@@ -137,106 +141,87 @@ class MayaBodyGameRootMotionMixin:
         c.setAttr(document_plug, document, type="string", lock=True)
         self.read_character_registration()
 
+    def capture_game_root_motion_creation_input(self) -> GameRootMotionInput:
+        return self._capture_game_root_motion_input(for_creation=True)
+
     def capture_game_root_motion_input(self) -> GameRootMotionInput:
+        return self._capture_game_root_motion_input(for_creation=False)
+
+    def _capture_game_root_motion_input(self, *, for_creation: bool) -> GameRootMotionInput:
         c = self._root_motion_cmds()
-        self._root_motion_node(REGISTRY_NAME, "network")
+        if self._cmds.objExists(REGISTRY_NAME):
+            self._root_motion_node(REGISTRY_NAME, "network")
         deformation = self._root_motion_node("DeformationSystem", "transform")
         root_system = self._root_motion_node("RootSystem", "transform")
         main_system = self._root_motion_node("MainSystem", "transform")
-        main = self._root_motion_node("AdvPy_Global", "transform")
+        from .maya_original_control_identity import source_main, original_character_height
+        main = self.scene_address(source_main(self))
         constraint_system = self._root_motion_node(
             "ConstraintSystem", "transform")
         control_set = self._root_motion_node("ControlSet", "objectSet")
         build_pose = self._root_motion_node("buildPose", "transform")
         body = self._root_motion_node("Root_M", "joint")
         prefix = self.namespace + ":" if self.namespace else ""
-        root_motion = c.ls(prefix + "RootMotion_M", long=True,
-                           type="joint") or []
+        root_name = "RootMotion_M"
+        options = prefix + "asCreateGameEngineRootMotionOptions"
+        if for_creation and c.objExists(options + ".useOldRootName"):
+            root_name = "root"
+        elif not for_creation and not c.objExists(prefix + root_name) and c.objExists(prefix + "root"):
+            root_name = "root"
+        root_motion = c.ls(prefix + root_name, long=True, type="joint") or []
         if len(root_motion) > 1:
             raise ValueError("Root Motion 关节不唯一")
-        if root_motion and (root_motion[0].rsplit("|", 1)[0] != deformation):
+        if root_motion and not root_motion[0].startswith(deformation + '|'):
             raise ValueError("Root Motion 关节不在 DeformationSystem 下")
-        if not root_motion and body.rsplit("|", 1)[0] != deformation:
+        if not body.startswith(deformation + "|"):
             raise ValueError("Body 根不在 DeformationSystem 下")
-        if root_motion and body.rsplit("|", 1)[0] != root_motion[0]:
-            raise ValueError("Root Motion 未承载当前 Body 根")
         fit = self._root_motion_node("FitSkeleton", "transform")
         opm = (bool(c.getAttr(fit + ".useOffsetParentMatrix"))
                if c.attributeQuery("useOffsetParentMatrix", node=fit,
                                    exists=True) else False)
-        joints = (c.listRelatives(body, allDescendents=True,
-                                  fullPath=True, type="joint") or []) + [body]
-        heights = [float(c.xform(path, query=True, worldSpace=True,
-                                 translation=True)[1]) for path in joints]
-        height = max(heights) - min(heights)
-        if height <= 0:
-            raise ValueError("Body 角色高度无效")
+        # asgetCharHeight reads Main.height, including its zero fallback. The
+        # source does not estimate the joint bounding box or clamp the radius.
+        height = original_character_height(c, self.namespace or '')
+        parent = deformation if for_creation else (root_motion[0] if root_motion else deformation)
+        children = tuple(c.listRelatives(parent, children=True,
+                                         fullPath=True, type="joint") or [])
+        range_name = None
+        if root_motion and c.objExists(root_motion[0] + '.advPyGameRootMotionRange'):
+            range_name = self.scene_address(c.getAttr(root_motion[0] + '.advPyGameRootMotionRange'))
+        constraint_name = None
+        if root_motion and c.objExists(root_motion[0] + '.advPyGameRootMotionConstraint'):
+            constraint_name = self.scene_address(c.getAttr(root_motion[0] + '.advPyGameRootMotionConstraint'))
         return GameRootMotionInput(
             deformation, root_system, main_system, main,
             constraint_system, body, control_set, build_pose, prefix,
-            height, opm, bool(root_motion))
+            height, opm, bool(root_motion), root_name, children, range_name, constraint_name,
+            root_motion[0] if root_motion else None)
 
     def preflight_game_root_motion(self, plan: GameRootMotionPlan) -> None:
         c = self._root_motion_cmds()
         if plan.create:
             for name in plan.node_names:
+                if name in (plan.range_name, plan.matrix_name, plan.body_constraint_name,
+                            plan.offset_path.rsplit('|', 1)[-1]):
+                    # Source deletes the prior Offset, reuses the MM and
+                    # keeps the literal Range target used by the source.
+                    continue
                 if c.objExists(name):
                     raise ValueError("Root Motion 节点名称已占用：" + name)
         else:
-            for path in (plan.joint_path, plan.offset_path,
-                         plan.follow_path, plan.extra_path,
-                         plan.control_path):
-                if not c.objExists(path):
-                    raise ValueError("Root Motion 控制层缺失：" + path)
+            if not c.objExists(plan.joint_path):
+                raise ValueError("Root Motion 关节缺失：" + plan.joint_path)
             for path in (plan.joint_path, plan.control_path):
-                if (not c.attributeQuery("advPyGameRootMotionOwner",
+                if not c.objExists(path):
+                    continue
+                if (c.attributeQuery("advPyGameRootMotionOwner",
                                          node=path, exists=True)
-                        or c.getAttr(path + ".advPyGameRootMotionOwner")
+                        and c.getAttr(path + ".advPyGameRootMotionOwner")
                         != "advanced-skeleton-python-refactor"):
                     raise ValueError("Root Motion 节点不属于当前实现：" + path)
-            children = c.listRelatives(
-                plan.joint_path, children=True,
-                fullPath=True) or []
-            if set(children) != {plan.source.body_root}:
-                raise ValueError("Root Motion 关节有未知子级，不能删除")
-            follow_constraint = c.ls(
-                plan.follow_constraint_name, long=True,
-                type="parentConstraint") or []
-            if len(follow_constraint) != 1:
-                raise ValueError("Root Motion 跟随约束缺失或歧义")
-            expected_children = (
-                (plan.offset_path, {plan.follow_path}),
-                (plan.follow_path,
-                 {plan.extra_path, follow_constraint[0]}),
-                (plan.extra_path, {plan.control_path}),
-            )
-            for path, expected in expected_children:
-                actual = set(c.listRelatives(
-                    path, children=True, fullPath=True) or [])
-                if actual != expected:
-                    raise ValueError("Root Motion 控制层含未知子节点：" + path)
-            shapes = c.listRelatives(
-                plan.control_path, children=True,
-                fullPath=True) or []
-            if (len(shapes) != 1 or
-                    c.nodeType(shapes[0]) != "nurbsCurve"):
-                raise ValueError("Root Motion 控制器含未知子节点")
-            for path in (plan.offset_path, plan.follow_path):
-                if (c.keyframe(path, query=True,
-                               keyframeCount=True) or 0) > 0:
-                    raise ValueError("Root Motion 控制父层已有动画：" + path)
-            for path in (plan.control_path, plan.extra_path):
-                if (c.keyframe(path, query=True, keyframeCount=True) or 0) > 0:
-                    raise ValueError("Root Motion 控制器已有动画，不能删除：" + path)
-                for kind, wanted in (("translate", 0.0),
-                                     ("rotate", 0.0), ("scale", 1.0)):
-                    if any(abs(float(c.getAttr(path + "." + kind + axis))
-                               - wanted) > 1e-6 for axis in "XYZ"):
-                        raise ValueError(
-                            "Root Motion 控制器未归零，不能删除：" + path)
-            if abs(float(c.getAttr(
-                    plan.control_path + ".followMain"))) > 1e-6:
-                raise ValueError("Root Motion followMain 未归零，不能删除")
+            # Source deletion moves all joint children back and removes the
+            # complete FKOffset hierarchy. It does not impose zero-pose,
+            # animation, curve-count or CustomOrient layout restrictions.
         for path in (plan.source.body_root, plan.source.control_set,
                      plan.source.build_pose, plan.source.deformation,
                      plan.source.root_system, plan.source.main_system):
@@ -247,7 +232,8 @@ class MayaBodyGameRootMotionMixin:
                                *, create: bool) -> None:
         c = self._root_motion_cmds()
         plug = plan.source.build_pose + ".advPyPoseData"
-        rows = json.loads(c.getAttr(plug))
+        has_pose_data = c.objExists(plug)
+        rows = json.loads(c.getAttr(plug)) if has_pose_data else []
         if (not isinstance(rows, list)
                 or any(not isinstance(row, list) or len(row) != 3
                        for row in rows)):
@@ -263,9 +249,18 @@ class MayaBodyGameRootMotionMixin:
                     if (c.getAttr(plug_name, keyable=True)
                             and c.getAttr(plug_name, settable=True)):
                         rows.append([path, attr, float(c.getAttr(plug_name))])
-            rows.append([plan.control_path, "followMain", 0.0])
-        c.setAttr(plug, json.dumps(rows, separators=(",", ":")),
-                  type="string")
+            # Source adds these two TRS commands to udExtraAttr. It does not
+            # introduce a separate followMain reset into this command.
+            command_plug = plan.source.build_pose + '.udExtraAttr'
+            if not c.objExists(command_plug):
+                c.addAttr(plan.source.build_pose, longName='udExtraAttr', dataType='string')
+            command = c.getAttr(command_plug) or ''
+            root_name = plan.source.root_joint_name
+            command += ('xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 FK' + root_name + ';'
+                        'xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 FKExtra' + root_name + ';')
+            c.setAttr(command_plug, command, type='string')
+        if has_pose_data:
+            c.setAttr(plug, json.dumps(rows, separators=(",", ":")), type="string")
         if not create:
             fit = self._root_motion_node("FitSkeleton", "transform")
             override_plug = fit + ".advPyBuildPoseOverrides"
@@ -280,70 +275,84 @@ class MayaBodyGameRootMotionMixin:
                           json.dumps(overrides, separators=(",", ":")),
                           type="string")
 
-    def apply_game_root_motion(self, plan: GameRootMotionPlan) -> None:
+    def apply_game_root_motion(self, plan: GameRootMotionPlan) -> GameRootMotionPlan:
         self._require_transaction()
         c = self._root_motion_cmds()
-        registration = self.read_character_registration()
-        before_world = tuple(c.xform(
-            plan.source.body_root, query=True, worldSpace=True,
-            matrix=True))
+        from .maya_game_registration import source_registration
+        registration = source_registration(self)
+        if registration is not None:
+            registration = self.read_character_registration()
+        from .maya_game_registration import scene_ids, remember_generated_nodes
+        ids_before = scene_ids(self)
         self._transaction_changed = True
         if not plan.create:
-            body = c.parent(plan.source.body_root, plan.source.deformation,
-                            absolute=True)[0]
+            children = plan.source.deformation_children
+            if children is None:
+                children = (plan.source.body_root,)
+            if children:
+                c.parent(children, plan.source.deformation, absolute=True)
+            body = plan.body_path
             if (c.ls(body, long=True, type="joint") or []) != [plan.body_path]:
                 raise RuntimeError("Root Motion 删除后 Body 父级漂移")
             from .maya_source_body_matrix import rebase_fk_records
-            rebase_fk_records(self,registration,((registration.body_root,
-                self._root_motion_local(plan.body_path)),))
+            if registration is not None:
+                rebase_fk_records(self,registration,((registration.body_root,
+                    self._root_motion_local(plan.body_path)),),
+                    root_parent_inverse=self._root_motion_local(plan.source.deformation) + '.worldInverseMatrix[0]')
             self._root_motion_pose_rows(plan, create=False)
-            if c.objExists(plan.body_constraint_name):
-                c.delete(plan.body_constraint_name)
-            c.delete(plan.offset_path)
             c.delete(plan.joint_path)
-            for name in (plan.range_name, plan.matrix_name):
+            prefix = plan.source.namespace_prefix
+            for name in (prefix + 'root_parentConstraint1', prefix + 'RootMotion_parentConstraint1'):
                 if c.objExists(name):
                     c.delete(name)
-            after_world = tuple(c.xform(
-                plan.body_path, query=True, worldSpace=True,
-                matrix=True))
-            if max(abs(a - b) for a, b in zip(
-                    before_world, after_world)) > 1e-5:
-                raise RuntimeError("Root Motion 删除改变了 Body 世界姿态")
+            if c.objExists(plan.offset_path):
+                c.delete(plan.offset_path)
+            if plan.source.use_offset_parent_matrix and c.objExists(prefix + 'RootMM_M'):
+                c.connectAttr(plan.source.deformation + '.worldInverseMatrix[0]',
+                              prefix + 'RootMM_M.matrixIn[2]', force=True)
             self._update_root_motion_registration(registration, plan)
-            return
-        joint = c.createNode("joint", name=plan.node_names[0],
-                             parent=plan.source.deformation,
-                             skipSelect=True)
+            c.select(clear=True)
+            return plan
+        options = plan.source.namespace_prefix + 'asCreateGameEngineRootMotionOptions'
+        if c.objExists(options + '.useOldRootName'):
+            c.delete(options)
+        c.select(clear=True)
+        joint = self.scene_address(self._cmds.joint(name=self._root_motion_local(plan.node_names[0])))
+        joint = c.parent(joint, plan.source.deformation, absolute=True)[0]
         c.setAttr(joint + ".segmentScaleCompensate", False)
         c.addAttr(joint, longName="advPyGameRootMotionOwner",
                   dataType="string")
         c.setAttr(joint + ".advPyGameRootMotionOwner",
                   "advanced-skeleton-python-refactor", type="string",
                   lock=True)
-        body = c.parent(plan.source.body_root, joint, absolute=True)[0]
+        children = plan.source.deformation_children
+        if children is None:
+            children = (plan.source.body_root,)
+        if children:
+            c.parent(children, joint, absolute=True)
+        body = plan.body_path
         if ((c.ls(joint, long=True, type="joint") or []) != [plan.joint_path]
                 or (c.ls(body, long=True, type="joint") or []) != [plan.body_path]):
             raise RuntimeError("Root Motion Body 关节改挂失败")
         from .maya_source_body_matrix import rebase_fk_records
-        rebase_fk_records(self,registration,((registration.body_root,
-            self._root_motion_local(plan.body_path)),))
-        after_world = tuple(c.xform(
-            body, query=True, worldSpace=True, matrix=True))
-        if max(abs(a - b) for a, b in zip(
-                before_world, after_world)) > 1e-5:
-            raise RuntimeError("Root Motion 创建改变了 Body 世界姿态")
-        offset = c.createNode("transform", name=plan.node_names[1],
-                              parent=plan.source.root_system,
-                              skipSelect=True)
-        follow = c.createNode("transform", name=plan.node_names[2],
-                              parent=offset, skipSelect=True)
-        extra = c.createNode("transform", name=plan.node_names[3],
-                             parent=follow, skipSelect=True)
-        control = c.circle(name=plan.node_names[4], normal=(0, 1, 0),
+        if registration is not None:
+            rebase_fk_records(self,registration,((registration.body_root,
+                self._root_motion_local(plan.body_path)),),
+                root_parent_inverse=self._root_motion_local(plan.joint_path) + '.worldInverseMatrix[0]')
+        if c.objExists(plan.node_names[1]):
+            c.delete(plan.node_names[1])
+        def create_frame(name, parent):
+            return self.scene_address(self._cmds.createNode('transform',
+                name=self._root_motion_local(name), parent=self._root_motion_local(parent), skipSelect=True))
+        offset = create_frame(plan.node_names[1], plan.source.root_system)
+        follow = create_frame(plan.node_names[2], offset)
+        extra = create_frame(plan.node_names[3], follow)
+        control = self._cmds.circle(name=self._root_motion_local(plan.node_names[4]), normal=(0, 1, 0),
                            radius=plan.radius,
+                           degree=3, sweep=360, sections=8,
+                           useTolerance=False, tolerance=0.000393701,
                            constructionHistory=False)[0]
-        control = c.parent(control, extra, relative=True)[0]
+        control = c.parent(self.scene_address(control), extra, absolute=True)[0]
         for actual, expected in ((offset, plan.offset_path),
                                  (follow, plan.follow_path),
                                  (extra, plan.extra_path),
@@ -367,24 +376,37 @@ class MayaBodyGameRootMotionMixin:
                           keyable=False, lock=True)
         c.sets((control, extra), add=plan.source.control_set)
         if plan.source.use_offset_parent_matrix:
-            matrix = c.createNode("multMatrix", name=plan.matrix_name)
-            c.connectAttr(control + ".worldMatrix[0]",
-                          matrix + ".matrixIn[0]")
-            c.connectAttr(parent_world_inverse(self, joint),
-                          matrix + ".matrixIn[1]")
-            c.connectAttr(matrix + ".matrixSum",
-                          joint + ".offsetParentMatrix")
+            from adv_py.core.body_parent_constraint import plan_body_parent_constraint
+            source = self.capture_parent_constraint_input(
+                self._root_motion_local(plan.control_path),
+                self._root_motion_local(plan.joint_path), False)
+            constraint = plan_body_parent_constraint(replace(source, use_offset_parent_matrix=True))
+            self.create_parent_constraint(constraint)
+            prefix = plan.source.namespace_prefix
+            if c.objExists(prefix + 'RootMM_M'):
+                c.connectAttr(plan.joint_path + '.worldInverseMatrix[0]',
+                              prefix + 'RootMM_M.matrixIn[2]', force=True)
         else:
-            driven = c.parentConstraint(control, joint,
+            driven = self._cmds.parentConstraint(self._root_motion_local(plan.control_path),
+                                        self._root_motion_local(plan.joint_path),
                                         maintainOffset=False,
-                                        name=plan.body_constraint_name)
+                                        name=self._root_motion_local(plan.body_constraint_name))
             if len(driven) != 1:
                 raise RuntimeError("Root Motion 关节约束创建失败")
-            c.parent(driven[0], plan.source.constraint_system,
-                     absolute=True)
-        follow_constraint = c.parentConstraint(
-            plan.source.main_control, plan.source.main_system, follow,
-            maintainOffset=False, name=plan.follow_constraint_name)
+            # MEL moves the literal first constraint if it exists, even when
+            # Maya gave this invocation a higher suffix after a prior delete.
+            named = plan.source.namespace_prefix + plan.source.root_joint_name + '_parentConstraint1'
+            if c.objExists(named):
+                c.parent(named, plan.source.constraint_system, absolute=True)
+            plan = replace(plan, body_constraint_name=self.scene_address(driven[0]))
+            c.addAttr(plan.joint_path, longName='advPyGameRootMotionConstraint', dataType='string')
+            c.setAttr(plan.joint_path + '.advPyGameRootMotionConstraint', self._root_motion_local(driven[0]),
+                      type='string', lock=True)
+        follow_constraint = self._cmds.parentConstraint(
+            self._root_motion_local(plan.source.main_control),
+            self._root_motion_local(plan.source.main_system), self._root_motion_local(plan.follow_path),
+            maintainOffset=False, name=self._root_motion_local(plan.follow_constraint_name))
+        follow_constraint = tuple(self.scene_address(node) for node in follow_constraint)
         if len(follow_constraint) != 1:
             raise RuntimeError("Root Motion 跟随约束创建失败")
         aliases = c.parentConstraint(follow_constraint[0], query=True,
@@ -393,7 +415,13 @@ class MayaBodyGameRootMotionMixin:
             raise RuntimeError("Root Motion 跟随权重缺失")
         c.addAttr(control, longName="followMain", attributeType="double",
                   minValue=0, maxValue=10, defaultValue=0, keyable=True)
-        value_range = c.createNode("setRange", name=plan.range_name)
+        self._cmds.createNode('setRange', name=self._root_motion_local(plan.range_name))
+        # MEL addresses the literal Range name for all subsequent writes. On
+        # recreate Maya can create Range1 while the retained Range is reused.
+        value_range = plan.range_name
+        c.addAttr(plan.joint_path, longName='advPyGameRootMotionRange', dataType='string')
+        c.setAttr(plan.joint_path + '.advPyGameRootMotionRange', self._root_motion_local(value_range),
+                  type='string', lock=True)
         for attr, value in (("maxX", 1), ("minY", 1),
                             ("oldMaxX", 10), ("oldMaxY", 10)):
             c.setAttr(value_range + "." + attr, value)
@@ -406,6 +434,9 @@ class MayaBodyGameRootMotionMixin:
                       follow_constraint[0] + "." + aliases[1])
         self._root_motion_pose_rows(plan, create=True)
         self._update_root_motion_registration(registration, plan)
+        remember_generated_nodes(self, ids_before)
+        c.select(clear=True)
+        return plan
 
     def capture_game_root_motion(self, plan: GameRootMotionPlan
                                  ) -> GameRootMotionState:
@@ -424,9 +455,13 @@ class MayaBodyGameRootMotionMixin:
         members = c.sets(plan.source.control_set, query=True) or []
         member_paths = {match for member in members
                         for match in (c.ls(member, long=True) or [])}
-        pose_rows = json.loads(c.getAttr(
-            plan.source.build_pose + ".advPyPoseData"))
-        in_pose = any(row[0] == plan.control_path for row in pose_rows)
+        pose_plug = plan.source.build_pose + ".advPyPoseData"
+        if c.objExists(pose_plug):
+            pose_rows = json.loads(c.getAttr(pose_plug))
+            in_pose = any(row[0] == plan.control_path for row in pose_rows)
+        else:
+            command = c.getAttr(plan.source.build_pose + '.udExtraAttr') or ''
+            in_pose = 'FK' + plan.source.root_joint_name + ';' in command
         locked_controls = all(
             c.getAttr(path + "." + attribute, lock=True)
             and not c.getAttr(path + "." + attribute, keyable=True)
@@ -475,7 +510,7 @@ class MayaBodyGameRootMotionMixin:
                                         type="parentConstraint") or []
             matching = [node for node in parents
                         if node.rsplit("|", 1)[-1]
-                        == plan.body_constraint_name]
+                        == plan.body_constraint_name.rsplit("|", 1)[-1]]
             targets = (c.parentConstraint(
                 matching[0], query=True, targetList=True) or []
                 if len(matching) == 1 else [])
@@ -489,6 +524,8 @@ class MayaBodyGameRootMotionMixin:
             existing(plan.extra_path), control, follow_source,
             body_driver, control in member_paths if control else False,
             in_pose,
-            tuple(name for name in plan.node_names
+            # Source deletion leaves Range/MM dependency nodes in the scene.
+            # Only the removed joint and control hierarchy are audited here.
+            tuple(name for name in plan.node_names[:5]
                   if c.objExists(name)) if not plan.create else (),
             locked_controls)

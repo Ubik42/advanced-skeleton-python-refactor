@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .fit_metadata import FitJointMetadata
+from .source_fit_identity import source_fit_build_name, source_fit_control_matches
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,9 +22,13 @@ class BodyFitProximityPinSpec:
     weight_node: str
     delta_matrix: str
     receiver_matrix: str
+    source_native: bool = False
 
     @property
     def node_names(self) -> tuple[str, ...]:
+        if self.source_native:
+            return (self.pin_node, self.blend_matrix, self.weight_node,
+                    self.delta_matrix, self.receiver_matrix)
         return (self.pin_node, self.corrected_matrix,
                 self.blend_matrix, self.weight_node,
                 self.delta_matrix, self.receiver_matrix)
@@ -36,11 +41,12 @@ class BodyFitProximityPinState:
     receiver_world: tuple[float, ...]
     receiver_opm_source: str | None
     receiver_opm_value: tuple[float, ...]
+    receiver_inherits_transform: bool = True
 
 
 def plan_body_fit_proximity_pin(
     metadata: tuple[FitJointMetadata, ...], controls: tuple,
-    body_joints: tuple,
+    body_joints: tuple, *, instances: tuple = (), source_native: bool = False,
 ) -> tuple[BodyFitProximityPinSpec, ...]:
     bodies = {joint.name.rsplit(":", 1)[-1]: joint.path
               for joint in body_joints}
@@ -52,8 +58,10 @@ def plan_body_fit_proximity_pin(
         if item.proximity_pin is None:
             continue
         name = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if instances:
+            name = source_fit_build_name(name)
         matches = tuple(control for control in controls
-                        if name in control.fit_joint_names)
+                        if source_fit_control_matches(item, control, instances))
         for control in matches:
             side = control.side.value
             source_body = bodies.get(name + "_" + side)
@@ -81,8 +89,8 @@ def plan_body_fit_proximity_pin(
                 receiver, item.proximity_pin, side,
                 stem + "Input", stem, stem + "CorrectedMM",
                 stem + "BM", stem + "Weight", stem + "DeltaMM",
-                stem + "ReceiverMM"))
-        if not matches and any(name + "_" + side in bodies
+                stem + "ReceiverMM", source_native))
+        if not source_native and not matches and any(name + "_" + side in bodies
                                for side in ("M", "R", "L")):
             raise ValueError("Proximity Pin 来源缺少 FK 控制：" + name)
     names = tuple(name for spec in result

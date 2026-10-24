@@ -15,6 +15,13 @@ def remap_spline_value(value,system,*,canonical=False):
     # into plain strings. Each scoped plan still carries typed identities.
     if isinstance(value,Enum):return value
     if isinstance(value,str):
+        # asParentConstraint inserts MM/PM before the final underscore token.
+        # Local Spline helpers are localized before planning; map these native
+        # derived names to the same names the physical driven node implies.
+        for kind in ('MM', 'PM', 'DM'):
+            local = 'AdvPy' + kind + '_SplineChestSpace'
+            scoped = 'AdvPy_Spline_' + system + kind + '_ChestSpace'
+            value = value.replace(scoped, local) if canonical else value.replace(local, scoped)
         return value.replace(prefix,'AdvPy_Spline') if canonical else re.sub(
             r'AdvPy_Spline(?=[A-Z])',prefix,value)
     if is_dataclass(value):

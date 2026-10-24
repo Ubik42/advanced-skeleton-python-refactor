@@ -8,6 +8,23 @@ from .maya_face_eye_loop_fit import MayaFaceEyeLoopFitMixin
 from .maya_original_transform_channels import lock_original_transform_channels
 
 class MayaFaceFitUpgradeMixin:
+    def original_face_fit_upgrade_needed(self):
+        c = self._cmds
+        fit = self._fit()
+        if fit is None:
+            return False
+        version = c.getAttr('FaceGroup.version') if c.objExists('FaceGroup.version') else None
+        return original_face_fit_needs_upgrade(version, c.getAttr(fit+'.ty'))
+
+    def confirm_original_face_fit_upgrade(self):
+        raw = getattr(self._cmds, 'raw', self._cmds)
+        if raw.confirmDialog(title='Confirm',
+                message='FaceFitSkeleton is from a older version.\nCreate New FaceFitSkeleton ?',
+                button=['Yes', 'Cancel'], defaultButton='Yes', dismissString='Cancel') != 'Yes':
+            raise FitSkeletonValidationError(
+                'FaceFitSkeleton is from a older version. Delete this, and create a new FaceFitSkeleton.')
+        return True
+
     def capture_original_face_fit_upgrade(self):
         c = self._cmds
         fit = self._fit()
@@ -55,6 +72,8 @@ class MayaFaceFitUpgradeMixin:
             if c.objExists(node):
                 c.delete(node)
         if source["deletion"] is not None:
+            if not c.getAttr(fit+'.visibility'):
+                c.setAttr(fit+'.visibility', True)
             self.delete_face_advanced(source["deletion"])
         c.createNode("transform", name="OldFaceFitSkeletonHolder")
         for holder in c.listRelatives(fit, children=True, type="transform") or []:

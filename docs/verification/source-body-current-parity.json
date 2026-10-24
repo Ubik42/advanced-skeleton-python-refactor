@@ -1,0 +1,97 @@
+{
+  "status": "incomplete",
+  "scope": "Current non-OPM multi-Spline/Bendy lifecycle and 71 original MEL poses",
+  "pid": 54332,
+  "process_exited": true,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "source_version_note": "Current canonical Fit IK length and eight Follow/attachment provenance paths integrated; full lifecycle passes, original default left_arm_ik difference remains. No tolerance or solver parameter changes.",
+  "lifecycle": {
+    "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-spline-multi.ma",
+    "reused_saved_build": false,
+    "body_joints": 81,
+    "opm": false,
+    "bendy": true,
+    "bendy_count": 3,
+    "bendy_joints": [
+      "Shoulder",
+      "Elbow"
+    ],
+    "part_joints": 27,
+    "channels": 3113,
+    "skins": [
+      "AdvPy_BodySkin"
+    ],
+    "additional_animated_channels": [],
+    "restricted_skin": false,
+    "portable_pose_roundtrip": true,
+    "portable_animation_roundtrip": true,
+    "native_global_deformation": true,
+    "registry_reopened": true,
+    "fbx_bytes": null,
+    "export_tested": false,
+    "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-provenance-current\\original-biped-current.mb",
+    "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-provenance-current\\original-biped-rebuilt.mb",
+    "rebuilt_scene_reopened": true,
+    "native_skin_curve_identity_preserved": true,
+    "single_undo_redo_preserved": true,
+    "native_rebuild_retained_skin_animation": true,
+    "skin_weights_membership_preserved": true,
+    "all_vertex_frames": [
+      1,
+      3,
+      5
+    ],
+    "all_vertex_rebuild_maximum_error": 0.0,
+    "status": "passed"
+  },
+  "poses": {
+    "status": "failed",
+    "scope": "108 Body/Part joints, 71 representative control cases",
+    "tolerance": 0.0001,
+    "passed": 70,
+    "total": 71,
+    "maximum_error": 0.0001422600032231769,
+    "failures": [
+      {
+        "case": "left_arm_ik",
+        "maximum_error": 0.0001422600032231769,
+        "largest_joint_errors": [
+          [
+            "Elbow_L",
+            0.0001422600032231769
+          ],
+          [
+            "ShoulderPart2_L",
+            9.48489064769159e-05
+          ],
+          [
+            "ElbowPart1_L",
+            9.483083554656657e-05
+          ],
+          [
+            "ElbowPart2_L",
+            6.232021252547404e-05
+          ],
+          [
+            "Shoulder_L",
+            5.441974356654167e-05
+          ],
+          [
+            "ShoulderPart1_L",
+            5.4419743553135724e-05
+          ],
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ]
+        ]
+      }
+    ]
+  },
+  "runtime_report": "validation/results/source-fit-provenance-current/report.json",
+  "pose_report": "validation/results/source-fit-provenance-current/poses.json"
+}

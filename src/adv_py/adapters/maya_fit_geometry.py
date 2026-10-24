@@ -7,6 +7,10 @@ from .maya_skin_cage import MayaSkinCageHost
 
 
 class MayaFitGeometryHost(MayaSkinCageHost):
+    def fit_geometry_mode_scope(self, visible):
+        from .maya_source_fit_mode import suspend_for_geometry
+        return suspend_for_geometry(self, resume=visible)
+
     @contextmanager
     def transaction(self,label):
         with super().transaction(label):
@@ -37,18 +41,10 @@ class MayaFitGeometryHost(MayaSkinCageHost):
 
     def update_fit_geometry_orientation(self):
         from .maya_fit import MayaFitJointHost
-        from adv_py.application.fit_orientation_auto import OrientFitJoints
-        from adv_py.core.fit_orientation import FitOrientationRequest
         helper=MayaFitJointHost(namespace=self.namespace)
         helper._transaction_active=True
         try:
-            with helper.fit_manual_update_channels('FitSkeleton'):
-                snapshot=helper.capture_fit_orientation('FitSkeleton')
-                parents={node.dag_parent for node in snapshot.hierarchy.joints}
-                request=FitOrientationRequest(tuple(node.path for node in snapshot.hierarchy.joints
-                                                    if node.path in parents))
-                orient=OrientFitJoints(helper)
-                if request.joints:orient.apply_plan_in_transaction(orient.plan(request))
+            helper.manual_update_fit('FitSkeleton')
         finally:helper._transaction_active=False
 
     @contextmanager
@@ -76,19 +72,8 @@ class MayaFitGeometryHost(MayaSkinCageHost):
         return '|'.join((self._name(part) if part else '') for part in path.split('|'))
 
     def _ensure_shaders(self):
-        from adv_py.core.face_fit_markers import FIT_MATERIALS
-        c=self.cmds
-        for name,color in FIT_MATERIALS:
-            material=self._name(name);sg=self._name(name+'SG')
-            if c.objExists(material) and c.objExists(sg):continue
-            for node in (material,sg):
-                if c.objExists(node):c.delete(node)
-            surface=name=='asRedSS'
-            shader=c.shadingNode('surfaceShader' if surface else 'lambert',
-                                 name=material,asShader=True)
-            c.sets(renderable=True,noSurfaceShader=True,empty=True,name=sg)
-            c.connectAttr(shader+'.outColor',sg+'.surfaceShader')
-            c.setAttr(shader+('.outColor' if surface else '.color'),*color,type='float3')
+        from .maya_source_fit_pole_vectors import ensure_fit_shaders
+        ensure_fit_shaders(self.cmds, self._name)
 
     def _template_bones(self):
         from .maya_geometry_skeleton import geometry_asset

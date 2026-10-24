@@ -1,0 +1,59 @@
+{
+  "status": "passed",
+  "scope": "Accepted shoulder and elbow phases plus root/namespaced initialization; complete character AutoPlace not accepted",
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "phases": {
+    "pid": 54900,
+    "process_exited": true,
+    "raw_report_status": "failed",
+    "raw_failure": "Initialization namespace fixture name lookup failed; independent shoulder/elbow comparisons completed and passed",
+    "cases": [
+      {
+        "case": "complete_shoulder_preparation",
+        "maximum_geometry_matrix_error": 1.1102230246251565e-16,
+        "maximum_skin_weight_error": 0.0,
+        "mesh_count": 7,
+        "influences": 2
+      },
+      {
+        "case": "complete_elbow_preparation",
+        "maximum_geometry_matrix_error": 0.0,
+        "maximum_skin_weight_error": 0.0,
+        "mesh_count": 7,
+        "influences": 3
+      }
+    ]
+  },
+  "initialization": {
+    "pid": 14732,
+    "process_exited": true,
+    "status": "passed",
+    "cases": [
+      {
+        "namespace": ":",
+        "maximum_matrix_error": 0.0,
+        "creation_order": true,
+        "transaction_restored": true
+      },
+      {
+        "namespace": "SecondCharacter",
+        "maximum_matrix_error": 0.0,
+        "creation_order": true,
+        "transaction_restored": true
+      }
+    ]
+  },
+  "source_corrections": [
+    "Original selected newSkinCluster with exact flags and fixed cluster addressing",
+    "Fixed tempXform1/tempLoc1/aimConstraint addressing",
+    "Original float3 projection and re-projection writes",
+    "Root visibility and source group creation order",
+    "OrbitB creation under global camera followed by absolute reparenting"
+  ],
+  "limits": [
+    "Connected proxy mannequin, not original default-model full AutoPlace success",
+    "Initialization namespace scope only; complete namespaced AutoPlace remains unaccepted",
+    "Shell-leap on disconnected arm topology not exercised by this connected mannequin",
+    "Zero finger jointOrient float3 write restored by source inspection; placement was not rerun in this batch"
+  ]
+}

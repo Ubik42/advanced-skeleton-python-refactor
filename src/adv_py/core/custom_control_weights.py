@@ -32,9 +32,7 @@ def cluster_weights_from_probe(probe: SoftModProbe) -> ClusterWeightTransfer:
                 or any(not isfinite(value) for value in (*rest, *moved))):
             raise ValueError("SoftMod 位移采样含无效坐标")
         weight = moved[1] - rest[1]
-        if not -1e-5 <= weight <= 1.00001:
-            raise ValueError("SoftMod 位移不符合单位 Y 探测范围")
-        weights.append(WeightedVertex(index, max(0.0, min(1.0, weight))))
+        weights.append(WeightedVertex(index, weight))
     strongest = max(weights, key=lambda item: (item.weight, -item.index))
     if strongest.weight <= 0:
         raise ValueError("SoftMod 位移探测未产生 Cluster 权重")

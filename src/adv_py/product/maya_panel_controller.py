@@ -432,7 +432,7 @@ class MayaPanelController:
             rows: tuple[tuple[str, str], ...], *,
             right: str = 'R', left: str = 'L', middle: str = '',
             side_before_name: bool = False,
-            side_underscore: bool = True):
+            side_underscore: bool = True, template_name=None, preparation=None):
         from maya import cmds
         from adv_py.adapters.maya_source_skeleton_fit import (
             MayaSourceSkeletonFitHost)
@@ -451,7 +451,8 @@ class MayaPanelController:
             result = BuildNameMatchedFit(host).apply(selection[0],
                 tuple(NameMatcherRow(*row) for row in rows),
                 NameMatcherRules(right, left, middle,
-                                 side_before_name, side_underscore))
+                                 side_before_name, side_underscore),
+                template_name=template_name,preparation=preparation)
         except Exception:
             _remove_empty_source_target(cmds, created)
             if (not matcher_namespace_existed
@@ -462,11 +463,38 @@ class MayaPanelController:
             raise
         return result, target_namespace
 
+    def preparation_source_name_matcher_catalog(self, *,mocap=False):
+        from adv_py.adapters.maya_source_name_matcher import source_name_matcher_catalog
+        return source_name_matcher_catalog(mocap=mocap)
+
+    def preparation_source_name_matcher_template(self, name, *,mocap=False):
+        from adv_py.adapters.maya_source_name_matcher import source_name_matcher_template_path
+        from adv_py.core.source_name_matcher import read_source_name_matcher_template
+        path = source_name_matcher_template_path(name,mocap=mocap)
+        return read_source_name_matcher_template(path.read_text(encoding='utf-8-sig'))
+
+    def preparation_name_matcher_check(self, namespace: str, source_root: str):
+        host = self._host(namespace)
+        with host.transaction('原版 NameMatcher Check'):
+            return host.check_source_name_matcher(source_root)
+
+    def preparation_source_name_matcher_export(self, destination: Path, rows, *,
+            right='Right',left='Left',middle='',side_before_name=True,side_underscore=False):
+        from adv_py.core.source_name_matcher import export_source_name_matcher_template
+        from adv_py.core.name_matcher_fit import NameMatcherRow, NameMatcherRules
+        destination = Path(destination).resolve()
+        if destination.suffix.lower()!='.txt' or not destination.parent.is_dir():
+            raise ValueError('NameMatcher 导出需要现有目录中的 .txt 配置文件')
+        destination.write_text(export_source_name_matcher_template(
+            tuple(NameMatcherRow(*row) for row in rows),
+            NameMatcherRules(right,left,middle,side_before_name,side_underscore)),encoding='utf-8')
+        return destination
+
     def preparation_name_matcher_character(self, namespace: str,
             rows: tuple[tuple[str, str], ...], *,
             right: str = 'R', left: str = 'L', middle: str = '',
             side_before_name: bool = False,
-            side_underscore: bool = True):
+            side_underscore: bool = True, template_name=None, preparation=None):
         from maya import cmds
         from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
         from adv_py.application.name_matcher_character import (
@@ -488,7 +516,8 @@ class MayaPanelController:
             result = BuildNameMatchedCharacter(host).apply(
                 selection[0], tuple(NameMatcherRow(*row) for row in rows),
                 NameMatcherRules(right, left, middle,
-                                 side_before_name, side_underscore))
+                                 side_before_name, side_underscore),
+                template_name=template_name,preparation=preparation)
         except Exception:
             _remove_empty_source_target(cmds, created)
             if (not matcher_namespace_existed
@@ -544,7 +573,7 @@ class MayaPanelController:
             right: str = 'R', left: str = 'L', middle: str = '',
             side_before_name: bool = False,
             side_underscore: bool = True,
-            use_extra: bool = False):
+            use_extra: bool = False,source_namespace=None):
         from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
         from adv_py.application.name_matcher_mocap import ConnectNameMatchedMocap
         from adv_py.core.name_matcher_fit import NameMatcherRow, NameMatcherRules
@@ -555,7 +584,7 @@ class MayaPanelController:
             tuple(NameMatcherRow(*row) for row in rows),
             NameMatcherRules(right, left, middle,
                              side_before_name, side_underscore),
-            use_extra=use_extra)
+            use_extra=use_extra,source_namespace=source_namespace)
 
     def tools_name_matcher_keep_animation(self, namespace: str,
             source_root: str):
@@ -588,7 +617,7 @@ class MayaPanelController:
             source_root: str, rows: tuple[tuple[str, str], ...], *,
             right: str = 'R', left: str = 'L', middle: str = '',
             side_before_name: bool = False,
-            side_underscore: bool = True):
+            side_underscore: bool = True,template_name=None,source_namespace=None):
         from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
         from adv_py.application.name_matcher_mocap_operations import (
             ZeroOutNameMatchedMocap)
@@ -599,7 +628,12 @@ class MayaPanelController:
         return ZeroOutNameMatchedMocap(host).apply(source_root,
             tuple(NameMatcherRow(*row) for row in rows),
             NameMatcherRules(right, left, middle,
-                             side_before_name, side_underscore))
+                             side_before_name, side_underscore),template_name=template_name,
+            source_namespace=source_namespace)
+
+    def tools_source_mocap_matcher(self,namespace: str):
+        from .maya_source_mocap_mapping_ui import show_mocap_matcher
+        return show_mocap_matcher(self,namespace)
 
     def tools_name_matcher_bake(self, namespace: str):
         from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
@@ -668,6 +702,67 @@ class MayaPanelController:
             source, container)
         return len(result.joint_paths)
 
+    def fit_source_asset_catalog(self, *, limbs=False):
+        from adv_py.adapters.maya_source_fit_import import source_fit_asset_catalog
+        return source_fit_asset_catalog(limbs=limbs)
+
+    def fit_source_import_has_joints(self, namespace: str):
+        c = self._host(namespace)._cmds
+        return bool(c.objExists('FitSkeleton') and c.listRelatives(
+            'FitSkeleton',allDescendents=True,type='joint'))
+
+    def fit_source_import(self, namespace: str, source: Path, *, merge=False, policy='existing',
+                          preparation=None):
+        host = self._host(namespace)
+        with host.transaction('导入原版 Fit 模板'):
+            joints = host.import_source_fit_scene(source,merge=merge,policy=policy)
+            if preparation is not None:
+                host.save_source_fit_preparation(preparation)
+            return joints
+
+    def fit_source_limb_import(self, namespace: str, source: Path):
+        host = self._host(namespace)
+        with host.transaction('导入原版 Fit 部件'):
+            return host.import_source_fit_limb(source)
+
+    def fit_source_export_is_limb(self, namespace: str):
+        return self._host(namespace).source_fit_export_selection_is_limb()
+
+    def fit_source_export(self, namespace: str, destination: Path):
+        return self._host(namespace).export_source_fit_scene(destination)
+
+    def fit_source_matcher_detect(self, namespace: str):
+        return self._host(namespace).detect_source_import_matcher()
+
+    def fit_source_matcher_prepare(self, namespace: str, detection):
+        host = self._host(namespace)
+        with host.transaction('导入模板后准备原版 NameMatcher'):
+            return host.prepare_source_import_matcher(detection)
+
+    def fit_source_matcher_align(self, namespace: str, detection, rows, *, template_name=None,
+            preparation=None,right='Right',left='Left',middle='',side_before_name=True,side_underscore=False):
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.core.name_matcher_fit import NameMatcherRow,NameMatcherRules
+        host = MayaNameMatcherHost(namespace=None if namespace==':' else namespace)
+        with host.transaction('原版 ImportMatcher 对齐 Fit'):
+            result = host.create_source_name_matched_fit(detection.source_root,
+                tuple(NameMatcherRow(*row) for row in rows),
+                NameMatcherRules(right,left,middle,side_before_name,side_underscore),
+                template_name=template_name,preparation=preparation)
+            host.mark_source_import_matcher_alignment(detection.joint)
+            return result
+
+    def fit_source_matcher_attach(self, namespace: str, source_root, rows, *,
+            right='Right',left='Left',middle='',side_before_name=True,side_underscore=False):
+        from adv_py.adapters.maya_name_matcher import MayaNameMatcherHost
+        from adv_py.application.source_name_matcher_attach import AttachSourceNameMatchedFit
+        from adv_py.core.name_matcher_fit import NameMatcherRow,NameMatcherRules
+        _ensure_body_build_centimeters()
+        host = MayaNameMatcherHost(namespace=None if namespace==':' else namespace)
+        return AttachSourceNameMatchedFit(host).apply(source_root,
+            tuple(NameMatcherRow(*row) for row in rows),
+            NameMatcherRules(right,left,middle,side_before_name,side_underscore))
+
     def fit_auto_scale(self, namespace: str, container: str = 'FitSkeleton', *,
                        interactive: bool = True):
         from adv_py.application.fit_auto_scale import AutoScaleFit
@@ -681,15 +776,7 @@ class MayaPanelController:
             return FinishFitAutoPlace(host).apply(container,
                 skin=records.existing_objects(PreparationObjectRole.SKIN),
                 all_objects=records.existing_objects(PreparationObjectRole.ALL))
-        selected=cmds.ls(selection=True,long=True) or []
-        try:
-            # Original asFitAutoPlace checks every Skin independently before
-            # changing Fit, with symmetry explicitly skipped for this action.
-            for mesh in records.read_objects(PreparationObjectRole.SKIN):
-                cmds.select(mesh,replace=True)
-                self.model_check(interactive=interactive,skip_symmetry=True)
-        finally:
-            cmds.select(selected,replace=True) if selected else cmds.select(clear=True)
+        host._fit_auto_place_interactive=interactive
         identity=getattr(host._cmds,'identity',None)
         def objects(role):
             names=records.read_objects(role)
@@ -713,13 +800,7 @@ class MayaPanelController:
         skin=records.read_objects(PreparationObjectRole.SKIN)
         all_objects=records.read_objects(PreparationObjectRole.ALL)
         eye=records.read_objects(PreparationObjectRole.RIGHT_EYE)
-        selected=cmds.ls(selection=True,long=True) or []
-        try:
-            for mesh in skin:
-                cmds.select(mesh,replace=True)
-                self.model_check(interactive=interactive,skip_symmetry=True)
-        finally:
-            cmds.select(selected,replace=True) if selected else cmds.select(clear=True)
+        host._fit_auto_place_interactive=interactive
         identity=getattr(host._cmds,'identity',None)
         def local(nodes):return tuple(identity.to_local(node) for node in nodes) if identity else nodes
         return AutoPlaceFit(host).apply(container,skin=local(skin),all_objects=local(all_objects),right_eye=local(eye))
@@ -798,6 +879,23 @@ class MayaPanelController:
         result = EditFitJointMetadata(self._host(namespace)).apply(joints, patch)
         return len(result.plan.changes)
 
+    def fit_source_attributes(self, namespace: str, attribute: str, *,
+                              remove: bool = False) -> int:
+        host = self._host(namespace)
+        method = (host.remove_source_fit_attributes if remove
+                  else host.add_source_fit_attributes)
+        return len(method(attribute))
+
+    def fit_source_labels(self, namespace: str, label: str, *, remove=False) -> int:
+        return len(self._host(namespace).edit_source_fit_labels(label, remove=remove))
+
+    def fit_joint_display_scale(self, value=None) -> float:
+        """Original Edit / joint display control; native Maya display only."""
+        from maya import cmds
+        if value is not None:
+            cmds.jointDisplayScale(float(value))
+        return float(cmds.jointDisplayScale(query=True))
+
     def fit_orient(self, namespace: str, joints: tuple[str, ...],
                    container: str = "FitSkeleton", *,
                    child_selections: tuple[tuple[str, str], ...] = (),
@@ -805,8 +903,24 @@ class MayaPanelController:
         request = FitOrientationRequest(joints, tuple(
             FitOrientationChildSelection(joint, child)
             for joint, child in child_selections))
+        host=self._host(namespace)
+        native=getattr(host,'update_source_fit_orientations',None)
+        if callable(native) and not world and not child_selections:
+            from adv_py.core.fit_orientation import select_fit_orientation_child,FitOrientationValidationError
+            snapshot=host.capture_fit_orientation(container)
+            nodes={node.path:node for node in snapshot.hierarchy.joints}
+            names={node.short_name:node for node in snapshot.hierarchy.joints}
+            children=[]
+            for name in request.joints:
+                node=nodes.get(name) or names.get(name)
+                if node is None:
+                    raise FitOrientationValidationError('朝向目标不在 FitSkeleton 中：'+name)
+                child=select_fit_orientation_child(snapshot,node.path)
+                if child is not None:children.append(child)
+            with host.transaction('按原版规则更新 Fit 朝向'):
+                return len(native(tuple(children),container=container) or ())
         use_case = OrientWorldFitJoints if world else OrientFitJoints
-        result = use_case(self._host(namespace)).apply(request, container)
+        result = use_case(host).apply(request, container)
         return len(result.plan.changes)
 
     def fit_resample(self, namespace: str, start: str, end: str,
@@ -819,6 +933,66 @@ class MayaPanelController:
         result = ResampleFitChain(host).apply(
             start, end, joint_count, container)
         return len(result.created)
+
+    def fit_manual_update(self, namespace: str, container: str = 'FitSkeleton'):
+        host = self._host(namespace)
+        with host.transaction('立即更新 Fit'):
+            host.manual_update_fit(container)
+
+    def fit_placement_snap(self, namespace: str):
+        host = self._host(namespace)
+        with host.transaction('吸附 Fit 到所选组件中心'):
+            return host.snap_source_fit_placement()
+
+    def fit_placement_copy(self, namespace: str):
+        return self._host(namespace).copy_source_fit_placement()
+
+    def fit_placement_paste(self, namespace: str, position):
+        host = self._host(namespace)
+        with host.transaction('粘贴 Fit 位置'):
+            return host.paste_source_fit_placement(position)
+
+    def fit_toggle_center_locks(self, namespace: str, container: str = 'FitSkeleton'):
+        host = self._host(namespace)
+        with host.transaction('切换 Fit 中心关节锁定'):
+            return host.toggle_fit_center_joint_locks(container)
+
+    def fit_toggle_mode(self, namespace: str):
+        return self._host(namespace).toggle_source_fit_mode()
+
+    def fit_pole_vector_display(self, namespace: str, enabled: bool):
+        host = self._host(namespace)
+        with host.transaction('切换 Fit PoleVector 显示'):
+            return host.display_fit_pole_vectors(enabled)
+
+    def fit_toggle_joint_display(self, namespace: str, kind: str):
+        if kind not in ('axis','orient'):
+            raise ValueError('Fit 显示需要 axis 或 orient')
+        host = self._host(namespace)
+        plug = 'FitSkeleton.'+('visJointAxis' if kind == 'axis' else 'visJointOrient')
+        enabled = not (host._cmds.objExists(plug) and bool(host._cmds.getAttr(plug)))
+        with host.transaction('切换 Fit 关节显示'):
+            if kind == 'axis':host.display_fit_joint_axes(enabled)
+            else:host.display_fit_joint_orient(enabled)
+        return enabled
+
+    def fit_straighten_pole_vector(self, namespace: str, limb: str):
+        host = self._host(namespace)
+        with host.transaction('拉直 Fit PoleVector'):
+            return host.straighten_fit_pole_vector(limb)
+
+    def fit_finger_up_display(self, namespace: str, enabled: bool):
+        host = self._host(namespace)
+        with host.transaction('切换 Fit Finger-up 显示'):
+            return host.display_fit_finger_up(enabled)
+
+    def fit_sdk_capture(self, namespace: str):
+        return self._host(namespace).capture_source_fit_sdk()
+
+    def fit_sdk_create_attribute(self, namespace: str, plan, options):
+        host = self._host(namespace)
+        with host.transaction('创建 Fit SDK 属性'):
+            return host.create_source_fit_sdk_attribute(plan, options)
 
     def body_build(self, namespace: str, container: str = "FitSkeleton", *,
                    spine_segments: int | None = None,
@@ -1065,37 +1239,13 @@ class MayaPanelController:
 
     def control_curves_mirror(self, namespace: str, controls: tuple[str, ...],
                               source_side: str) -> int:
-        if source_side not in ("R", "L"):
-            raise ValueError("镜像来源侧必须是 R 或 L")
+        if source_side not in ('R', 'L'):
+            raise ValueError('镜像来源侧必须是 R 或 L')
+        from adv_py.adapters.maya_source_control_curve_mirror import mirror_source_control_curves
         host = self._host(namespace)
-        resolver = ResolveBodyCharacter(host)
-        names = resolver.discover()
-        if len(names) != 1:
-            raise ValueError("当前命名空间必须恰好包含一个已登记角色")
-        registration = resolver.execute(names[0])
-        registered = tuple(dict.fromkeys(
-            channel.node for channel in registration.channels))
-        registered_set = set(registered)
-        marker = "_" + source_side
-        opposite = "_" + ("L" if source_side == "R" else "R")
-        sources = controls or tuple(path for path in registered
-                                    if re.search(re.escape(marker) + r"(?=\||$)", path))
-        pairs = []
-        for source in sources:
-            matches = [path for path in registered
-                       if path == source or path.rsplit("|", 1)[-1] == source]
-            if len(matches) != 1:
-                raise ValueError(f"镜像来源控制器未登记或名称不唯一：{source}")
-            source_path = matches[0]
-            if not re.search(re.escape(marker) + r"(?=\||$)", source_path):
-                raise ValueError(f"控制器不属于来源侧 {source_side}：{source_path}")
-            target = re.sub(re.escape(marker) + r"(?=\||$)", opposite,
-                            source_path)
-            if target not in registered_set:
-                raise ValueError(f"镜像目标控制器未登记：{target}")
-            pairs.append((source_path, target))
-        result = MirrorControlCurves(host).apply(tuple(dict.fromkeys(pairs)), "x")
-        return len(result.verified)
+        with host.transaction('原版控制曲线镜像'):
+            return len(mirror_source_control_curves(host,source_side=='L',
+                'ControlSet',controls=controls or None))
 
     def control_curves_swap(self, namespace: str, targets: tuple[str, ...],
                             source: str) -> int:
@@ -1479,14 +1629,16 @@ class MayaPanelController:
 
     def unreal_mannequin_create(self, namespace: str, template_path: str,
                                 template: str, scale_to_match: bool,
-                                match_pose: bool):
+                                match_pose: bool, *, ctrl_button=None):
         from adv_py.adapters.maya_unreal_mannequin import MayaMannequinHost
         from adv_py.application.unreal_mannequin import CreateMannequin
+        from adv_py.adapters.maya_unreal_asset import unreal_asset
 
         host = MayaMannequinHost(
-            namespace=None if namespace == ":" else namespace)
+            namespace=None if namespace == ":" else namespace,
+            ctrl_button=ctrl_button)
         return CreateMannequin(host).apply(
-            template_path, template=template,
+            str(unreal_asset(template_path)), template=template,
             scale_adv_to_template=scale_to_match,
             match_template_pose=match_pose)
 
@@ -1505,6 +1657,58 @@ class MayaPanelController:
         host = MayaMannequinHost(
             namespace=None if namespace == ":" else namespace)
         DeleteMannequin(host).apply()
+
+    def unreal_mannequin_export(self, namespace: str, destination,
+                                template_path: str, options, *, ctrl_button=None):
+        from adv_py.adapters.maya_unreal_mannequin import MayaMannequinHost
+        from adv_py.application.unreal_mannequin_export import ExportMannequin
+        from adv_py.adapters.maya_unreal_asset import unreal_asset
+
+        host = MayaMannequinHost(
+            namespace=None if namespace == ":" else namespace,
+            ctrl_button=ctrl_button)
+        return ExportMannequin(host).apply(destination, str(unreal_asset(template_path)),
+                                           options=options)
+
+    def unreal_face_solver_export(self, namespace: str, destination):
+        from adv_py.adapters.maya_unreal_face_solver import MayaUnrealFaceSolverHost
+        from adv_py.application.unreal_face_solver import ExportUnrealFaceSolver
+
+        host = MayaUnrealFaceSolverHost(
+            namespace=None if namespace == ":" else namespace)
+        return ExportUnrealFaceSolver(host).apply(destination)
+
+    def original_fbx_export(self, namespace: str, destination=None):
+        from adv_py.adapters.maya_original_fbx_export import MayaOriginalFbxExportHost
+        from adv_py.application.original_fbx_export import ExportOriginalFbx
+
+        host = MayaOriginalFbxExportHost(
+            namespace=None if namespace == ':' else namespace)
+        return ExportOriginalFbx(host).apply(destination)
+
+    def original_body_rig_export(self, namespace: str, destination):
+        from adv_py.adapters.maya_original_body_rig import MayaOriginalBodyRigHost
+        from adv_py.application.original_body_rig import ExportOriginalBodyRig
+
+        host = MayaOriginalBodyRigHost(
+            namespace=None if namespace == ':' else namespace)
+        return ExportOriginalBodyRig(host).apply(destination)
+
+    def original_export_preparation(self, namespace: str, operation: str):
+        from adv_py.adapters.maya_original_export_preparation import MayaOriginalExportPreparationHost
+        from adv_py.application.original_export_preparation import PrepareOriginalExport
+
+        host = MayaOriginalExportPreparationHost(
+            namespace=None if namespace == ':' else namespace)
+        return PrepareOriginalExport(host).apply(operation)
+
+    def roblox_dynamic_head_export(self, namespace: str, geometry: str):
+        from adv_py.adapters.maya_original_export_preparation import MayaOriginalExportPreparationHost
+        from adv_py.application.original_export_preparation import PrepareRobloxDynamicHead
+
+        host = MayaOriginalExportPreparationHost(
+            namespace=None if namespace == ':' else namespace)
+        return PrepareRobloxDynamicHead(host).apply(geometry)
 
     def unreal_twist_hierarchy(self, namespace: str, enable: bool) -> int:
         from adv_py.adapters.maya_unreal_twist import MayaUnrealTwistHost
@@ -1555,6 +1759,99 @@ class MayaPanelController:
         host = MayaSkinOptimizeHost(
             namespace=None if namespace == ":" else namespace)
         return PruneSmallSkinWeights(host).apply()
+
+    def original_optimize(self, namespace: str, operation: str):
+        from adv_py.adapters.maya_original_optimize import MayaOriginalOptimizeHost
+        from adv_py.application.original_optimize import OptimizeOriginalRig
+        host = MayaOriginalOptimizeHost(namespace=None if namespace == ':' else namespace)
+        return OptimizeOriginalRig(host).apply(operation)
+
+    def decompose_original_opm(self, namespace: str):
+        from adv_py.adapters.maya_original_opm_decomposition import MayaOriginalOpmDecompositionHost
+        from adv_py.application.original_opm_decomposition import DecomposeOriginalOffsetParentMatrices
+        host = MayaOriginalOpmDecompositionHost(namespace=None if namespace == ':' else namespace)
+        return DecomposeOriginalOffsetParentMatrices(host).apply()
+
+    def original_publish(self, namespace: str):
+        from adv_py.adapters.maya_original_publish import MayaOriginalPublishHost
+        from adv_py.application.original_publish import PublishOriginalScene
+        from maya import mel
+        # This callback executes only the user's explicitly configured custom
+        # extension. Built-in ADV templates are dispatched to Python first.
+        host = MayaOriginalPublishHost(namespace=None if namespace == ':' else namespace,
+                                       script_runner=mel.eval)
+        return PublishOriginalScene(host).apply()
+
+    def original_model_update(self, namespace: str, operation: str):
+        if operation == 'face_fitting_update':
+            from adv_py.adapters.maya_original_face_fitting_update import MayaOriginalFaceFittingUpdateHost
+            from adv_py.application.original_face_fitting_update import UpdateOriginalFaceFitting
+            return UpdateOriginalFaceFitting(MayaOriginalFaceFittingUpdateHost(
+                namespace=None if namespace == ':' else namespace)).apply()
+        from adv_py.adapters.maya_original_model_updates import MayaOriginalModelUpdatesHost
+        from adv_py.application.original_model_updates import UpdateOriginalModel
+        host = MayaOriginalModelUpdatesHost(namespace=None if namespace == ':' else namespace)
+        return UpdateOriginalModel(host).apply(operation)
+
+    def original_publish_reference_layers(self, namespace: str):
+        from adv_py.adapters.maya_original_publish import MayaOriginalPublishHost
+        host = MayaOriginalPublishHost(namespace=None if namespace == ':' else namespace)
+        with host.transaction('Set DisplayLayers to R'):
+            return host.set_original_display_layers_to_reference()
+
+    def original_publish_build_pose(self, namespace: str):
+        from adv_py.adapters.maya_face_original_build import MayaOriginalFaceBuildHost
+        host = MayaOriginalFaceBuildHost(namespace=None if namespace == ':' else namespace)
+        body = host.read_body_build_pose()
+        host.preflight_body_build_pose(body)
+        face = host.read_face_build_pose() if host._cmds.objExists('FaceControlSet') else None
+        if face is not None:
+            host.preflight_face_build_pose(face)
+        with host.transaction('Go to Build Pose'):
+            host.apply_body_build_pose(body)
+            if face is not None:
+                host.apply_face_build_pose(face)
+        return len(body.values) + (len(face.values) if face is not None else 0)
+
+    def original_publish_entries(self, namespace: str):
+        from adv_py.adapters.maya_original_publish import MayaOriginalPublishHost
+        from adv_py.core.original_publish import original_publish_entries
+        host = MayaOriginalPublishHost(namespace=None if namespace == ':' else namespace)
+        return original_publish_entries(host.original_publish_options())
+
+    def original_publish_save_entry(self, namespace: str, name: str, script: str):
+        from adv_py.adapters.maya_original_publish import MayaOriginalPublishHost
+        host = MayaOriginalPublishHost(namespace=None if namespace == ':' else namespace)
+        return host.set_original_publish_option(name, script)
+
+    def original_publish_delete_entry(self, namespace: str, index: int):
+        from adv_py.adapters.maya_original_publish import MayaOriginalPublishHost
+        host = MayaOriginalPublishHost(namespace=None if namespace == ':' else namespace)
+        host.remove_original_publish_option(index)
+
+    def face_joint_reduction(self, namespace: str, kind: str, count: int):
+        from adv_py.adapters.maya_original_face_reduction import MayaOriginalFaceReductionHost
+        from adv_py.application.original_face_reduction import (
+            ReduceOriginalEyeLidJoints, ReduceOriginalLipJoints,
+        )
+        host = MayaOriginalFaceReductionHost(namespace=None if namespace == ':' else namespace)
+        if kind == 'EyeLid':
+            return ReduceOriginalEyeLidJoints(host).apply(count)
+        if kind == 'Lip':
+            return ReduceOriginalLipJoints(host).apply(count)
+        raise ValueError('未知面部关节缩减对象')
+
+    def custom_face_joint_reduction(self, namespace: str, kind: str, every: int,
+                                   *, preview: bool = False):
+        from adv_py.adapters.maya_original_face_reduction import MayaOriginalFaceReductionHost
+        from adv_py.application.original_face_reduction import CustomReduceOriginalFace
+        host = MayaOriginalFaceReductionHost(namespace=None if namespace == ':' else namespace)
+        return CustomReduceOriginalFace(host).apply(kind, every, preview=preview)
+
+    def custom_face_joint_reduction_counts(self, namespace: str, kind: str, every: int):
+        from adv_py.adapters.maya_original_face_reduction import MayaOriginalFaceReductionHost
+        host = MayaOriginalFaceReductionHost(namespace=None if namespace == ':' else namespace)
+        return host.original_custom_face_reduction_counts(kind, every)
 
     def unreal_rename(self, namespace: str):
         from adv_py.adapters.maya_unreal_rename import MayaUnrealRenameHost
@@ -2186,6 +2483,15 @@ class MayaPanelController:
         from adv_py.application.source_spline_mode_upgrade import UpgradeSourceSplineMode
         return UpgradeSourceSplineMode(self._host(namespace)).apply(systems)
 
+    def animation_upgrade_source_spline_alignment(self, namespace: str,
+            replacement: str, systems=None, *, extensions=()):
+        from adv_py.application.source_spline_alignment_upgrade import UpgradeSourceSplineAlignment
+        if not isinstance(replacement, str) or not replacement.strip():
+            raise ValueError('请填写尚未占用的重建暂存命名空间')
+        _ensure_body_build_centimeters()
+        return UpgradeSourceSplineAlignment(self._host(namespace)).apply(
+            replacement.strip(), systems, extensions=extensions)
+
     def animation_match_source_spline(self,namespace: str,mode: str,system=None,*,align_only=False):
         from adv_py.application.character_spine_animation import MatchSourceBodySplineMode
         return MatchSourceBodySplineMode(self._host(namespace)).execute(mode,system,
@@ -2219,21 +2525,112 @@ class MayaPanelController:
         return MayaFaceEyeHost(
             namespace=None if namespace == ":" else namespace).selected_eye_mesh()
 
-    def face_pre_record_mask(self, namespace: str):
+    def face_read_original_options(self, namespace: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        return MayaFacePreHost(namespace=None if namespace == ':' else namespace).read_original_face_options()
+
+    def face_set_original_options(self, namespace: str, values, *, switch_side=False):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.original_face_options import SetOriginalFaceOptions
+        return SetOriginalFaceOptions(MayaFacePreHost(
+            namespace=None if namespace == ':' else namespace)).apply(values, switch_side=switch_side)
+
+    def face_multi_skin_clusters_supported(self):
+        from maya import cmds
+        return int(cmds.about(apiVersion=True)) >= 20240000
+
+    def face_offset_create(self, namespace: str):
+        from adv_py.adapters.maya_original_offset_face import MayaOriginalOffsetFaceHost
+        from adv_py.application.original_offset_face import CreateOriginalOffsetFace
+        return CreateOriginalOffsetFace(MayaOriginalOffsetFaceHost(
+            namespace=None if namespace == ':' else namespace)).apply()
+
+    def face_offset_import_choices(self, namespace: str):
+        from adv_py.adapters.maya_original_offset_face import MayaOriginalOffsetFaceHost
+        host = MayaOriginalOffsetFaceHost(namespace=None if namespace == ':' else namespace)
+        raw = host._offset_face_raw
+        return (*host.original_offset_face_import_choices(),
+            raw.workspace(query=True, active=True)+'/'+raw.workspace(query=True, fileRuleEntry='scene'))
+
+    def face_offset_import(self, namespace: str, file: str, options):
+        from adv_py.adapters.maya_original_offset_face import MayaOriginalOffsetFaceHost
+        from adv_py.application.original_offset_face import ImportOriginalOffsetFace
+        return ImportOriginalOffsetFace(MayaOriginalOffsetFaceHost(
+            namespace=None if namespace == ':' else namespace)).apply(file, options)
+
+    def face_offset_update(self, namespace: str):
+        from adv_py.adapters.maya_original_offset_face import MayaOriginalOffsetFaceHost
+        from adv_py.application.original_offset_face import UpdateOriginalOffsetFaces
+        return UpdateOriginalOffsetFaces(MayaOriginalOffsetFaceHost(
+            namespace=None if namespace == ':' else namespace)).apply()
+
+    def face_auto_fit(self, namespace: str, *, options=None):
+        from adv_py.adapters.maya_original_auto_face_fitting import MayaOriginalAutoFaceFittingHost
+        from adv_py.application.original_auto_face_fitting import AutoFitOriginalFace
+        from adv_py.core.original_face_options import normalize_original_face_options
+        host = MayaOriginalAutoFaceFittingHost(namespace=None if namespace == ':' else namespace)
+        host._auto_face_options = normalize_original_face_options(options or {})
+        return AutoFitOriginalFace(host).apply()
+
+    def face_pre_record_mask(self, namespace: str, *, options=None):
         from adv_py.adapters.maya_face_pre import MayaFacePreHost
         from adv_py.application.face_pre import RecordFacePreInput
 
+        host = MayaFacePreHost(namespace=None if namespace == ':' else namespace)
+        if options is not None:
+            from adv_py.core.original_face_options import normalize_original_face_options
+            host._face_input_options = normalize_original_face_options(options, complete=True)
+        return RecordFacePreInput(host).mask()
+
+    def face_original_model_check(self, namespace: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import FacePreRole
+        from adv_py.adapters.maya_model_checker import MayaModelCheckHost
+        from adv_py.application.model_check import ReviewModelCheck
+        host = MayaFacePreHost(namespace=None if namespace == ':' else namespace)
+        geometry = host.read_face_objects(FacePreRole.FACE)
+        if not geometry:
+            raise ValueError('No geometry choosen for "Face"')
+        host._cmds.select(geometry, replace=True)
+        return ReviewModelCheck(MayaModelCheckHost()).execute(
+            game_engine=(host.read_original_face_options() or {}).get('GameEngine', False))
+
+    def face_pre_record_head_joint(self, namespace: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import RecordFacePreInput
         return RecordFacePreInput(MayaFacePreHost(
-            namespace=None if namespace == ":" else namespace)).mask()
+            namespace=None if namespace==':' else namespace)).head_joint()
+
+    def face_pre_input_fields(self, namespace: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        host=MayaFacePreHost(namespace=None if namespace==':' else namespace)
+        fit=host._fit()
+        result={name:('Head_M' if name=='HeadJoint' else '')
+                for name in ('Mask','Face','AllHead','HeadJoint','SkinCluster','RightEye','LeftEye')}
+        if fit is not None:
+            for name in result:
+                if host._cmds.objExists(fit+'.'+name):
+                    result[name]=host._cmds.getAttr(fit+'.'+name) or ''
+        return result
+
+    def face_pre_set_skin_cluster(self, namespace: str, value: str) -> None:
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        MayaFacePreHost(namespace=None if namespace == ':' else namespace).set_original_face_skin_input(value)
+
+    def face_pre_record_eye(self,namespace: str,side: str):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        from adv_py.application.face_pre import RecordFacePreInput,FaceSide
+        return RecordFacePreInput(MayaFacePreHost(
+            namespace=None if namespace==':' else namespace)).eye(FaceSide(side))
 
     def face_pre_record_objects(self, namespace: str, role: str,
-                                head_joint: str):
+                                head_joint: str | None):
         from adv_py.adapters.maya_face_pre import MayaFacePreHost
         from adv_py.application.face_pre import FacePreRole, RecordFacePreInput
 
         return RecordFacePreInput(MayaFacePreHost(
             namespace=None if namespace == ":" else namespace)).objects(
-                FacePreRole(role), head_joint or "Head_M")
+                FacePreRole(role), head_joint)
 
     def face_pre_reselect(self, namespace: str, role: str):
         from adv_py.adapters.maya_face_pre import MayaFacePreHost
@@ -2257,6 +2654,33 @@ class MayaPanelController:
         return MayaFacePreHost(namespace=None if namespace == ":" else namespace
             ).active_face_side().value
 
+    def face_fit_display(self, namespace: str, operation: str, section='', part=''):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        host = MayaFacePreHost(namespace=None if namespace == ':' else namespace)
+        if operation == 'reselect':
+            host.reselect_original_face_fit(section, part)
+            return tuple(host._cmds.ls(selection=True, flatten=True) or [])
+        with host.transaction('Face Fit ' + operation):
+            if operation == 'hide':
+                return host.toggle_original_face_fit_visibility(section, part)
+            if operation == 'show_both':
+                return host.show_original_face_fit_both_sides()
+            if operation == 'side_off':
+                return host.switch_original_face_fit_side(2)
+            if operation == 'assist':
+                return host.toggle_original_face_fit_assist(section)
+            if operation == 'swap':
+                return host.swap_original_face_fit_upper_lower(section, part)
+            if operation == 'delete':
+                return host.delete_original_face_fit(section + part)
+            raise ValueError('Face Fit 显示操作无效')
+
+    def face_fit_states(self, namespace: str, rows):
+        from adv_py.adapters.maya_face_pre import MayaFacePreHost
+        host=MayaFacePreHost(namespace=None if namespace==':' else namespace)
+        return {(section,part):host.original_face_fit_exists(section,part)
+                for section,part in rows}
+
     def face_fit_eye_ball(self, namespace: str, eye_mesh: str,
                           head_joint: str) -> str:
         from adv_py.adapters.maya_face_pre import MayaFacePreHost
@@ -2268,17 +2692,19 @@ class MayaPanelController:
 
     def face_fit_eye_lid(self, namespace: str, layer: str):
         from adv_py.adapters.maya_face_pre import MayaFacePreHost
-        from adv_py.application.face_pre import CreateFaceEyeLidFit, EyeLidLayer
+        from adv_py.application.face_pre import CreateFaceEyeLidFit, EyeLidLayer, OptionalEyeLidLayer
 
         return CreateFaceEyeLidFit(MayaFacePreHost(
             namespace=None if namespace == ":" else namespace)).execute(
-                EyeLidLayer(layer))
+                OptionalEyeLidLayer.MAIN2 if layer == 'Main2' else EyeLidLayer(layer))
 
     def face_fit_lip(self, namespace: str, part: str, *, reselect: bool = False):
+        if reselect:
+            return len(self.face_fit_display(namespace, 'reselect', 'Lip', part))
         from adv_py.adapters.maya_face_lip_fit import MayaFaceLipFitHost
         from adv_py.application.face_lip_fit import CreateFaceLipFit
         host=MayaFaceLipFitHost(namespace=None if namespace == ":" else namespace)
-        return host.select_lip_fit(part) if reselect else CreateFaceLipFit(host).apply(part)
+        return CreateFaceLipFit(host).apply(part)
 
     def face_fit_lip_swap(self, namespace: str, part: str):
         from adv_py.adapters.maya_face_lip_fit import MayaFaceLipFitHost
@@ -2325,6 +2751,64 @@ class MayaPanelController:
         from adv_py.application.driving_systems import EditOriginalPoseFunctions
         use_case=EditOriginalPoseFunctions(MayaDrivingSystemsHost(namespace=None if namespace==":" else namespace))
         return use_case.catalog() if action=="catalog" else use_case.apply(action,**options)
+
+    def original_animation_bake(self, namespace: str, limbs='', mode='ik', *, catalog=False, action='fkik', **options):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.application.original_animation_bake import BakeOriginalControlAnimation
+        use_case=BakeOriginalControlAnimation(MayaDrivingSystemsHost(namespace=None if namespace==':' else namespace))
+        if catalog:return use_case.systems()
+        if action=='to_extra':return use_case.move_to_extra(**options)
+        if action=='extra':return use_case.bake_extra(**options)
+        if action=='quick_ik':return use_case.bake_quick_ik(**options)
+        if action!='fkik':raise ValueError('未知原版动画烘焙操作')
+        return use_case.execute(limbs,mode,**options)
+
+    def original_animation_bake_window(self, namespace: str, *, ui_name='', **state):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.adapters.maya_original_animation_bake_ui import show
+        return show(MayaDrivingSystemsHost(namespace=None if namespace==':' else namespace),ui_name,**state)
+
+    def original_animation_tools(self, namespace: str, action: str, selection=None):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.application.original_animation_tools import EditOriginalAnimationTools
+        return EditOriginalAnimationTools(MayaDrivingSystemsHost(
+            namespace=None if namespace==':' else namespace)).execute(action,selection)
+
+    def original_control_clipboard(self, namespace: str, action: str, *, animation=False, **options):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.application.original_clipboard import TransferOriginalControlClipboard
+        service=TransferOriginalControlClipboard(MayaDrivingSystemsHost(
+            namespace=None if namespace==':' else namespace))
+        if action=='copy':return service.copy(animation,**options)
+        if action=='paste':return service.paste(animation,**options)
+        raise ValueError('未知原版剪贴板操作：'+action)
+
+    def original_control_mirror_options(self, namespace: str, *, ui_name='', **state):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.adapters.maya_original_mirror_options_ui import show
+        return show(MayaDrivingSystemsHost(namespace=None if namespace==':' else namespace),ui_name,**state)
+
+    def original_control_menu_binding(self, namespace: str, window: str, *, ui_name='', **state):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.adapters.maya_original_control_menu_binding import bind
+        return bind(MayaDrivingSystemsHost(namespace=None if namespace==':' else namespace),window,ui_name or window,**state)
+
+    def original_poser_commands(self, namespace: str, text: str, *, action='pose', **options):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.application.original_poser import EditOriginalPoser
+        return EditOriginalPoser(MayaDrivingSystemsHost(
+            namespace=None if namespace==':' else namespace)).apply(text,action,**options)
+
+    def original_poser_window(self, namespace: str):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.adapters.maya_original_poser_ui import show
+        return show(MayaDrivingSystemsHost(namespace=None if namespace==':' else namespace))
+
+    def original_poser_new(self, namespace: str, load_data=(), *, animation=False, file_loading=False):
+        from adv_py.adapters.maya_driving_systems import MayaDrivingSystemsHost
+        from adv_py.adapters.maya_original_poser_ui import new_pose
+        return new_pose(MayaDrivingSystemsHost(namespace=None if namespace==':' else namespace),
+            load_data,animation,file_loading=file_loading)
 
     def original_corrective_targets(self, namespace: str, *, edit=False):
         from adv_py.adapters.maya_corrective_shapes import MayaCorrectiveShapesHost
@@ -2413,11 +2897,9 @@ class MayaPanelController:
                 LipFalloffOptions(outer,inner,iterations,preview,update,multi_skin_clusters))
 
     def face_fit_eye_lid_reselect(self, namespace: str, layer: str) -> int:
-        from adv_py.adapters.maya_face_pre import MayaFacePreHost
-        from adv_py.application.face_pre import EyeLidLayer
-
-        return MayaFacePreHost(namespace=None if namespace == ":" else namespace
-            ).select_eye_lid_fit(EyeLidLayer(layer))
+        return len(self.face_fit_display(namespace, 'reselect',
+            'EyeLidMain2' if layer == 'Main2' else 'EyeLid',
+            '' if layer == 'Main2' else layer))
 
     def face_fit_mirror_right_to_left(self, namespace: str,
                                       left_eye_mesh: str) -> dict:
@@ -2524,6 +3006,12 @@ class MayaPanelController:
         return MayaFaceTweakControlsHost(
             namespace=None if namespace == ":" else namespace
         ).attach_face_controllers()
+
+    def face_skin_layers_visible(self, namespace: str) -> bool:
+        from adv_py.adapters.maya_face_skin_layers import MayaFaceSkinLayersHost
+        return MayaFaceSkinLayersHost(
+            namespace=None if namespace == ':' else namespace
+        ).face_skin_layers_visible()
 
     def face_skin_layers_available(self, namespace: str) -> tuple[str, ...]:
         from adv_py.adapters.maya_face_skin_layers import MayaFaceSkinLayersHost

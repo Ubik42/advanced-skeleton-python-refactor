@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from .character_registry import CharacterRegistration
 from .fit_settings import FitSkeletonValidationError
 from .name_matcher_fit import NameMatcherConstraintPlan
+from .source_control_identity import source_fk_bindings
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +27,9 @@ def plan_name_matcher_animation_bake(
         registration: CharacterRegistration,
         clone_joints: tuple[str, ...]) -> NameMatcherAnimationBakePlan:
     controls: dict[str, set[str]] = {}
+    source_controls: dict[str, set[str]] = {}
+    for joint, control in source_fk_bindings(registration):
+        source_controls.setdefault(joint, set()).add(control)
     for channel in registration.channels:
         stem, _, attribute = channel.key.rpartition('.')
         if attribute == 'rotateX':
@@ -53,8 +57,8 @@ def plan_name_matcher_animation_bake(
                 'arm.fk.' + base + 'FK_' + side,
                 'leg.fk.' + base + 'FK_' + side,
                 'hand.fk.' + base + 'FK_' + side)
-        control_paths = set().union(*(controls.get(key, set())
-                                      for key in keys))
+        control_paths = source_controls.get(leaf, set()) or set().union(
+            *(controls.get(key, set()) for key in keys))
         if len(control_paths) > 1:
             raise FitSkeletonValidationError(
                 'NameMatcher FK 动画控制器映射不唯一：' + leaf)
@@ -66,9 +70,18 @@ def plan_name_matcher_animation_bake(
     if not links or len({link.control for link in links}) != len(links):
         raise FitSkeletonValidationError(
             'NameMatcher 没有唯一的 FK 动画控制器映射')
+    mode_keys = {limb.blend_key for limb in registration.source_limbs}
+    spline_modes = {spline.mode_plug for spline in
+                    (registration.spine, *registration.additional_spines)
+                    if spline is not None and hasattr(spline, 'mode_plug')}
     fk_plugs = tuple(sorted({channel.node + '.' + channel.attribute
         for channel in registration.channels
-        if (channel.key.startswith(('arm.settings.', 'leg.settings.'))
+        if channel.key in mode_keys
+        or channel.node + '.' + channel.attribute in spline_modes
+        or channel.attribute == 'FKIKBlend'
+        or (channel.attribute == 'stabilize'
+            and channel.node.rsplit('|', 1)[-1] == 'HipSwinger_M')
+        or (channel.key.startswith(('arm.settings.', 'leg.settings.'))
             and channel.attribute.startswith(('ArmIkFk_', 'LegIkFk_')))
         or (channel.key.startswith(('spine.ik.', 'spine.spline.','source.spline.'))
             and channel.attribute in ('spineIkFk','FKIKBlend'))}))

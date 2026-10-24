@@ -29,6 +29,10 @@ class FitFaceExpression:
             source=self.host.capture_original_face_eye_input() if stage=="eye_ball" else self.host.capture_original_face_pupil_input()
         if stage=="eye_lid": source=self.host.capture_original_face_lid_input()
         if stage=="prep_first": source=self.host.capture_original_face_first_prep()
+        if stage in ("eye_ball", "pupil_iris", "up_mid_lo"):
+            self.host.prepare_dense_skin_dependencies()
+        if stage == "finish":
+            self.host.prepare_original_face_build_dependencies()
         with self.host.transaction("Face 表情修形："+stage):
             before=self.host.capture_face_build_node_ids()
             method=getattr(self.host,EXPRESSION_STAGES[stage])

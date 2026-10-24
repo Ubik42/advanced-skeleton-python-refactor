@@ -5,6 +5,7 @@ from adv_py.core.face_blendshape_conversion import (original_face_bs_target_name
 
 
 from .maya_original_transform_channels import lock_original_transform_channels
+from .maya_original_blend_shape import original_front_of_chain_blend_shape
 
 class MayaFaceBSSamplingMixin:
     def _original_face_is_blended_attr(self, control, attr):
@@ -20,12 +21,8 @@ class MayaFaceBSSamplingMixin:
         c = self._cmds
         raw = getattr(c, "raw", c)
         with c._creation_namespace() if hasattr(c, "_creation_namespace") else nullcontext():
-            try:
-                result = raw.blendShape(self.scene_address(geometry), name=self.scene_address(name),
-                                       frontOfChain=True, suppressDialog=True)
-            except (TypeError, RuntimeError):
-                result = raw.blendShape(self.scene_address(geometry), name=self.scene_address(name), frontOfChain=True)
-        return result[0]
+            return original_front_of_chain_blend_shape(raw,
+                self.scene_address(geometry), name=self.scene_address(name))
 
     def _original_face_bs_add_target(self, geometry, node, target):
         raw = getattr(self._cmds, "raw", self._cmds)

@@ -43,10 +43,8 @@ class MayaFacePrepSkinMixin:
             if c.objExists(node):
                 c.delete(node)
         source["skin"] = self.regenerate_original_face_skin(source["geometry"], source["skin"])
-        # asSetFixedWrapOptions intentionally persists these Maya options.
-        for option, value in (("autoWeightThreshold", 1), ("exclusiveBind", 0), ("renderInfl", 1)):
-            raw.optionVar(intValue=(option, value))
-        raw.optionVar(stringValue=("falloffMode", "volume"))
+        from .maya_original_wrap_options import set_fixed_wrap_options
+        set_fixed_wrap_options(c)
 
     def regenerate_original_face_skin(self, geometry, skin):
         """Copy to a temporary Skin, recreate the original, copy weights back."""

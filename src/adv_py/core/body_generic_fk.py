@@ -111,10 +111,13 @@ class GenericFkFeaturePolicy:
     source_nonopm_inverse_scale: bool | None = None
     source_native_ik_effectors: bool | None = None
     source_rp_mode_controls: bool | None = None
+    source_rp_follow_controls: frozenset[str] | None = None
     source_untwister_receiver: bool | None = None
     source_body_matrix: bool | None = None
     source_bendy_deform_matrix: bool | None = None
     source_leg_lock_opm: bool | None = None
+    source_ik_root_modes: tuple[tuple[str, bool], ...] | None = None
+    source_ik_root_offsets: tuple[tuple[str, tuple[float, ...]], ...] | None = None
     source_root_body_matrix: bool | None = None
     source_spline_layouts: tuple | None = None
     source_spline_counts: tuple[tuple[str, int], ...] = ()
@@ -122,6 +125,7 @@ class GenericFkFeaturePolicy:
     compensated_controls: frozenset[str] | None = None
     global_controls: frozenset[str] | None = None
     aim_sources: frozenset[str] | None = None
+    source_aim_layouts: tuple | None = None
     follower_sources: frozenset[str] | None = None
     independent_controls: frozenset[str] | None = None
     twist_rewired_sources: frozenset[str] | None = None
@@ -186,6 +190,7 @@ def plan_body_generic_fk(
     point_controls: frozenset[str] | None = None,
     first_after_ik_paths: frozenset[str] = frozenset(),
     follow_inserted_parts: bool = True,
+    non_terminal_sources: frozenset[str] = frozenset(),
 ) -> BodyGenericFkPlan:
     root_path = "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls"
     state_by_name = {state.name.rsplit(":", 1)[-1]: state
@@ -221,12 +226,13 @@ def plan_body_generic_fk(
         if (spec.name in control_by_name
                 or source_name + "_" + spec.side.value in control_by_name):
             continue
+        is_end = spec.path not in child_paths and spec.source_joint not in non_terminal_sources
         needs_endpoint = (final_path in bendy_end_paths
-                          and spec.path not in child_paths
+                          and is_end
                           and not item.control
                           and not (use_offset_parent_matrix
                                    and item.tweaker_control))
-        if (spec.path not in child_paths
+        if (is_end
                 and not item.control
                 and not (use_offset_parent_matrix
                          and item.tweaker_control)
@@ -349,7 +355,8 @@ def plan_body_generic_fk(
                     ("AdvPy_" + stem + "FKAim")
                     if (item.aim and spec.path in child_paths
                         and (aim_sources is None
-                             or source_leaf in aim_sources)) else None)
+                             or source_leaf in aim_sources
+                             or source_name in aim_sources)) else None)
         aim_path = (offset_path + "|" + aim_name
                     if aim_name is not None else None)
         extra_path = (aim_path or offset_path) + "|" + extra_name

@@ -1,6 +1,6 @@
 """Concentrated guide / projection source parity in an unchanged ADV GUI."""
 from pathlib import Path
-import sys,json,traceback
+import sys,json,traceback,os
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 OUTPUT=ROOT/'validation/results/fit-auto-place-lifecycle'
@@ -19,20 +19,29 @@ def fixture(case):
         c.addAttr('AutoPlacing',longName=attr,attributeType='double',defaultValue=value)
     c.setAttr('Root.visibility',False)
     for mesh in (*skin,*all_objects):c.setAttr(mesh+'.visibility',False)
-    if case=='arm':
+    if case in ('arm','arm_existing_constraint'):
         joint=c.createNode('joint',name='asFitShoulderStraight',parent='AutoPlacing')
         c.xform(joint,worldSpace=True,translation=c.xform('Shoulder',query=True,worldSpace=True,translation=True))
         c.setAttr(joint+'.rotateZ',-25.)
         child=c.createNode('joint',name='asFitElbowStraight',parent=joint)
         c.xform(child,worldSpace=True,translation=c.xform('Elbow',query=True,worldSpace=True,translation=True))
         c.setAttr(child+'.rotateZ',12.)
-    if case=='fingers':
+        if case=='arm_existing_constraint':
+            c.group(empty=True,name='ExistingArmDriver')
+            c.parentConstraint('ExistingArmDriver','Shoulder',maintainOffset=True)
+            c.parentConstraint('ExistingArmDriver','Elbow',maintainOffset=True)
+    if case in ('fingers','fingers_existing_curve'):
         driver=c.duplicate(skin[0],name='CombinedSkinUpper_M')[0]
         c.parent(driver,'AutoPlacing',absolute=True)
         target=c.duplicate(driver,name='fingerStraight')[0]
         c.move(0,0,.35,target+'.vtx[*]',relative=True,worldSpace=True)
         c.blendShape(target,driver,name='straightenBS',frontOfChain=True,origin='world',weight=(0,1.))
         c.delete(target)
+        if case=='fingers_existing_curve':
+            for finger in ('Index','Middle','Ring','Pinky'):
+                c.curve(name='FingerSimpleCurve'+finger,degree=1,
+                    point=[c.xform(finger+'Finger'+str(i),query=True,worldSpace=True,translation=True)
+                           for i in range(1,5)])
     c.select(skin[0],replace=True)
     return skin,all_objects
 
@@ -43,27 +52,36 @@ def snapshot():
     from maya import cmds as c
     result['auto_placing']=c.objExists('AutoPlacing')
     result['shoulder_guide']=c.objExists('asFitShoulderStraight')
+    result['finger_curves']={node:c.xform(node+'.cv[*]',query=True,worldSpace=True,translation=True)
+                            for node in c.ls('FingerSimpleCurve*',type='transform')}
+    result['arm_constraints']=sorted(c.ls('Shoulder_parentConstraint*','Elbow_parentConstraint*',type='parentConstraint') or [])
     return result
 
 
-def main():
+def main(*,standalone=False,quit_on_finish=True):
     from maya import cmds as c,mel
     from adv_py.application.fit_auto_place import FinishFitAutoPlace
     from adv_py.adapters.maya_fit import MayaFitJointHost
     from adv_py.adapters.maya_fit_auto_place_projection import projected_curve,save_projection,update_projection,width_min
-    report={'status':'running','guides':[],'projections':[]};OUTPUT.mkdir(parents=True,exist_ok=True)
+    report={'status':'running','pid':os.getpid(),'guides':[],'projections':[]};OUTPUT.mkdir(parents=True,exist_ok=True)
+    option_names=('asHaveRanThisVersion','asDock')
+    options={name:c.optionVar(query=name) if c.optionVar(exists=name) else None for name in option_names}
     def joint_error(a,b):
         return max(abs(x-y) for joint,row in a['joints'].items()
                    for x,y in zip(row['matrix'],b['joints'][joint]['matrix']))
     try:
         mel.eval('source "'+(ROOT/'local/adv_6_925/AdvancedSkeleton.mel').as_posix()+'";')
-        c.optionVar(intValue=('asHaveRanThisVersion',1));c.optionVar(intValue=('asDock',0));mel.eval('AdvancedSkeleton;')
-        for case in ('ordinary','arm','softmod','fingers'):
+        c.workspaceControl('asWorkspaceControl',label='ADV reference',dockToControl=('ToolBox','left'),retain=False)
+        c.optionVar(intValue=('asHaveRanThisVersion',1));c.optionVar(intValue=('asDock',1));mel.eval('AdvancedSkeleton;')
+        for case in ('ordinary','arm','softmod','fingers','arm_existing_constraint','fingers_existing_curve'):
             skin,all_objects=fixture(case)
+            scene=OUTPUT/(case+'-input.mb')
+            c.file(rename=str(scene));c.file(save=True,type='mayaBinary',force=True)
+            c.file(str(scene),open=True,force=True,executeScriptNodes=False)
             c.textField('asBodySkinTextField',edit=True,text=' '.join(skin))
             c.textField('asBodyAllTextField',edit=True,text=' '.join(all_objects))
             mel.eval('asFitDeleteGuides;');native=snapshot()
-            skin,all_objects=fixture(case);before=snapshot()
+            c.file(str(scene),open=True,force=True,executeScriptNodes=False);before=snapshot()
             result=FinishFitAutoPlace(MayaFitJointHost()).apply(skin=skin,all_objects=all_objects)
             python=snapshot()
             difference=max(abs(a-b) for joint,row in native['joints'].items()
@@ -72,7 +90,7 @@ def main():
                 'restored_fingers':result.restored_fingers,'restored_arm':result.restored_arm,
                 'removed_softmods':result.removed_softmods})
             assert difference<=1e-4,(case,difference)
-            for key in ('auto_placing','shoulder_guide','softmods','selection','body_visibility','extra_visibility'):
+            for key in ('auto_placing','shoulder_guide','softmods','selection','body_visibility','extra_visibility','finger_curves','arm_constraints'):
                 assert python[key]==native[key],(case,key,python[key],native[key])
             c.undo();undo_error=joint_error(snapshot(),before);assert undo_error<=1e-8,(case,'undo',undo_error)
             c.redo();redo_error=joint_error(snapshot(),python);assert redo_error<=1e-8,(case,'redo',redo_error)
@@ -111,5 +129,13 @@ def main():
         report['saved_reopened']=True;report['status']='passed'
     except Exception:report['status']='failed';report['error']=traceback.format_exc()
     finally:
+        if c.workspaceControl('asWorkspaceControl',exists=True):c.deleteUI('asWorkspaceControl',control=True)
+        for name,value in options.items():
+            if value is None:c.optionVar(remove=name)
+            else:c.optionVar(intValue=(name,int(value)))
         (OUTPUT/'parity.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
-        c.quit(force=True)
+        completion=os.environ.get('ADV_TEST_COMPLETION_FILE')
+        if completion and quit_on_finish:
+            Path(completion).write_text(json.dumps(dict(pid=os.getpid(),status=report['status'])),encoding='utf-8')
+        if quit_on_finish:c.evalDeferred('quit -force')
+    return 0 if report['status']=='passed' else 1

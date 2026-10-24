@@ -1,0 +1,50 @@
+{
+  "status": "passed",
+  "pid": 43156,
+  "scope": "Fresh full biped with SplineTail below HeadEnd Parts and two MainExtra levels; native MEL poses before/after preserved-data rebuild",
+  "configurations": [
+    {
+      "opm": false,
+      "evidence_pid": 23524,
+      "body_joints": 81,
+      "part_joints": 27,
+      "channels": 2552,
+      "pose_count": 14,
+      "maximum_pose_error": 5.298449402285632e-05,
+      "skin_animation_identity_preserved": true,
+      "weights_membership_preserved": true,
+      "undo_redo": true,
+      "reopened": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "maximum_vertex_rebuild_error": 0.0
+    },
+    {
+      "opm": true,
+      "evidence_pid": 43156,
+      "body_joints": 81,
+      "part_joints": 27,
+      "channels": 2552,
+      "pose_count": 14,
+      "maximum_pose_error": 5.2992959944819784e-05,
+      "skin_animation_identity_preserved": true,
+      "weights_membership_preserved": true,
+      "undo_redo": true,
+      "reopened": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "maximum_vertex_rebuild_error": 0.0
+    }
+  ],
+  "maximum_pose_error": 5.2992959944819784e-05,
+  "tolerance": 0.0001,
+  "export_tested": false,
+  "declared_default_correction": "Lifecycle predates the separate attribute-default correction; current initial values and matrix graph are unchanged, declared defaults verified separately by the 48-case fixture",
+  "script": "validation/maya_source_spline_part_lifecycle.py"
+}

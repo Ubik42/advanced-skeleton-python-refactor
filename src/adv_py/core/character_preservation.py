@@ -1,5 +1,6 @@
 """Immutable retained scene data for character rebuild handoff."""
 from dataclasses import asdict, dataclass
+import re
 from .character_registry import CharacterRegistration, CharacterRegistryError, canonical, digest, finite
 from .character_pose import CharacterPose
 
@@ -39,6 +40,9 @@ class PreservedSkin:
     connections: tuple[tuple[str, str], ...]
     component_memberships: tuple[tuple[str, tuple[int, ...] | None], ...] = ()
     influence_locks: tuple[tuple[int, str, bool, bool], ...] = ()
+    # Sparse slots left by native DeleteUnusedJoints. No live influence is
+    # invented for these matrices, and the deleted origin survives rebuild.
+    cached_matrices: tuple[tuple[int, tuple[float, ...] | None, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -120,6 +124,13 @@ class CharacterPreservation:
     deformers: tuple[PreservedDeformer, ...] = ()
     control_states: tuple[PreservedControlState, ...] = ()
     selection_sets: tuple[PreservedSelectionSet, ...] = ()
+    # Exact native MoCap document; helper nodes survive through extensions.
+    # The boundary is rebased only against audited character UUID pairs.
+    mocap_session: str | None = None
+    native_animation: tuple[str, ...] = ()
+    mocap_sample_frames: tuple[float, ...] = ()
+    quick_ik: tuple[str, ...] = ()
+    quick_ik_sample_frames: tuple[float, ...] = ()
 
     @property
     def content_digest(self):
@@ -129,6 +140,31 @@ class CharacterPreservation:
 
 def validate_preservation(snapshot):
     finite(snapshot.current_time)
+    if snapshot.mocap_session is not None:
+        from .source_name_matcher_session import decode_session
+        decode_session(snapshot.mocap_session)
+    from .source_native_animation import decode_native_animation
+    identities=set()
+    for document in snapshot.native_animation:
+        value=decode_native_animation(document)
+        if value['node']['uuid'] in identities:
+            raise CharacterRegistryError('原生动捕动画保留身份重复')
+        identities.add(value['node']['uuid'])
+    if (not isinstance(snapshot.mocap_sample_frames,tuple)
+            or tuple(sorted(set(snapshot.mocap_sample_frames)))!=snapshot.mocap_sample_frames):
+        raise CharacterRegistryError('动捕重建采样帧必须是递增且唯一的时间')
+    for frame in snapshot.mocap_sample_frames:finite(frame)
+    if (not isinstance(snapshot.quick_ik_sample_frames,tuple)
+            or tuple(sorted(set(snapshot.quick_ik_sample_frames)))!=snapshot.quick_ik_sample_frames):
+        raise CharacterRegistryError('QuickIK 重建采样帧必须递增且唯一')
+    for frame in snapshot.quick_ik_sample_frames:finite(frame)
+    from .source_quick_ik import decode_quick_ik
+    quick_ids=set()
+    for document in snapshot.quick_ik:
+        value=decode_quick_ik(document)
+        if value['group']['uuid'] in quick_ids:
+            raise CharacterRegistryError('QuickIK 重建保留临时组身份重复')
+        quick_ids.add(value['group']['uuid'])
     # Reject non-finite data at every level, including retained custom values.
     try:canonical(asdict(snapshot))
     except (ValueError,TypeError) as exc:raise CharacterRegistryError('重建保留数据包含不可序列化或非有限数值') from exc
@@ -165,6 +201,22 @@ def validate_preservation(snapshot):
         indices=[i for i,_,_,_ in skin.influences]
         if not indices or len(set(indices))!=len(indices) or any(len(m)!=16 for _,_,m,_ in skin.influences):
             raise CharacterRegistryError('蒙皮影响索引或绑定矩阵不完整')
+        cached = {index:(matrix,origin) for index,matrix,origin in skin.cached_matrices}
+        empty = {index for index,source,_,_ in skin.influences if not source}
+        if (len(cached)!=len(skin.cached_matrices) or set(cached)!=empty
+                or any(type(index) is not int or index<0 or matrix is not None and len(matrix)!=16
+                       or not isinstance(origin,str) or not origin
+                       for index,matrix,origin in skin.cached_matrices)):
+            raise CharacterRegistryError('蒙皮断开矩阵缺少完整的原版删除缓存记录')
+        from .character_body_retirement import frozen_origin
+        for index,(matrix,origin) in cached.items():
+            recorded = tuple((row,item) for row in snapshot.registration.retired_body
+                for item in row.frozen_inputs if item.destination_uuid == skin.uuid
+                and item.destination.split('.',1)[1] == 'matrix['+str(index)+']')
+            if (len(recorded)!=1 or recorded[0][1].datatype not in ('matrix','fltMatrix')
+                    or recorded[0][1].value!=matrix
+                    or frozen_origin(*recorded[0])!=origin):
+                raise CharacterRegistryError('蒙皮缓存矩阵不对应登记的真实删除来源')
         lock_indices=[index for index,_,_,_ in skin.influence_locks]
         if (len(set(lock_indices))!=len(lock_indices)
                 or len({path for _,path,_,_ in skin.influence_locks})
@@ -173,8 +225,14 @@ def validate_preservation(snapshot):
                        or type(value) is not bool or type(locked) is not bool
                        for index,path,value,locked in skin.influence_locks)):
             raise CharacterRegistryError('蒙皮影响关节锁定状态无效')
+        removed_indices={int(match.group(1)) for row in snapshot.registration.retired_body
+            for item in row.frozen_inputs
+            if item.destination_uuid==skin.uuid and not item.element_exists
+            and item.datatype in ('matrix','fltMatrix')
+            and (match:=re.fullmatch(r'matrix\[([0-9]+)\]',item.destination.split('.',1)[1]))}
+        allowed_indices=set(indices)|removed_indices
         for _,weights in skin.weights:
-            if any(i not in indices or value<0 for i,value in weights):
+            if any(i not in allowed_indices or value<0 for i,value in weights):
                 raise CharacterRegistryError('蒙皮权重引用未知影响或包含负值')
         if skin.component_memberships:
             counts={path:count for path,_,count in skin.meshes}

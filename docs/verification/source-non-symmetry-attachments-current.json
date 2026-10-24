@@ -1,0 +1,208 @@
+{
+  "pid": 45500,
+  "native_reference_pid": 73296,
+  "scope": "Authored asymmetric Fit AimAt, self/target Up Object and 0/5/10 weights; GeoAttach point/orient/parent and Pin with attachment meshes; full preserved rebuild; no FBX.",
+  "authored_fields": [
+    [
+      "IndexFinger1",
+      "geoAttach",
+      "Attachment_R"
+    ],
+    [
+      "IndexFinger1_NonSymmetry",
+      "geoAttach",
+      "Attachment_R"
+    ],
+    [
+      "RingFinger1",
+      "geoAttach",
+      "Attachment_R"
+    ],
+    [
+      "RingFinger1_NonSymmetry",
+      "geoAttach",
+      "Attachment_R"
+    ],
+    [
+      "PinkyFinger1",
+      "proximityPin",
+      "Attachment_R"
+    ],
+    [
+      "PinkyFinger1_NonSymmetry",
+      "proximityPin",
+      "Attachment_R"
+    ],
+    [
+      "MiddleFinger1",
+      "aimAt",
+      "IndexFinger1"
+    ],
+    [
+      "MiddleFinger1_NonSymmetry",
+      "aimAt",
+      "RingFinger1"
+    ]
+  ],
+  "lifecycle": {
+    "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-attachments-current\\input.ma",
+    "reused_saved_build": true,
+    "body_joints": 72,
+    "opm": false,
+    "bendy": true,
+    "bendy_count": 3,
+    "bendy_joints": [
+      "Shoulder",
+      "Elbow"
+    ],
+    "part_joints": 18,
+    "channels": 2305,
+    "skins": [
+      "AdvPy_BodySkin"
+    ],
+    "additional_animated_channels": [],
+    "restricted_skin": false,
+    "portable_pose_roundtrip": true,
+    "portable_animation_roundtrip": true,
+    "native_global_deformation": true,
+    "registry_reopened": true,
+    "fbx_bytes": null,
+    "export_tested": false,
+    "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-attachments-current\\python\\original-biped-current.mb",
+    "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-attachments-current\\python\\original-biped-rebuilt.mb",
+    "rebuilt_scene_reopened": true,
+    "native_skin_curve_identity_preserved": true,
+    "single_undo_redo_preserved": true,
+    "native_rebuild_retained_skin_animation": true,
+    "skin_weights_membership_preserved": true,
+    "all_vertex_frames": [
+      1,
+      3,
+      5
+    ],
+    "all_vertex_rebuild_maximum_error": 2.842170943040401e-14,
+    "status": "passed"
+  },
+  "poses": [
+    {
+      "scene": "original-biped-current.mb",
+      "case": "geo_right_move",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "geo_left_turn",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "geo_point_half",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "geo_orient_half",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "geo_parent_zero",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "geo_parent_half",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "pin_scale",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "pin_half",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "pin_zero",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "aim_attachment_half",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "geo_right_move",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "geo_left_turn",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "geo_point_half",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "geo_orient_half",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "geo_parent_zero",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "geo_parent_half",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "pin_scale",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "pin_half",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "pin_zero",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "aim_attachment_half",
+      "maximum_error": 2.633215170111359e-06
+    }
+  ],
+  "neutral_errors": {
+    "original-biped-current.mb": 2.6332151703646767e-06,
+    "original-biped-rebuilt.mb": 2.633215170111359e-06
+  },
+  "status": "passed_for_tested_scope",
+  "initial_saved_build_pid": 57696,
+  "lifecycle_pid": 45500,
+  "process_exited": true,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "threshold": 0.0001,
+  "runtime_report": "validation/results/source-non-symmetry-attachments-current/report.json",
+  "saved_build_sha256": "a5540812c6a17ff05bd4d8bd214741cee0946d5ba71722786fb08695eb8d8c84",
+  "remaining": [
+    "OPM combination current run pending",
+    "Other ProximityPin generator input/output preferences not covered",
+    "Full namespaced characters and different topology not covered",
+    "Dedicated Attach/Pin weight animation curves not covered; retained native Global animation tested",
+    "FBX and default model appearance not tested",
+    "Old approximate attachment graph migration not covered"
+  ]
+}

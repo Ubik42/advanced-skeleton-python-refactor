@@ -1,28 +1,61 @@
 """Native selection implementation of ADV asSelectLeastEdgesPath (30617)."""
 
 def original_face_least_edges(host,geometry,start,end):
-    c=host._cmds; raw=getattr(c,"raw",c); mesh=host.scene_address(geometry)
+    c=host._cmds
+    raw=getattr(c,"raw",c)
+    mesh=host.scene_address(geometry)
     a,b=mesh+f".vtx[{start}]",mesh+f".vtx[{end}]"
-    raw.select(a,replace=True); raw.polySelectConstraint(propagate=1,type=1)
-    neighbors=raw.ls(selection=True,long=True,flatten=True) or []
-    target=(raw.ls(b,long=True,flatten=True) or [b])[0]
+
+    def select(items):
+        raw.select(items,replace=True) if items else raw.select(clear=True)
+
+    def current():
+        return tuple(raw.ls(selection=True,long=True,flatten=True) or [])
+
+    def shortest():
+        raw.select(mesh,replace=True)
+        select(raw.polySelect(query=True,asSelectString=True,
+                              shortestEdgePath=(start,end)) or [])
+        return current()
+
+    raw.select(a,replace=True)
+    raw.polySelectConstraint(propagate=1,type=1)
+    neighbors=current()
+    raw.select(b,replace=True)
+    target=current()[0]
+    if target in neighbors:
+        return shortest()
+
     raw.select(mesh,replace=True)
-    shortest=raw.polySelect(mesh,query=True,asSelectString=True,shortestEdgePath=(start,end)) or []
-    if target in neighbors: return tuple(raw.ls(shortest,long=True,flatten=True) or [])
     raw.select((a,b),replace=True)
-    candidate=raw.polySelectSp(query=True,loop=True) or []
-    vertices=raw.ls(candidate,long=True,flatten=True) or []
     source=(raw.ls(a,long=True,flatten=True) or [a])[0]
-    if source not in vertices or target not in vertices: vertices=[]
+    candidate=raw.polySelectSp(query=True,loop=True) or []
+    vertices=()
+    if candidate:
+        select(candidate)
+        vertices=current()
+        if source not in vertices or target not in vertices:
+            raw.select(clear=True)
+            vertices=()
     if not vertices:
+        # Native queries ring against the selection left by the loop branch.
+        # It does not silently restore the original endpoint pair here.
         candidate=raw.polySelectSp(query=True,ring=True) or []
-        vertices=raw.ls(candidate,long=True,flatten=True) or []
-        if target not in vertices: vertices=[]
-    if len(vertices)>len(raw.ls(shortest,flatten=True) or [])+3: vertices=[]
+        if candidate:
+            select(candidate)
+            vertices=current()
+            if target not in vertices:
+                raw.select(clear=True)
+                vertices=()
+    shortest_edges=shortest()
+    if len(vertices)>len(shortest_edges)+3:
+        vertices=()
     if vertices:
-        edges=raw.polyListComponentConversion(vertices,toEdge=True,internal=True)
-        return tuple(raw.ls(edges,long=True,flatten=True) or [])
-    return tuple(raw.ls(shortest,long=True,flatten=True) or [])
+        select(vertices)
+        select(raw.polyListComponentConversion(current(),toEdge=True,internal=True) or [])
+        return current()
+    # asSelectLeastEdgesPath leaves the chosen edges selected for its caller.
+    return shortest()
 
 
 def original_face_connected_vertices(host, geometry, seeds):

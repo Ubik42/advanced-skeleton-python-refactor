@@ -1,8 +1,6 @@
 """Maya selection and preference actions from the original Skinning panel."""
 from __future__ import annotations
 
-import re
-
 
 SMOOTH_BIND_OPTIONS = (
     ("multipleBindPosesOpt", 1),
@@ -88,10 +86,24 @@ def open_native_bake_deformer(*, mel=None) -> None:
     mel.eval("BakeDeformerTool")
 
 
-def freeze_native_skin_cluster(skin: str, *, mel=None) -> None:
-    """Call Maya's built-in bind-matrix freeze used by Face Attach."""
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9:|]*", skin):
-        raise ValueError("SkinCluster 名称不能安全传给 Maya 原生命令")
-    if mel is None:
-        from maya import mel
-    mel.eval('freezeSkinCluster "' + skin + '";')
+def freeze_native_skin_cluster(skin: str, *, cmds=None) -> None:
+    """Python port of ADV freezeSkinCluster, source 76562–76584.
+
+    This helper belongs to ADV itself, not Maya's shipped utilities. Keep
+    sparse matrix logical indices and every actual connected influence.
+    """
+    if cmds is None:
+        from maya import cmds
+    if not cmds.objExists(skin):
+        return
+    pairs = cmds.listConnections(skin + '.matrix', source=True, destination=True,
+                                 plugs=True, connections=True) or []
+    for index in range(0, len(pairs), 2):
+        destination, source = pairs[index:index + 2]
+        node = source.split('.', 1)[0]
+        logical_index = destination.split('[', 1)[1].split(']', 1)[0]
+        matrix = cmds.getAttr(node + '.worldInverseMatrix')
+        if len(matrix) == 1 and isinstance(matrix[0], (tuple, list)):
+            matrix = matrix[0]
+        cmds.setAttr(skin + '.bindPreMatrix[' + logical_index + ']',
+                     *matrix, type='matrix')

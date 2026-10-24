@@ -40,12 +40,14 @@ class SourceRpDynamicsPlan:
     normal_curve: str
     anti_pop_curve: str
     outputs: tuple[tuple[str,str],...] = ()
+    fit_rest_length: float | None = None
 
 
 def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
                             global_inverse,global_scale,chain,translations, *,
                             source_pole_targets=False,pole_end_anchor=None,
-                            source_x_translation=False,pole_sign=None,allow_shortening=False):
+                            source_x_translation=False,pole_sign=None,allow_shortening=False,
+                            fit_rest_length=None):
     if (len(chain)<2 or len(translations)!=len(chain)-1
             or len(set(chain))!=len(chain)
             or any(len(vector)!=3 or any(not isfinite(v) for v in vector)
@@ -63,6 +65,11 @@ def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
         return name
     def edge(source,target): return (source,target)
     rest=sum(sqrt(sum(v*v for v in vector)) for vector in translations)
+    if fit_rest_length is not None:
+        if (isinstance(fit_rest_length,bool) or not isinstance(fit_rest_length,(int,float))
+                or not isfinite(fit_rest_length) or fit_rest_length<=0):
+            raise ValueError('来源 RP Fit 分析长度必须为正有限数值')
+        rest=float(fit_rest_length)
     if source_x_translation:
         stretch=node('StretchUnit','setRange',(('maxX',1.),('oldMaxX',10.)),
                      (edge(control+'.stretchy','valueX'),))
@@ -160,14 +167,17 @@ def plan_source_rp_dynamics(label,side,control,pole,start_anchor,target_anchor,
         tuple((stem+('_PoleLockBlend' if source_x_translation else '_Segment')+
                str(index)+'.output',segment.joint+
                ('.translateX' if source_x_translation else '.translate'))
-              for index,segment in enumerate(segments,1)))
+              for index,segment in enumerate(segments,1)),fit_rest_length)
 
 
 def decode_source_rp_dynamics(text):
     from dataclasses import fields
     import re
     from .character_registry import safe_json,exact,path,identifier,finite,vector,CharacterRegistryError
-    raw=exact(safe_json(text),(field.name for field in fields(SourceRpDynamicsPlan)))
+    raw=safe_json(text)
+    if isinstance(raw,dict) and 'fit_rest_length' not in raw:
+        raw={**raw,'fit_rest_length':None}
+    raw=exact(raw,(field.name for field in fields(SourceRpDynamicsPlan)))
     nodes=[]
     kinds={'unitConversion','multMatrix','distanceBetween','animCurveUU',
            'blendTwoAttr','clamp','multiplyDivide','multDoubleLinear','plusMinusAverage',
@@ -207,9 +217,12 @@ def decode_source_rp_dynamics(text):
         path(raw['pole']),path(raw['start_anchor']),path(raw['target_anchor']),
         finite(raw['rest_length']),tuple(segments),tuple(nodes),plug(raw['ratio']),
         plug(raw['volume']),identifier(raw['normal_curve']),identifier(raw['anti_pop_curve']),
-        tuple((plug(source),plug(destination)) for source,destination in raw['outputs']))
+        tuple((plug(source),plug(destination)) for source,destination in raw['outputs']),
+        finite(raw['fit_rest_length']) if raw['fit_rest_length'] is not None else None)
     total=sum(sqrt(sum(v*v for v in row.translation)) for row in segments)
-    if (plan.rest_length<=0 or abs(total-plan.rest_length)>1e-6
+    if (plan.rest_length<=0
+            or (abs(total-plan.rest_length)>1e-6 if plan.fit_rest_length is None
+                else plan.fit_rest_length<=0 or plan.fit_rest_length!=plan.rest_length)
             or len({target for _,target in plan.outputs})!=len(plan.outputs)):
         raise CharacterRegistryError('来源 RP 图绑定长度不一致')
     return plan

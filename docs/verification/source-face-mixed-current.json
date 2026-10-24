@@ -1,0 +1,53 @@
+{
+  "updated": "2026-10-11",
+  "status": "passed",
+  "source": {
+    "file": "local/adv_6_925/AdvancedSkeleton.mel",
+    "sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+    "restored_lines": [
+      43560,
+      43604,
+      43605,
+      43606,
+      43911,
+      43912,
+      43913
+    ]
+  },
+  "comparison": {
+    "native_pid": 24464,
+    "python_pid": 43572,
+    "targets": 97,
+    "blendshape_nodes": 10,
+    "poses": 14,
+    "skin_nodes": 53,
+    "skin_geometry_count": 53,
+    "skin_weight_value_count": 324394,
+    "maximum_error": 0.0,
+    "skin_weight_bind_error": 0.0,
+    "control_membership_locks_match": true
+  },
+  "lifecycle": {
+    "undo_identity_restored": true,
+    "undo_control_locks_restored": true,
+    "undo_pose_error": 0.0,
+    "undo_skin_error": 0.0,
+    "redo_control_locks_restored": true,
+    "redo_skin_error": 0.0,
+    "redo_mesh_error": 0.0,
+    "undo_redo_error": 0.0,
+    "reopened_error": 0.0,
+    "reopened_control_locks_restored": true,
+    "reopened_skin_error": 0.0
+  },
+  "fixes": [
+    "Source compound TRS connections temporarily unlock existing locked channels and restore their exact lock states, allowing native Undo to disconnect them.",
+    "The existing bulk Skin command journals the exact result of each native source Flood; Redo restores those weights independently of the later Artisan context."
+  ],
+  "limits": [
+    "Same saved complete OPM Face input used by unmodified MEL conversion and Python conversion; this validates conversion, not all original Face construction-stage weights.",
+    "Non-OPM source ctrlBox2 reconnect limitation remains recorded.",
+    "Default ADV model appearance and full panel layout not covered."
+  ],
+  "next": "Full Face source construction weights and preservation rebuild; then remaining Body parity and source branches."
+}

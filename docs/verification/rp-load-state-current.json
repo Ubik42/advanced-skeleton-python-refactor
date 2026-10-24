@@ -1,0 +1,34 @@
+{
+  "status": "diagnostic",
+  "pid": 62040,
+  "process_exited": true,
+  "scope": "Maya loading and neutral-rotation seed diagnosis; no production changes",
+  "rows": [
+    {
+      "case": "native-mb",
+      "maximum_error": 0.0
+    },
+    {
+      "case": "python-mb",
+      "maximum_error": 0.0001422600032230381
+    },
+    {
+      "case": "native-ma",
+      "maximum_error": 0.0
+    },
+    {
+      "case": "python-ma",
+      "maximum_error": 0.0001422600032230381
+    },
+    {
+      "case": "native-opposite-seed",
+      "maximum_error": 0.0
+    },
+    {
+      "case": "python-opposite-seed",
+      "maximum_error": 0.0001422600032230381
+    }
+  ],
+  "production_changes": false,
+  "conclusion": "Neither MB/MA storage format nor stored neutral elbow rotation seed explains the left-arm RP difference. Parity remains failed."
+}

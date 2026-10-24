@@ -1,7 +1,7 @@
 """Build a registered Body and bind its meshes in one scene transaction."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from adv_py.core.fit_settings import FitSkeletonValidationError
 from adv_py.core.fit_part_twist import FitPartTwistSource
@@ -123,10 +123,11 @@ class BuildRegisteredSkinnedBodyCharacter:
                 joined, geometry_meshes, influences, plan.skin_names,
                 plan.smooth_bind,
                 maximum_influences=plan.maximum_influences)
-            finalize_body_character_sets(
+            registration = finalize_body_character_sets(
                 joined, character.registration, character.rig.plan,
                 scene_before=scene_before, fit_container=container_name,
                 create_sets=False)
+            character = replace(character, registration=registration)
             if on_stage:
                 on_stage("skins-bound")
         return RegisteredSkinnedBodyBuildResult(character, skins)

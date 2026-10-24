@@ -1,0 +1,61 @@
+{
+  "pid": 60836,
+  "scope": "OPM authored asymmetric Fit AimAt, self/target Up Object and 0/5/10 weights; GeoAttach point/orient/parent and Pin with attachment meshes; full preserved rebuild; no FBX.",
+  "authored_fields": [
+    [
+      "IndexFinger1",
+      "geoAttach",
+      "Attachment_R"
+    ],
+    [
+      "IndexFinger1_NonSymmetry",
+      "geoAttach",
+      "Attachment_R"
+    ],
+    [
+      "RingFinger1",
+      "geoAttach",
+      "Attachment_R"
+    ],
+    [
+      "RingFinger1_NonSymmetry",
+      "geoAttach",
+      "Attachment_R"
+    ],
+    [
+      "PinkyFinger1",
+      "proximityPin",
+      "Attachment_R"
+    ],
+    [
+      "PinkyFinger1_NonSymmetry",
+      "proximityPin",
+      "Attachment_R"
+    ],
+    [
+      "MiddleFinger1",
+      "aimAt",
+      "IndexFinger1"
+    ],
+    [
+      "MiddleFinger1_NonSymmetry",
+      "aimAt",
+      "RingFinger1"
+    ]
+  ],
+  "stage": "original_build",
+  "traceback": "Traceback (most recent call last):\n  File \"D:\\3D/_tools/_DCC/advanced-skeleton-python-refactor/validation\\maya_non_symmetry_attachments_opm.py\", line 69, in main\n    c.createNode('transform',name='asBatch');mel.eval('asBuildAdvancedSkeleton;')\nRuntimeError: Error occurred during execution of MEL script\nfile: D:/3D/_tools/_DCC/advanced-skeleton-python-refactor/local/adv_6_925/AdvancedSkeleton.mel line 80372: The destination attribute 'RingFinger1FKMM_R.matrixIn[2]' cannot be found.\n",
+  "joint_count": 242,
+  "root_exists": true,
+  "fit_exists": true,
+  "status": "native_source_input_failed",
+  "process_exited": true,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "runtime_report": "validation/results/source-non-symmetry-attachments-opm-current/report.json",
+  "source_condition": "MEL 80233 excludes geoAttach from FKMM creation; 80372 later connects RingFinger1FKMM_R unconditionally for this parented FK offset.",
+  "python_comparison_performed": false,
+  "remaining": [
+    "OPM GeoAttach combination unaccepted; source-compatible behavior and unsupported-input handling require follow-up",
+    "Separate OPM Pin+AimAt run pending; its result must not replace this failed input"
+  ]
+}

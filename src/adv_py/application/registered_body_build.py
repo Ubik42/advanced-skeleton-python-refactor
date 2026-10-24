@@ -406,10 +406,22 @@ def preflight_registered_fit_parts(
 
 def _refresh_fit_orientations_before_body(host, container_name: str) -> None:
     """Run MEL's pre-build Fit aim pass before copying Body joint frames."""
+    native = getattr(host, 'update_source_fit_orientations', None)
+    if native is not None:
+        roots = tuple(host._cmds.listRelatives(container_name, children=True,
+                                              type='joint', fullPath=True) or ())
+        # asFitModeManualUpdate invokes asFitModeUpdateJoints separately for
+        # every immediate Fit root. Procedure-local axis/up state must start
+        # afresh on each root, while retaining its lifetime within that root.
+        for root in roots:
+            native((root,), container=container_name, recursive=True)
+        return
     snapshot = host.capture_fit_orientation(container_name)
     targets = tuple(
         node.path for node in snapshot.hierarchy.joints
         if select_fit_orientation_child(snapshot, node.path) is not None
+        and not re.match(r'^Cup[0-9]', node.short_name.rsplit(':', 1)[-1])
+        and node.short_name.rsplit(':', 1)[-1] != 'Cup_NonSymmetry'
     )
     if targets:
         editor = OrientFitJoints(host)
@@ -448,23 +460,39 @@ def _preflight_centered_root_spine(host, hierarchy) -> None:
 
 def _prepare_fit_for_body(host, container_name: str, original_up_axis: str):
     """The shared manual-update/prebuild sequence of asBuildAdvancedSkeleton."""
+    stop_mode = getattr(host, 'stop_source_fit_mode', None)
+    if stop_mode is not None:
+        stop_mode()
+    manual_update = getattr(host, 'manual_update_fit', None)
     edit_channels = getattr(host, "fit_manual_update_channels", None)
     scope = (edit_channels(container_name) if edit_channels is not None
              else nullcontext())
     with scope:
         host.prepare_fit_root(container_name)
-        host.normalize_fit_joint_names(container_name)
-        host.normalize_fit_ik_labels(container_name)
-        host.bake_fit_container_scale(container_name)
-        snap_centers = getattr(host, "snap_fit_ik_chain_centers", None)
-        if snap_centers is not None:
-            snap_centers(container_name)
-        _refresh_fit_orientations_before_body(host, container_name)
+    if manual_update is not None:
+        manual_update(container_name, from_body_build=True)
+    else:
+        with (edit_channels(container_name) if edit_channels is not None else nullcontext()):
+            host.normalize_fit_joint_names(container_name)
+            host.normalize_fit_ik_labels(container_name)
+            host.bake_fit_container_scale(container_name)
+            snap_centers = getattr(host, "snap_fit_ik_chain_centers", None)
+            if snap_centers is not None:
+                snap_centers(container_name)
+            _refresh_fit_orientations_before_body(host, container_name)
     hierarchy = host.capture_fit_hierarchy(container_name)
+    host.write_missing_fit_deform_profiles(container_name,
+        tuple(node.path for node in hierarchy.joints))
+    upgrade_bendy=getattr(host,'upgrade_legacy_fit_bendy',None)
+    if upgrade_bendy is not None:
+        upgrade_bendy(container_name)
     _preflight_centered_root_spine(host, hierarchy)
     if original_up_axis == "z":
         host.flip_character_scene_up_axis(container_name, "y")
         hierarchy = host.capture_fit_hierarchy(container_name)
+    wrap_options=getattr(host,'prepare_body_wrap_options',None)
+    if wrap_options is not None:
+        wrap_options()
     return hierarchy
 
 
@@ -540,10 +568,6 @@ class BuildRegisteredBodyCharacter:
                         prepare_scene()
                     fit_hierarchy = _prepare_fit_for_body(
                         joined, container_name, original_up_axis)
-                    joined.write_missing_fit_deform_profiles(
-                        container_name,
-                        tuple(node.path for node in fit_hierarchy.joints),
-                    )
                     # All ordinary Fit builds follow the original labels,
                     # including standard biped names. An explicitly supplied
                     # legacy axial description still selects its saved layout.
@@ -914,6 +938,8 @@ class BuildRegisteredBodyCharacter:
                     if _generic_fk_policy is not None else None),
                 standard_fk_independent_controls=(
                     _generic_fk_policy.standard_fk_independent_controls
+                    if _generic_fk_policy is not None else None),
+                source_aim_layouts=(_generic_fk_policy.source_aim_layouts
                     if _generic_fk_policy is not None else None),
                 torso_fkx_joint_names=(
                     _generic_fk_policy.torso_fkx_joint_names
@@ -1719,15 +1745,15 @@ class BuildRegisteredBodyCharacter:
                         control.fit_joint_names)))
             generic_fit_aim = plan_body_fit_aim(
                 fit_hierarchy, generic_aim_metadata,
-                skeleton.snapshot, generic_aim_controls)
+                skeleton.snapshot, generic_aim_controls, instances=part_plan.symmetry.instances,
+                fit_joint_order=joined.capture_body_fit_aim_source_order(fit_hierarchy),
+                saved_layouts=_generic_fk_policy.source_aim_layouts if _generic_fk_policy else None)
             aim_use_opm = BodyBuildOptions.from_fit_settings(
                 rig.plan.arm.safety.symmetry.settings
             ).use_offset_parent_matrix
-            for aim_spec in generic_fit_aim:
-                joined.create_body_fit_aim(
-                    aim_spec,
-                    global_control=rig.plan.global_control.control_path,
-                    use_offset_parent_matrix=aim_use_opm)
+            joined.create_body_fit_aims(generic_fit_aim,
+                global_control=rig.plan.global_control.control_path,
+                use_offset_parent_matrix=aim_use_opm)
             if any(not joined.capture_body_fit_aim(
                     aim_spec,
                     global_control=rig.plan.global_control.control_path,
@@ -2097,7 +2123,7 @@ class BuildRegisteredBodyCharacter:
                     for control in generic_fk.controls
                     if control.control_path not in generic_fk.hidden_controls)
             if not _defer_selection_sets:
-                finalize_body_character_sets(
+                registration = finalize_body_character_sets(
                     joined, registration, rig.plan,
                     segments=tuple(segments), extras=selection_extras,
                     populate_all=False)
@@ -2111,7 +2137,7 @@ class BuildRegisteredBodyCharacter:
                 raise RuntimeError("角色主构建结束时 Body 变形系统层级不一致")
             if (_scene_before is not None and not _defer_selection_sets
                     and not _defer_all_set):
-                finalize_body_character_sets(
+                registration = finalize_body_character_sets(
                     joined, registration, rig.plan,
                     scene_before=_scene_before,
                     fit_container=container_name, create_sets=False)

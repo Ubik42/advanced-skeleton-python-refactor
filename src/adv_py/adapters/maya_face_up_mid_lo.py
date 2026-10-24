@@ -69,10 +69,9 @@ class MayaFaceUpMidLoMixin:
                 raw.polySelectConstraint(mode=3,type=1,dist=3,distbound=bounds,distaxis=(0,1,0),distpoint=(0,0,0))
                 raw.skinPercent(self.scene_address("UpMidLoSC"),transformValue=[(self.scene_address(stem+"FaceJoint_M"),1)])
         finally: raw.polySelectConstraint(mode=0)
-        all_vertices=tuple(c.ls("UpMidLoLayer.vtx[*]",long=True,flatten=True) or [])
         for a,b in (("upperFaceJoint_M","middleFaceJoint_M"),("lowerFaceJoint_M","middleFaceJoint_M"),
                     ("lowerFaceJoint_M","FaceJoint_M")):
-            self.smooth_original_face_flood("UpMidLoSC",all_vertices,a,b,10)
+            self.smooth_original_face_flood("UpMidLoSC",("UpMidLoLayer",),a,b,10)
         raw.skinCluster(self.scene_address(skin),edit=True,lockWeights=False,weight=0,
                         addInfluence=[self.scene_address(j) for j in joints])
         c.skinCluster("lipSlideSurfaceSC",edit=True,lockWeights=False,weight=0,addInfluence="lowerFaceJoint_M")

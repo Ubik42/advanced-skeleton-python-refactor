@@ -281,6 +281,9 @@ class MayaFaceLipHost(MayaFaceLipFalloffHost):
                     joints.append(joint)
             curve=arc+"LipRibbonCurve"
             c.curve(name=curve,degree=3,point=[self._lip_pos(joint) for joint in joints])
+            # MEL 34637–34638 names the Shape before binding and duplication.
+            shape=c.listRelatives(curve,shapes=True,fullPath=True)[0]
+            c.rename(shape,curve+"Shape")
             c.reverseCurve(curve,constructionHistory=False,replaceOriginal=True)
             influences=c.ls(arc+"LipJoint*_*",type="joint") or []
             if arc=="lower": influences+= [f"upperLipJoint{counts['upper']-1}"+side for side in ("_R","_L")]

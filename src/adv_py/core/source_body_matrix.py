@@ -72,7 +72,7 @@ def plan_source_fk_body_matrix(prefix,body,parent,fk_world, *,offset_sources=(),
     return SourceBodyMatrixPlan(body,tuple(nodes),((matrix+'.matrixSum',body+'.offsetParentMatrix'),))
 
 
-def decode_source_body_matrix(text):
+def decode_source_body_matrix(text, *, allow_decompose_outputs=False):
     """Closed native graph record, using scene plugs rather than object loading."""
     import re
     from .character_registry import safe_json,exact,path,identifier,finite,CharacterRegistryError
@@ -109,6 +109,16 @@ def decode_source_body_matrix(text):
                   {body+'.scale'+axis for axis in 'XYZ'})
     point_output=(bool(nodes) and len(outputs)==3 and {target for _,target in outputs}==
                   {body+'.translate'+axis for axis in 'XYZ'})
+    decompose_output = False
+    if allow_decompose_outputs and len(outputs) == 12:
+        decomposition = [node for node in nodes if node.kind == 'decomposeMatrix']
+        if len(decomposition) == 1:
+            dm = decomposition[0].name
+            expected = {(dm + '.output' + channel + axis, body + '.' + target + suffix)
+                        for channel, target in (('Translate', 'translate'), ('Rotate', 'rotate'),
+                                                ('Scale', 'scale'), ('Shear', 'shear'))
+                        for axis, suffix in zip('XYZ', ('XY', 'XZ', 'YZ') if target == 'shear' else 'XYZ')}
+            decompose_output = set(outputs) == expected
     if scale_output and not nodes:
         # FK-only Parts deliberately have no calculation nodes: the original
         # control's local scale drives the matching three Body scale axes.
@@ -117,7 +127,7 @@ def decode_source_body_matrix(text):
                                  for source,target in outputs):
             raise CharacterRegistryError('来源 FK Part 直接缩放接收身份无效')
     if (len({node.name for node in nodes})!=len(nodes)
-            or not (matrix_output or scale_output or point_output)):
+            or not (matrix_output or scale_output or point_output or decompose_output)):
         raise CharacterRegistryError('来源 FK Body 矩阵输出身份无效')
     local_scale=tuple((plug(source),plug(target)) for source,target in raw.get('local_scale',()))
     if local_scale and (len(local_scale)!=3 or {target for _,target in local_scale}!=

@@ -4,6 +4,8 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 class RecordFaceTongue:
     def __init__(self,host): self.host=host
     def apply(self):
+        from .face_input_upgrade import check_original_face_input_upgrade
+        check_original_face_input_upgrade(self.host)
         with self.host.transaction("记录 Tongue 输入"):
             return self.host.record_tongue_geometry()
 

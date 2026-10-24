@@ -61,14 +61,27 @@ class BuildCustomController:
                             skin_cluster: str | None) -> CustomControllerPlan:
         region = self._host.capture_softmod_region(deformer)
         joints = self._host.deform_joint_candidates(region.mesh)
-        chosen_parent = (parent_joint if parent_joint is not None else
-                         self._host.preferred_custom_parent())
+        chosen_parent = parent_joint
+        resolver = getattr(self._host, "custom_parent_candidate", None)
+        if chosen_parent is not None and resolver is not None:
+            chosen_parent = resolver(chosen_parent).path
+        arrange = getattr(self._host, "custom_parent_candidates", None)
+        if arrange is not None:
+            joints = arrange(region, joints, chosen_parent)
+            if chosen_parent is None and joints:chosen_parent = joints[0].path
+        if chosen_parent is not None and chosen_parent not in {row.path for row in joints}:
+            # Mirrored/explicit parents are promoted by asCCLayout even if the
+            # right-side default list excluded them.
+            if resolver is not None:joints = (resolver(chosen_parent),) + joints
         plan = plan_custom_controller(kind, region, joints, base_name,
                                       parent_joint=chosen_parent,
                                       middle=middle, local=local,
                                       partial_parent=partial_parent,
                                       skin_cluster=skin_cluster)
         for name in plan.created_names:
+            # Skin controls reuse the source's shared parent-follow frame.
+            if kind is CustomControlKind.SKIN and name == plan.auxiliary_name("attach"):
+                continue
             if self._host.find_name_collisions(name):
                 raise ValueError("自定义控制节点名称已占用：" + name)
         self._host.preflight_custom_controller(plan)
@@ -80,12 +93,17 @@ class BuildCustomController:
              partial_parent: bool = False,
              skin_cluster: str | None = None
              ) -> CustomControllerPlan:
-        with self._host.build_pose_session(deformer):
-            return self._plan_in_build_pose(
-                deformer, kind, base_name, parent_joint=parent_joint,
-                middle=middle, local=local,
-                partial_parent=partial_parent,
-                skin_cluster=skin_cluster)
+        if parent_joint is None:
+            chooser = getattr(self._host, "custom_parent_for_source", None)
+            parent_joint = (chooser(deformer) if chooser is not None else
+                            self._host.preferred_custom_parent())
+        with self._host.transaction("预览自定义控制器"):
+            with self._host.build_pose_session(deformer):
+                return self._plan_in_build_pose(
+                    deformer, kind, base_name, parent_joint=parent_joint,
+                    middle=middle, local=local,
+                    partial_parent=partial_parent,
+                    skin_cluster=skin_cluster)
 
     def apply(self, deformer: str, kind: CustomControlKind,
               base_name: str, *, parent_joint: str | None = None,
@@ -96,11 +114,15 @@ class BuildCustomController:
               ) -> CustomControllerBuildResult:
         if not isinstance(mirror, bool):
             raise ValueError("自动镜像选项须为布尔值")
-        posed_center = (self._host.softmod_pose_center(deformer)
-                        if mirror and not middle else None)
+        if parent_joint is None:
+            chooser = getattr(self._host, "custom_parent_for_source", None)
+            parent_joint = (chooser(deformer) if chooser is not None else
+                            self._host.preferred_custom_parent())
         mirror_plan = None
         mirror_state = None
         with self._host.transaction("创建自定义控制器"):
+            posed_center = (self._host.softmod_pose_center(deformer)
+                            if mirror and not middle else None)
             with self._host.build_pose_session(deformer):
                 plan = self._plan_in_build_pose(
                     deformer, kind, base_name, parent_joint=parent_joint,
@@ -133,19 +155,19 @@ class BuildCustomController:
                         mirror_plan)
             if (state.kind is not plan.kind or state.parent_joint != plan.parent_joint
                     or set(state.influenced_meshes) != {plan.region.mesh}
-                    or state.offset.rsplit("|", 1)[-1] != plan.offset_name
-                    or state.control.rsplit("|", 1)[-1] != plan.control_name
+                    or state.offset.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != plan.offset_name
+                    or state.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != plan.control_name
                     or (state.base_control is None) !=
                        (plan.base_control_name is None)
                     or (plan.base_control_name is not None
-                        and state.base_control.rsplit("|", 1)[-1]
+                        and state.base_control.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
                         != plan.base_control_name)
                     or (state.joint is None) != (plan.joint_name is None)
                     or (plan.joint_name is not None
-                        and state.joint.rsplit("|", 1)[-1] != plan.joint_name)
+                        and state.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1] != plan.joint_name)
                     or (plan.deformer_name is not None
                         and (state.deformer is None or
-                             state.deformer.rsplit("|", 1)[-1]
+                             state.deformer.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
                              != plan.deformer_name))
                     or (plan.kind is CustomControlKind.SOFT_MOD
                         and state.weighted_vertex_count != sum(
@@ -161,7 +183,7 @@ class BuildCustomController:
                             mirror_plan.parent_joint
                          or set(mirror_state.influenced_meshes) !=
                             {mirror_plan.region.mesh}
-                         or mirror_state.control.rsplit("|", 1)[-1] !=
+                         or mirror_state.control.rsplit("|", 1)[-1].rsplit(":", 1)[-1] !=
                             mirror_plan.control_name)):
                 raise RuntimeError("镜像自定义控制器写后复检失败")
         return CustomControllerBuildResult(plan, state,

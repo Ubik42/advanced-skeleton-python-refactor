@@ -35,15 +35,17 @@ class BuildFitAdvancedConstraints:
     def __init__(self, host: FitAdvancedConstraintHost) -> None:
         self._host = host
 
-    def plan(self, metadata, controls, body_joints):
+    def plan(self, metadata, controls, body_joints, *, instances=(), source_native=False, use_offset_parent_matrix=True):
         specs = plan_body_fit_advanced_constraints(
-            tuple(metadata), tuple(controls), tuple(body_joints))
+            tuple(metadata), tuple(controls), tuple(body_joints), instances=instances,
+            source_native=source_native,use_offset_parent_matrix=use_offset_parent_matrix)
         for spec in specs:
             self._host.preflight_body_fit_advanced_constraint(spec)
         return specs
 
-    def apply(self, metadata, controls, body_joints):
-        specs = self.plan(metadata, controls, body_joints)
+    def apply(self, metadata, controls, body_joints, *, instances=(), source_native=False, use_offset_parent_matrix=True):
+        specs = self.plan(metadata, controls, body_joints, instances=instances,
+                          source_native=source_native,use_offset_parent_matrix=use_offset_parent_matrix)
         if not specs:
             return specs
         with self._host.transaction("创建 Fit Advanced Constraint"):

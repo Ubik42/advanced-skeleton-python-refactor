@@ -1,7 +1,7 @@
 """AdvancedSkeleton-style navigation for the Python Maya implementation.
 
-Only the navigation hierarchy is mirrored.  The reference MEL and assets are
-not imported into, or distributed with, this implementation.
+Original section order routes to the implemented Python business controls.
+The reference MEL is not executed by navigation.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ ADV_SECTIONS = (
               "Custom Controllers", "Squash Controller", "Motion System",
               "Control Curves", "Control Orient", "Control Mesh", "Game Engine",
               "Unreal Joints", "Partial Joints")),
-    ("Face", ("Pre", "Fit", "Build", "Build ...", "Tweaks", "DeltaMush",
+    ("Face", ("Pre", "Fit", "Build", "Build ...", "Layers", "Tweaks", "DeltaMush",
               "HeadSquash", "WrinkleMap", "BlendShapes", "EditBlendShapes",
               "NewBlendShapes", "Custom Controllers")),
     ("Pose", ("Driving Systems", "Corrective Shapes", "Pose Functions")),
@@ -27,7 +27,124 @@ ADV_SECTIONS = (
 # Original headings stay in their original order; unsupported sections remain
 # visibly inactive instead of implying that their MEL behavior was ported.
 ADV_OPERATIONS = {
+    ('Preparation', 'Settings'): (('GUI Colors', 0, '00 · Settings'),),
+    ('Body', 'Deform option2'): (
+        ('创建 Cage', 0, '00 · SkinCage'),
+        ('删除 Cage', 0, '00 · SkinCage'),
+        ('Left > Right', 0, '00 · SkinCage'),
+        ('Right > Left', 0, '00 · SkinCage'),
+        ('复制权重', 0, '00 · SkinCage'),
+        ('"DeformationWidth"', 0, '00 · SkinCage'),
+        ('Create Groin Locators', 0, '00 · SkinCage'),
+        ('Adjust Groin area', 0, '00 · SkinCage'),
+        ('Create Groin joint', 0, '00 · SkinCage'),
+        ('Delete SkinCurves', 0, '00 · SkinCage'),
+        ('Create Sliders', 0, '00 · SkinCage'),
+        ('Delete Sliders', 0, '00 · SkinCage'),
+        ('Print Commands', 0, '00 · SkinCage'),
+    ),
+    ('Body', 'Deform option3'): (
+        ('Create Cage', 0, '00 · SubWrap'),
+        ('Delete Cage', 0, '00 · SubWrap'),
+        ('Wrap selected mesh', 0, '00 · SubWrap'),
+        ('Detach', 0, '00 · SubWrap'),
+        ('Attach', 0, '00 · SubWrap'),
+        ('Exclude selected vertices', 0, '00 · SubWrap'),
+    ),
+    ('Body', 'Deform option4'): (
+        ('创建 SkinLoop', 0, '00 · SkinLoops'),
+        ('选择全部 SkinLoops', 0, '00 · SkinLoops'),
+        ('绑定 SkinLoops', 0, '00 · SkinLoops'),
+        ('复制 SkinLoop 权重', 0, '00 · SkinLoops'),
+        ('创建 CutUp', 0, '00 · SkinLoops'),
+        ('删除 CutUp', 0, '00 · SkinLoops'),
+    ),
+    ('Body', 'Deform Shapers'): (
+        ('设置并加载插件', 0, '05 · Shapers'),
+        ('创建 Shapers', 0, '05 · Shapers'),
+        ('选择', 0, '05 · Shapers'),
+        ('重新绑定', 0, '05 · Shapers'),
+        ('删除', 0, '05 · Shapers'),
+    ),
+    ('Body', 'Geometry Skeleton'): (
+        ('Create', 0, '00 · Skeleton'),
+        ('Delete', 0, '00 · Skeleton'),
+        ('Left>Right', 0, '00 · Skeleton'),
+        ('Right>Left', 0, '00 · Skeleton'),
+    ),
+    ('Body', 'Geometry Muscular'): (
+        ('Create', 0, '00 · Muscular'),
+        ('Delete', 0, '00 · Muscular'),
+    ),
+    ('Body', 'Geometry PolyBoxes'): (
+        ('Create', 0, '00 · PolyBoxes'),
+        ('Delete', 0, '00 · PolyBoxes'),
+        ('Left>Right', 0, '00 · PolyBoxes'),
+        ('Right>Left', 0, '00 · PolyBoxes'),
+        ('Boolean Create', 0, '00 · PolyBoxes'),
+        ('Boolean Delete', 0, '00 · PolyBoxes'),
+        ('Warp Create', 0, '00 · PolyBoxes'),
+        ('Warp Delete', 0, '00 · PolyBoxes'),
+        ('BoxSkin Create', 0, '00 · PolyBoxes'),
+        ('BoxSkin Delete', 0, '00 · PolyBoxes'),
+    ),
+    ('Body', 'Geometry Mannequin'): (
+        ('Create', 0, '00 · Mannequin'),
+        ('Delete', 0, '00 · Mannequin'),
+    ),
+    ('Body', 'Geometry Skin Cut-Up'): (
+        ('Create', 0, '00 · Skin Cut-Up'),
+        ('Delete', 0, '00 · Skin Cut-Up'),
+    ),
+    ('Body', 'Control Mesh'): (
+        ('创建 Control Mesh', 0, '10A · Control Mesh'),
+        ('批量创建 Control Meshes', 0, '10A · Control Mesh'),
+        ('着色并扩展 Control Meshes', 0, '10A · Control Mesh'),
+        ('创建 IK Control Meshes', 0, '10A · Control Mesh'),
+        ('删除所选 Control Meshes', 0, '10A · Control Mesh'),
+        ('删除全部 Control Meshes', 0, '10A · Control Mesh'),
+    ),
+    ('Face', 'HeadSquash'): (
+        ('创建 HeadSquash', 3, '03C · Face HeadSquash'),
+        ('删除 HeadSquash', 3, '03C · Face HeadSquash'),
+        ('优化 HeadSquash 影响范围', 3, '03C · Face HeadSquash'),
+        ('加入所选对象', 3, '03C · Face HeadSquash'),
+    ),
+    ('Face', 'Layers'): (
+        ('Normal', 3, '03a · Face Skin Layers'),
+        ('刷新 SkinLayer 列表', 3, '03a · Face Skin Layers'),
+    ),
+    ('Face', 'Build ...'): (
+        ('建立原版 Face 控制面板', 3, '03E · 原版 Face ctrlBox'),
+        ('生成 Jaw 权重参考曲线', 3, '03D · Jaw 权重参考曲线'),
+        ('原版 Face 首次准备', 3, '03O · 原版眼部绑定与修形'),
+        ('按原版准备双侧 Fit', 3, '03O · 原版眼部绑定与修形'),
+        ('建立原版 EyeBall 绑定', 3, '03O · 原版眼部绑定与修形'),
+        ('建立原版 Pupil／Iris', 3, '03O · 原版眼部绑定与修形'),
+        ('建立原版 EyeLid 绑定', 3, '03O · 原版眼部绑定与修形'),
+        ('建立 Lip Ribbon 与控制驱动', 3, '03I · Lip 绑定'),
+        ('建立 Lip Falloff 权重层', 3, '03G · Lip Falloff'),
+        ('预览范围', 3, '03G · Lip Falloff'),
+        ('更新范围与权重', 3, '03G · Lip Falloff'),
+        ('Face Cage', 3, '03K · Face Cage'),
+        ('Face 表情修形', 3, '03L · Face 表情修形'),
+        ('更新 JawOpenLayer 嘴唇权重', 3, '03J · Jaw 绑定与修形'),
+        ('Snarl 修形', 3, '03J · Jaw 绑定与修形'),
+        ('完成 Snarl', 3, '03J · Jaw 绑定与修形'),
+        ('建立 Tongue 控制链与蒙皮', 3, '03F · Tongue 绑定'),
+        ('完成 Tongue，恢复模型显示', 3, '03F · Tongue 绑定'),
+        ('建立第二控制盒区域投影', 3, '03H · Regions'),
+        ('显示 Eye Aim 控制', 3, '03M · Eye Aim 与 UpMidLo'),
+        ('建立 UpMidLo 控制与权重', 3, '03M · Eye Aim 与 UpMidLo'),
+        ('建立音素驱动 Phonemes', 3, '03N · Phonemes 与 Emotions'),
+        ('建立情绪驱动 Emotions', 3, '03N · Phonemes 与 Emotions'),
+        ('记录所选 Extras 模型', 3, '03N · Phonemes 与 Emotions'),
+        ('传递 Extras 权重', 3, '03N · Phonemes 与 Emotions'),
+        ('完成 Face 关节绑定', 3, '03N · Phonemes 与 Emotions'),
+    ),
     ("Preparation", "Model"): (
+        ("创建 geo 模型组", 0, "00 · Model Clean"),
+        ("Model Clean", 0, "00 · Model Clean"),
         ("检查选中模型", 0, "00 · 模型检查"),),
     ("Preparation", "Rig"): (
         ("新建绑定场景", 0, "00 · 绑定场景"),
@@ -44,14 +161,32 @@ ADV_OPERATIONS = {
         ("读取 Body 构建选项", 0, "02A · Body 构建选项"),
         ("保存 Body 构建选项", 0, "02A · Body 构建选项")),
     ("Body", "Fit"): (
+        ("导入原版 Fit 模板", 0, "01 · Fit 数据"),
+        ("导入原版 Fit 部件", 0, "01 · Fit 数据"),
+        ("导出原版 Fit／部件 .ma", 0, "01 · Fit 数据"),
         ("导出当前 Fit", 0, "01 · Fit 数据"),
         ("从文档导入", 0, "01 · Fit 数据"),
         ("缩放", 0, "01 · Fit 数据"),
-        ("自动放置", 0, "01 · Fit 数据")),
+        ("自动放置", 0, "01 · Fit 数据"),
+        ("更新 PoleVector 显示", 0, "02 · Fit 编辑"),
+        ("更新 Finger-up 显示", 0, "02 · Fit 编辑"),
+        ("拉直腿部 PoleVector", 0, "02 · Fit 编辑"),
+        ("拉直手臂 PoleVector", 0, "02 · Fit 编辑"),
+        ("显示／隐藏关节朝向", 0, "02 · Fit 编辑"),
+        ("显示／隐藏关节轴", 0, "02 · Fit 编辑"),
+        ("吸附组件中心", 0, "02 · Fit 编辑"),
+        ("复制位置", 0, "02 · Fit 编辑"),
+        ("粘贴位置", 0, "02 · Fit 编辑"),
+        ("锁定／解锁中心关节", 0, "02 · Fit 编辑"),
+        ("FitMode", 0, "02 · Fit 编辑"),
+        ("立即更新 Fit", 0, "02 · Fit 编辑")),
     ("Body", "Edit"): (
+        ("添加 IK-Label", 0, "02 · Fit 编辑"),
+        ("移除 IK-Label", 0, "02 · Fit 编辑"),
         ("更新 Fit 位置", 0, "02 · Fit 编辑"),
         ("更新 Fit 元数据", 0, "02 · Fit 编辑"),
-        ("重新定向 Fit", 0, "02 · Fit 编辑")),
+        ("重新定向 Fit", 0, "02 · Fit 编辑"),
+        ("创建 Fit SDK 属性", 0, "02 · Fit 编辑")),
     ("Body", "Build"): (
         ("构建并登记角色", 0, "03 · 完整角色"),
         ("迁移当前原版角色与蒙皮", 0, "原版角色迁移"),
@@ -68,14 +203,14 @@ ADV_OPERATIONS = {
         ("应用 Delta Mush", 1, "05 · Delta Mush"),
         ("Bake DeltaMush", 1, "05 · Delta Mush"),),
     ("Body", "Custom Controllers"): (
-        ("SoftMod Tool", 0, "06 · Custom Controllers"),
-        ("Create Skin Control", 0, "06 · Custom Controllers"),
-        ("Create Cluster Control", 0, "06 · Custom Controllers"),
-        ("Create SoftMod Control", 0, "06 · Custom Controllers"),
-        ("Paint weights for selected Control", 0, "06 · Custom Controllers"),
-        ("Mirror weights for selected Control", 0, "06 · Custom Controllers"),
-        ("Add influenced object", 0, "06 · Custom Controllers"),
-        ("Delete selected control", 0, "06 · Custom Controllers")),
+        ("SoftMod Tool", 0, "06 · 自定义控制器"),
+        ("Create Skin Control", 0, "06 · 自定义控制器"),
+        ("Create Cluster Control", 0, "06 · 自定义控制器"),
+        ("Create SoftMod Control", 0, "06 · 自定义控制器"),
+        ("Paint weights for selected Control", 0, "06 · 自定义控制器"),
+        ("Mirror weights for selected Control", 0, "06 · 自定义控制器"),
+        ("Add influenced object", 0, "06 · 自定义控制器"),
+        ("Delete selected control", 0, "06 · 自定义控制器")),
     ("Body", "Squash Controller"): (
         ("创建 Squash Controller", 0, "07 · Squash Controller"),
         ("删除 Squash Controller", 0, "07 · Squash Controller")),
@@ -96,8 +231,9 @@ ADV_OPERATIONS = {
         ("分离全部控制器", 0, "10 · Control Orient"),
         ("重新附着全部控制器", 0, "10 · Control Orient")),
     ("Body", "Game Engine"): (
-        ("启用 Game Engine Scaling", 0, "10A · Game Engine"),
-        ("恢复 Maya Scaling", 0, "10A · Game Engine")),
+        ("Root Motion Joint", 0, "10B · Game Engine"),
+        ("Scale Behaviour", 0, "10B · Game Engine"),
+        ("Custom oriented GameSkeleton", 0, "10B · Game Engine")),
     ("Body", "Unreal Joints"): (
         ("重命名为 Unreal 关节", 0, "11 · Unreal Joints"),
         ("恢复 ADV 关节名称", 0, "11 · Unreal Joints"),
@@ -125,13 +261,20 @@ ADV_OPERATIONS = {
         ("All Head", 3, "00 · 面部输入"),
         ("编辑右侧", 3, "00 · 面部输入"),
         ("编辑左侧", 3, "00 · 面部输入"),
+        ("关闭非对称", 3, "00 · 面部输入"),
+        ("show both sides", 3, "00 · 面部输入"),
         ("Include", 3, "00 · 面部输入"),
         ("重选 Mask", 3, "00 · 面部输入"),
         ("重选 Face", 3, "00 · 面部输入"),
         ("重选 All Head", 3, "00 · 面部输入"),
+        ('Choose Head Joint',3,'00 · 面部输入'),
+        ('AutoFit',3,'00 · 面部输入'),
+        ('Model Check',3,'00 · 面部输入'),
+        ('Create',3,'00 · 面部输入'),
+        ('import',3,'00 · 面部输入'),
+        ('Update',3,'00 · 面部输入'),
         ("记录所选右眼", 3, "00 · 眼球输入与控制"),
         ("记录所选左眼", 3, "00 · 眼球输入与控制"),
-        ("建立双眼控制与蒙皮", 3, "00 · 眼球输入与控制"),
         ("从标记生成目标", 3, "01 · 目标网格"),
         ("导出目标资产", 3, "02 · 可移植目标资产"),
         ("导入为目标网格", 3, "02 · 可移植目标资产")),
@@ -142,7 +285,15 @@ ADV_OPERATIONS = {
         ("EyeLid Inner", 3, "02 · EyeLid Fit"),
         ("重选 Outer", 3, "02 · EyeLid Fit"),
         ("重选 Main", 3, "02 · EyeLid Fit"),
-        ("重选 Inner", 3, "02 · EyeLid Fit")),
+        ("重选 Inner", 3, "02 · EyeLid Fit"),
+        ("EyeLidMain2", 3, "02 · EyeLid Fit"),
+        ("EyeLid assist", 3, "02 · EyeLid Fit"),
+        ("Lip assist", 3, "03 · Lip Fit"),
+        ("Face 定位点", 3, "04 · Face 定位点"),
+        ("创建 UpMidLo 分区定位器", 3, "04 · Face 定位点"),
+        ("创建 ForeHead 边界与区域 Fit", 3, "04 · Face 定位点"),
+        ("记录所选 Tongue 网格或组件", 3, "05 · Tongue Fit"),
+        ("创建 Tongue Fit", 3, "05 · Tongue Fit")),
     ("Face", "Build"): (
         ("检查 FaceSetup 输入", 3, "03 · 控制与变形器"),
         ("建立双侧眼睑关节与蒙皮", 3, "03 · 控制与变形器"),
@@ -197,14 +348,14 @@ ADV_OPERATIONS = {
     ("Face", "NewBlendShapes"): (
         ("新建 BlendShape 目标", 3, "03S · 原版新建 BlendShape"),),
     ("Face", "Custom Controllers"): (
-        ("SoftMod Tool", 0, "06 · Custom Controllers"),
-        ("Create Skin Control", 0, "06 · Custom Controllers"),
-        ("Create Cluster Control", 0, "06 · Custom Controllers"),
-        ("Create SoftMod Control", 0, "06 · Custom Controllers"),
-        ("Paint weights for selected Control", 0, "06 · Custom Controllers"),
-        ("Mirror weights for selected Control", 0, "06 · Custom Controllers"),
-        ("Add influenced object", 0, "06 · Custom Controllers"),
-        ("Delete selected control", 0, "06 · Custom Controllers")),
+        ("SoftMod Tool", 0, "07 · 自定义控制器"),
+        ("Create Skin Control", 0, "07 · 自定义控制器"),
+        ("Create Cluster Control", 0, "07 · 自定义控制器"),
+        ("Create SoftMod Control", 0, "07 · 自定义控制器"),
+        ("Paint weights for selected Control", 0, "07 · 自定义控制器"),
+        ("Mirror weights for selected Control", 0, "07 · 自定义控制器"),
+        ("Add influenced object", 0, "07 · 自定义控制器"),
+        ("Delete selected control", 0, "07 · 自定义控制器")),
     ("Pose", "Driving Systems"): (
         ("启用四肢动画", 2, "03 · 动画通道"),
         ("启用拉伸匹配", 2, "03 · 动画通道"),
@@ -258,7 +409,9 @@ ADV_OPERATIONS = {
         ("检查兼容性", 2, "06 · 角色预设"),
         ("应用所选预设", 2, "06 · 角色预设")),
     ("Tools", None): (
+        ("PoserDesigner", 4, "04 · PoserDesigner"),
         ("NameMatcher", 0, "02 · NameMatcher"),
+        ("MoCapMatcher", 4, "03 · MoCapMatcher"),
         ("导入并写入控制", 4, "01 · 外部 FBX 驱动角色"),),
     ("Display", None): (
         ("MotionSystem 显示", 6, "00 · Display"),
@@ -266,18 +419,45 @@ ADV_OPERATIONS = {
         ("关节轴显示", 6, "00 · Display"),
         ("关节尺寸", 6, "00 · Display")),
     ("Optimize", None): (
+        ("Delete Unused Nodes", 7, "00 · Optimize"),
         ("Remove Unused Influences", 7, "00 · Optimize"),
-        ("Prune Small Weights", 7, "00 · Optimize")),
+        ("Remove Unused Attributes", 7, "00 · Optimize"),
+        ("Prune Small Weights", 7, "00 · Optimize"),
+        ("Delete saved UIs", 7, "00 · Optimize"),
+        ("Delete Unused joints", 7, "00 · Optimize"),
+        ("Tag All Controllers", 7, "00 · Optimize"),
+        ("Reduce EyeLid joints to 4", 7, "00 · Optimize"),
+        ("Reduce EyeLid joints to 8", 7, "00 · Optimize"),
+        ("Reduce Lip joints to 14", 7, "00 · Optimize"),
+        ("Custom Reduce", 7, "00 · Optimize")),
+    ("Updates", None): (
+        ("Green-fix", 7, "00 · Updates"),
+        ("NaN-fix", 7, "00 · Updates"),
+        ("Face Fitting Update", 7, "00 · Updates")),
     ("Publish", None): (
+        ('Set DisplayLayers to "R"', 5, '00 · Publish'),
+        ('Set Joints to hidden', 5, '00 · Publish'),
+        ('Go to Build Pose', 5, '00 · Publish'),
+        ("Publish", 5, "00 · Publish"),
         ("导出独立 Maya 场景", 5, "01 · 导出迁移后的完整角色"),
         ("准备并烘焙发布骨架", 5, "02 · 烘焙并发布独立骨架")),
     ("Export", None): (
-        ("发布 FBX", 5, "02 · 烘焙并发布独立骨架"),),
+        ("Delete Unused Endjoints", 5, "00 · Export"),
+        ("Delete Static channels", 5, "00 · Export"),
+        ("Rebuild dagPose nodes", 5, "00 · Export"),
+        ("Roblox Dynamic Head", 5, "00 · Export"),
+        ("FBX export", 5, "00 · Export"),
+        ("Mannequin export", 5, "00 · Export"),
+        ("BodyRig export", 5, "00 · Export"),
+        ("FaceRig export", 5, "00 · Export")),
 }
 
 
 def create_adv_panel(controller=None):
-    """Create the narrow, accordion-based entry panel inside a Qt session."""
+    """Legacy navigation facade retained for historical validation scripts.
+
+    The public Maya launcher uses maya_panel.create_panel directly.
+    """
     from PySide2 import QtCore, QtWidgets
     from .maya_panel import create_panel
 
@@ -398,22 +578,9 @@ def create_adv_panel(controller=None):
                     attach_to_maya_window(self.detail)
                 except (ImportError, RuntimeError):
                     pass
-                self.detail.tabs.tabBar().hide()
-            self.detail.tabs.setCurrentIndex(tab)
-            self.detail.custom_control_face = section == "Face"
-            self.detail.setWindowTitle("AdvancedSkeleton Python / " + section +
-                                       (" / " + subsection if subsection else ""))
-            self.detail.findChild(QtWidgets.QLabel, "Title").setText(
-                section + (" / " + subsection if subsection else ""))
-            self.detail.findChild(QtWidgets.QLabel, "Subtitle").setText(
-                "Python 操作参数")
-            page = self.detail.tabs.widget(tab)
-            for widget in page.findChildren(QtWidgets.QGroupBox):
-                selected = widget.title() == group
-                widget.setVisible(selected)
-                if selected:
-                    page.ensureWidgetVisible(widget, 10, 12)
-            self.detail.show()
+            # Detail now uses source-ordered accordion sections. Tab indices
+            # from the former panel are retained only as external route data.
+            self.detail.open_original_section(group, section, subsection)
             self.detail.raise_()
             self.detail.activateWindow()
 

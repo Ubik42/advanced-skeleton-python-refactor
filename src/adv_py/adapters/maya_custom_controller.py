@@ -1,7 +1,7 @@
 """Maya scene port for SoftMod custom controls and influenced meshes."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 import json
 
@@ -11,12 +11,8 @@ from adv_py.core.character_registry import (
 )
 from adv_py.core.custom_controller import (
     CustomControlKind, CustomControllerPlan, DeformJointCandidate,
-    SoftModRegion, WeightedVertex,
+    SoftModRegion, WeightedVertex, original_parent_distance_key,
 )
-from adv_py.core.custom_control_weights import (
-    ClusterWeightTransfer, SoftModProbe, cluster_weights_from_probe,
-)
-from adv_py.core.custom_surface_anchor import anchor_on_polygon
 
 from .maya_face import MayaFaceHost
 
@@ -76,15 +72,13 @@ class MayaCustomControllerHost(MayaFaceHost):
                 raise RuntimeError("Face 自定义控制节点未登记到 FaceAllSet")
 
     def softmod_target_mesh(self, deformer: str) -> str:
-        source = self._unique(deformer, "softMod")
-        meshes = self._softmod_meshes(source)
-        if len(meshes) != 1:
-            raise ValueError("镜像 SoftMod 须只影响一件网格")
-        return meshes[0]
+        from .maya_original_custom_pose import original_softmod_mesh
+        return original_softmod_mesh(self, deformer)
 
     def softmod_pose_center(self, deformer: str) -> tuple[float, float, float]:
         from maya import cmds
 
+        self._require_transaction()
         source = self._unique(deformer, "softMod")
         handles = cmds.listConnections(source + ".matrix", source=True,
                                        destination=False,
@@ -92,14 +86,20 @@ class MayaCustomControllerHost(MayaFaceHost):
         if len(handles) != 1:
             raise ValueError("SoftMod 缺少唯一操作柄")
         handle = self._unique(handles[0], "transform")
-        return tuple(float(value) for value in cmds.xform(
-            handle, query=True, worldSpace=True, pivots=True)[:3])
+        translation = cmds.getAttr(handle + ".translate")[0]
+        self._transaction_changed = True
+        try:
+            cmds.setAttr(handle + ".translate", 0, 0, 0, type="float3")
+            return tuple(float(value) for value in cmds.xform(
+                handle, query=True, worldSpace=True, pivots=True)[:3])
+        finally:
+            cmds.setAttr(handle + ".translate", *translation, type="float3")
 
     def mirrored_parent_joint(self, parent: str) -> str:
         leaf = parent.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
         if not leaf.endswith("_R"):
-            return self._unique(parent, "joint")
-        return self._unique(leaf[:-1] + "L", "joint")
+            return self._unique_custom_parent(parent)
+        return self._unique_custom_parent(leaf[:-1] + "L")
 
     def create_mirrored_softmod(
             self, plan: CustomControllerPlan,
@@ -117,12 +117,15 @@ class MayaCustomControllerHost(MayaFaceHost):
         self._transaction_changed = True
         source_mesh = self._mesh(plan.region.mesh)
         reflected = (-posed_center[0], posed_center[1], posed_center[2])
-        bbox = cmds.exactWorldBoundingBox(source_mesh)
+        bbox = cmds.xform(source_mesh, query=True, boundingBox=True)
         target = source_mesh
         if bbox[3] < reflected[0]:
-            sampler = cmds.createNode("closestPointOnMesh")
+            sampler_name = self.scene_address("closestSampler")
+            if cmds.objExists(sampler_name):cmds.delete(sampler_name)
+            sampler = cmds.createNode("closestPointOnMesh", name=sampler_name)
             try:
-                best = None
+                cmds.setAttr(sampler + ".inPosition", *reflected, type="double3")
+                minimum_distance = 999.0
                 for shape in cmds.ls(type="mesh", noIntermediate=True,
                                      long=True) or []:
                     mesh = (cmds.listRelatives(shape, parent=True,
@@ -133,31 +136,30 @@ class MayaCustomControllerHost(MayaFaceHost):
                                      sampler + ".inMesh", force=True)
                     cmds.connectAttr(shape + ".worldMatrix[0]",
                                      sampler + ".inputMatrix", force=True)
-                    cmds.setAttr(sampler + ".inPosition", *reflected,
-                                 type="double3")
+                    from math import dist
                     position = cmds.getAttr(sampler + ".position")[0]
-                    distance = sum((a - b) ** 2 for a, b in zip(
-                        reflected, position))
-                    candidate = (distance, mesh)
-                    if best is None or candidate < best:
-                        best = candidate
-                if best is None:
-                    raise ValueError("自动镜像未找到左侧网格")
-                target = self._mesh(best[1])
+                    distance = dist(reflected, position)
+                    if distance < minimum_distance:
+                        minimum_distance = distance
+                        target = self._mesh(mesh)
             finally:
                 cmds.delete(sampler)
-        created = cmds.softMod(target, name=names[0])
+        from .maya_face_deformer_sets import original_face_deformer_sets
+        with getattr(self._cmds, "_creation_namespace", nullcontext)(), original_face_deformer_sets(self._cmds):
+            created = cmds.softMod(target, name=names[0], falloffMode=1, falloffAroundSelection=False)
         if len(created) != 2:
             raise RuntimeError("镜像 SoftMod 未返回变形器和操作柄")
         source = self._unique(created[0], "softMod")
         handle = cmds.rename(self._unique(created[1], "transform"),
                              names[1])
+        build_center = (-plan.region.center[0], plan.region.center[1],
+                        plan.region.center[2])
         for shape in cmds.listRelatives(handle, shapes=True,
                                         fullPath=True) or []:
             if cmds.objExists(shape + ".origin"):
-                cmds.setAttr(shape + ".origin", *reflected, type="float3")
-        cmds.xform(handle, worldSpace=True, pivots=reflected)
-        cmds.setAttr(source + ".falloffCenter", *reflected, type="float3")
+                cmds.setAttr(shape + ".origin", *build_center, type="float3")
+        cmds.xform(handle, pivots=build_center)
+        cmds.setAttr(source + ".falloffCenter", *build_center, type="float3")
         cmds.setAttr(source + ".falloffRadius", plan.region.falloff_radius)
         cmds.setAttr(source + ".falloffMode", plan.region.falloff_mode)
         for index, (value, position, interpolation) in enumerate(
@@ -218,145 +220,11 @@ class MayaCustomControllerHost(MayaFaceHost):
             raise ValueError("CustomSystem 已由其他节点驱动：" + destination)
         cmds.connectAttr(source, destination)
 
-    def _style_custom_control(self, control: str, color_index: int,
-                              *, shader_name: str | None = None,
-                              shader_color: tuple[float, float, float] | None = None,
-                              non_renderable: bool = False) -> None:
-        from maya import cmds
-
-        if shader_name is not None:
-            if shader_color is None:
-                raise ValueError("控制器材质缺少颜色")
-            shader = self.scene_address(shader_name)
-            shading_group = self.scene_address(shader_name + "SG")
-            if not cmds.objExists(shader):
-                shader = cmds.shadingNode("lambert", asShader=True,
-                                          name=shader)
-            if not cmds.objExists(shading_group):
-                shading_group = cmds.sets(renderable=True,
-                    noSurfaceShader=True, empty=True, name=shading_group)
-            if not cmds.isConnected(shader + ".outColor",
-                                    shading_group + ".surfaceShader"):
-                cmds.connectAttr(shader + ".outColor",
-                                 shading_group + ".surfaceShader", force=True)
-            cmds.setAttr(shader + ".color", *shader_color, type="float3")
-            cmds.sets(control, edit=True, forceElement=shading_group)
-        for shape in cmds.listRelatives(control, shapes=True,
-                                        fullPath=True) or []:
-            cmds.setAttr(shape + ".overrideEnabled", True)
-            cmds.setAttr(shape + ".overrideColor", color_index)
-            if non_renderable:
-                for attribute in (
-                        "castsShadows", "receiveShadows", "motionBlur",
-                        "primaryVisibility", "smoothShading",
-                        "visibleInReflections", "visibleInRefractions"):
-                    if cmds.objExists(shape + "." + attribute):
-                        cmds.setAttr(shape + "." + attribute, False)
-
     @contextmanager
     def build_pose_session(self, deformer: str):
-        """Map the painted surface point to build pose, then restore the pose."""
-        from maya import cmds
-        from maya.api import OpenMaya as om
-
-        source = self._unique(deformer, "softMod")
-        meshes = self._softmod_meshes(source)
-        if len(meshes) != 1:
-            raise ValueError("构建姿态定位要求 SoftMod 只影响一件网格")
-        mesh = meshes[0]
-        handles = cmds.listConnections(source + ".matrix", source=True,
-                                       destination=False,
-                                       type="transform") or []
-        if len(handles) != 1:
-            raise ValueError("构建姿态定位要求唯一 SoftMod 操作柄")
-        handle = self._unique(handles[0], "transform")
-        selection = om.MSelectionList()
-        selection.add(mesh)
-        fn = om.MFnMesh(selection.getDagPath(0))
-        handle_translation = tuple(float(value) for value in
-                                   cmds.getAttr(handle + ".translate")[0])
-        handle_pivot = tuple(float(value) for value in
-                             cmds.xform(handle, query=True,
-                                        worldSpace=True, pivots=True)[:3])
-        falloff_center = tuple(float(value) for value in
-                               cmds.getAttr(source + ".falloffCenter")[0])
-        shapes = cmds.listRelatives(handle, shapes=True,
-                                    fullPath=True) or []
-        origins = {shape: tuple(cmds.getAttr(shape + ".origin")[0])
-                   for shape in shapes if cmds.objExists(shape + ".origin")}
-        channel_state = []
-        if not self.face and cmds.objExists(self.scene_address(REGISTRY_NAME)):
-            registration = self.read_character_registration()
-            plugs = [self.scene_address(channel.node) + "." + channel.attribute
-                     for channel in registration.channels]
-        else:
-            control_set = self.scene_address("FaceControlSet")
-            controls = cmds.sets(control_set, query=True) or [] if cmds.objExists(
-                control_set) else []
-            plugs = [node + "." + kind + axis
-                     for node in controls
-                     for kind in ("translate", "rotate", "scale")
-                     for axis in "XYZ" if cmds.objExists(node + "." + kind + axis)]
-        try:
-            cmds.setAttr(handle + ".translate", 0.0, 0.0, 0.0,
-                         type="double3")
-            posed_center = tuple(float(value) for value in
-                                 cmds.xform(handle, query=True,
-                                            worldSpace=True, pivots=True)[:3])
-            closest, face = fn.getClosestPoint(om.MPoint(*posed_center),
-                                               om.MSpace.kWorld)
-            posed_points = tuple((float(p.x), float(p.y), float(p.z))
-                                 for p in fn.getPoints(om.MSpace.kWorld))
-            anchor = anchor_on_polygon(
-                (float(closest.x), float(closest.y), float(closest.z)),
-                tuple(int(index) for index in fn.getPolygonVertices(face)),
-                posed_points)
-            for plug in dict.fromkeys(plugs):
-                if (not cmds.objExists(plug)
-                        or cmds.getAttr(plug, lock=True)):
-                    continue
-                value = cmds.getAttr(plug)
-                if not isinstance(value, (int, float)):
-                    continue
-                source_plug = cmds.connectionInfo(
-                    plug, sourceFromDestination=True)
-                if source_plug:
-                    driver = source_plug.rsplit(".", 1)[0]
-                    if not cmds.nodeType(driver).startswith("animCurve"):
-                        continue
-                    cmds.disconnectAttr(source_plug, plug)
-                channel_state.append((plug, float(value), source_plug))
-                attribute = plug.rsplit(".", 1)[-1]
-                default = (1.0 if attribute.startswith("scale")
-                           else 0.0)
-                cmds.setAttr(plug, default)
-            build_points = tuple((float(p.x), float(p.y), float(p.z))
-                                 for p in fn.getPoints(om.MSpace.kWorld))
-            build_center = anchor.resolve(build_points)
-            cmds.xform(handle, worldSpace=True, pivots=build_center)
-            for shape in origins:
-                cmds.setAttr(shape + ".origin", *build_center,
-                             type="float3")
-            cmds.setAttr(source + ".falloffCenter", *build_center,
-                         type="float3")
+        from .maya_original_custom_pose import build_pose_session
+        with build_pose_session(self, deformer):
             yield
-        finally:
-            if cmds.objExists(handle):
-                cmds.setAttr(handle + ".translate", *handle_translation,
-                             type="double3")
-                cmds.xform(handle, worldSpace=True, pivots=handle_pivot)
-                for shape, origin in origins.items():
-                    if cmds.objExists(shape):
-                        cmds.setAttr(shape + ".origin", *origin,
-                                     type="float3")
-            if cmds.objExists(source):
-                cmds.setAttr(source + ".falloffCenter", *falloff_center,
-                             type="float3")
-            for plug, value, source_plug in reversed(channel_state):
-                if cmds.objExists(plug):
-                    cmds.setAttr(plug, value)
-                    if source_plug:
-                        cmds.connectAttr(source_plug, plug)
 
     def _prepare_custom_source(self, plan: CustomControllerPlan) -> None:
         from maya import cmds
@@ -371,14 +239,6 @@ class MayaCustomControllerHost(MayaFaceHost):
             if cmds.objExists(shape + ".originX"):
                 cmds.setAttr(shape + ".originX", 0.0)
 
-    def _attach_to_custom_parent(self, attach: str, parent: str,
-                                 local: bool) -> None:
-        from maya import cmds
-
-        if local:
-            cmds.delete(cmds.orientConstraint(parent, attach))
-        cmds.parentConstraint(parent, attach, maintainOffset=True)
-
     def _ensure_custom_partial_parent(self, parent: str) -> str:
         """Custom Control uses the same asCreatePartialJoints source graph.
 
@@ -389,7 +249,8 @@ class MayaCustomControllerHost(MayaFaceHost):
         from adv_py.core.partial_joints import plan_create_partial_joints
 
         self._require_transaction()
-        parent = self._unique(parent, "joint")
+        parent = self._unique_custom_parent(parent)
+        if self._cmds.nodeType(parent) != "joint":return parent
         helper = MayaPartialJointsHost(namespace=self.namespace)
         candidates = helper.capture_partial_candidates()
         candidate = next((row for row in candidates if row.joint == parent), None)
@@ -420,6 +281,11 @@ class MayaCustomControllerHost(MayaFaceHost):
                                control: str, base: str | None = None) -> None:
         from maya import cmds
 
+        # Native parenting returns shortest unique names. Registry documents
+        # store complete DAG paths and UUIDs after the graph has settled.
+        paths = tuple(self._unique_custom_parent(path) for path in paths)
+        control = self._unique(control, "transform")
+        base = self._unique(base, "transform") if base else None
         self._update_custom_build_pose(control, base=base, add=True)
         control_set = self.scene_address("FaceControlSet" if self.face
                                          else "ControlSet")
@@ -431,11 +297,15 @@ class MayaCustomControllerHost(MayaFaceHost):
         if self.face:
             return
         if not cmds.objExists(self.scene_address(REGISTRY_NAME)):
-            raise ValueError("Body 自定义控制器缺少角色登记")
+            # Original ADV rigs carry sets and buildPose, not this port's
+            # optional registry. Do not impose a new conversion prerequisite.
+            return
         previous = self.read_character_registration()
         local = (self._cmds.identity.to_local if self.namespace is not None
                  else lambda path: path)
-        nodes = tuple(self._registry_node(local(path)) for path in paths)
+        registered = {node.path for node in previous.nodes}
+        nodes = tuple(self._registry_node(local(path)) for path in dict.fromkeys(paths)
+                      if local(path) not in registered)
         controls = (("control", control),)
         if base:
             controls = (("base", base),) + controls
@@ -513,47 +383,12 @@ class MayaCustomControllerHost(MayaFaceHost):
             script = script.replace(command, "", 1)
         cmds.setAttr(plug, script, type="string")
 
-    def _probe_softmod(self, region: SoftModRegion) -> ClusterWeightTransfer:
-        """Measure effective falloff, not the stored geometry-filter mask."""
-        from maya import cmds
-        from maya.api import OpenMaya as om
-
-        mesh = self._mesh(region.mesh)
-        handle = self._unique(region.source_handle, "transform")
-        source = self._unique(region.deformer, "softMod")
-        selection = om.MSelectionList()
-        selection.add(mesh)
-        mesh_fn = om.MFnMesh(selection.getDagPath(0))
-        history = cmds.listHistory(mesh, pruneDagObjects=True) or []
-        disabled = {}
-        original_y = float(cmds.getAttr(handle + ".translateY"))
-        source_state = int(cmds.getAttr(source + ".nodeState"))
-        try:
-            cmds.setAttr(source + ".nodeState", 0)
-            for node in history:
-                if node == source or not cmds.objExists(node + ".nodeState"):
-                    continue
-                if cmds.objectType(node, isAType="geometryFilter"):
-                    disabled[node] = int(cmds.getAttr(node + ".nodeState"))
-                    cmds.setAttr(node + ".nodeState", 1)
-            rest = tuple((float(point.x), float(point.y), float(point.z))
-                         for point in mesh_fn.getPoints(om.MSpace.kWorld))
-            cmds.setAttr(handle + ".translateY", original_y + 1.0)
-            moved = tuple((float(point.x), float(point.y), float(point.z))
-                          for point in mesh_fn.getPoints(om.MSpace.kWorld))
-            return cluster_weights_from_probe(SoftModProbe(rest, moved))
-        finally:
-            cmds.setAttr(handle + ".translateY", original_y)
-            cmds.setAttr(source + ".nodeState", source_state)
-            for node, state in disabled.items():
-                cmds.setAttr(node + ".nodeState", state)
-
     def _skin_for_mesh(self, mesh: str,
                        requested: str | None = None) -> str:
         from maya import cmds
 
         skins = tuple(dict.fromkeys(cmds.ls(
-            cmds.listHistory(mesh, pruneDagObjects=True) or [],
+            cmds.listHistory(mesh, pruneDagObjects=True, interestLevel=2) or [],
             type="skinCluster") or []))
         if requested == "*new":
             return "*new"
@@ -563,74 +398,10 @@ class MayaCustomControllerHost(MayaFaceHost):
                               for item in skins}:
                 raise ValueError("指定 SkinCluster 不属于目标网格")
             return chosen
-        if len(skins) != 1:
-            raise ValueError("须指定 SkinCluster；新建分层时使用 *new")
-        return self._unique(skins[0], "skinCluster")
-
-    def _soft_selection_weights(self, region: SoftModRegion
-                                ) -> tuple[WeightedVertex, ...]:
-        """Sample Maya's soft selection with the source falloff curve."""
-        from maya import cmds
-        from maya import OpenMaya as om
-
-        mesh = self._mesh(region.mesh)
-        shape = (cmds.listRelatives(mesh, shapes=True,
-                                    noIntermediate=True, fullPath=True,
-                                    type="mesh") or [None])[0]
-        selected = cmds.ls(selection=True, long=True) or []
-        enabled = cmds.softSelect(query=True, softSelectEnabled=True)
-        falloff = cmds.softSelect(query=True, softSelectFalloff=True)
-        distance = cmds.softSelect(query=True, softSelectDistance=True)
-        curve_before = cmds.softSelect(query=True, softSelectCurve=True)
-        sampler = cmds.createNode("closestPointOnMesh")
-        try:
-            cmds.connectAttr(shape + ".outMesh", sampler + ".inMesh")
-            cmds.connectAttr(shape + ".worldMatrix[0]",
-                             sampler + ".inputMatrix")
-            cmds.setAttr(sampler + ".inPosition", *region.center,
-                         type="double3")
-            nearest = int(cmds.getAttr(sampler + ".closestVertexIndex"))
-            cmds.select("%s.vtx[%d]" % (mesh, nearest), replace=True)
-            options = dict(softSelectEnabled=True,
-                           softSelectFalloff=region.falloff_mode,
-                           softSelectDistance=region.falloff_radius)
-            if region.falloff_curve:
-                options["softSelectCurve"] = ",".join(
-                    "%s,%s,%d" % (value, position, interpolation)
-                    for value, position, interpolation in region.falloff_curve)
-            cmds.softSelect(edit=True, **options)
-            rich = om.MRichSelection()
-            om.MGlobal.getRichSelection(rich)
-            selection = om.MSelectionList()
-            rich.getSelection(selection)
-            iterator = om.MItSelectionList(selection,
-                                           om.MFn.kMeshVertComponent)
-            dag = om.MDagPath()
-            component = om.MObject()
-            weights = {}
-            while not iterator.isDone():
-                iterator.getDagPath(dag, component)
-                dag.pop()
-                if dag.fullPathName() == mesh:
-                    fn = om.MFnSingleIndexedComponent(component)
-                    for offset in range(fn.elementCount()):
-                        weights[int(fn.element(offset))] = float(
-                            fn.weight(offset).influence())
-                iterator.next()
-            if not weights:
-                raise ValueError("Soft Selection 未返回目标网格顶点权重")
-            return tuple(WeightedVertex(index, weight)
-                         for index, weight in sorted(weights.items()))
-        finally:
-            cmds.delete(sampler)
-            restore = dict(softSelectEnabled=enabled,
-                           softSelectFalloff=falloff,
-                           softSelectDistance=distance)
-            if curve_before:
-                restore["softSelectCurve"] = curve_before
-            cmds.softSelect(edit=True, **restore)
-            cmds.select(selected, replace=True) if selected else cmds.select(
-                clear=True)
+        if not skins:
+            raise ValueError("目标网格没有 SkinCluster；新建分层时使用 *new")
+        # asGetSkinCluster retains the last native history match.
+        return self._unique(skins[-1], "skinCluster")
 
     def _unique(self, path: str, node_type: str) -> str:
         from maya import cmds
@@ -646,6 +417,15 @@ class MayaCustomControllerHost(MayaFaceHost):
     def _mesh(self, path: str) -> str:
         from maya import cmds
 
+        # Maya selection and deformer history may address either the transform
+        # or its shape. Preserve the selected DAG instance when resolving it.
+        address = path if path.startswith(("|", ":")) or ":" in path else self.scene_address(path)
+        nodes = cmds.ls(address, long=True) or []
+        if len(nodes) == 1 and cmds.nodeType(nodes[0]) == "mesh":
+            parents = cmds.listRelatives(nodes[0], parent=True, fullPath=True) or []
+            if len(parents) != 1:
+                raise ValueError("目标网格 Shape 缺少唯一父级")
+            path = parents[0]
         mesh = self._unique(path, "transform")
         shapes = cmds.listRelatives(mesh, shapes=True,
                                     noIntermediate=True, fullPath=True,
@@ -729,21 +509,25 @@ class MayaCustomControllerHost(MayaFaceHost):
         from maya.api import OpenMayaAnim as oma
 
         source = self._unique(deformer, "softMod")
-        meshes = self._softmod_meshes(source)
-        if len(meshes) != 1:
-            raise ValueError("创建自定义控制时 SoftMod 须只影响一件网格")
-        mesh = meshes[0]
+        from .maya_original_custom_pose import original_softmod_mesh
+        mesh = original_softmod_mesh(self, source)
         count = int(cmds.polyEvaluate(mesh, vertex=True))
+        geometries = cmds.softMod(source, query=True, geometry=True) or []
         indices = cmds.softMod(source, query=True, geometryIndices=True) or []
-        if len(indices) != 1:
-            raise ValueError("SoftMod 网格索引不唯一")
+        if len(geometries) != len(indices):
+            raise ValueError("SoftMod 输出几何与索引数量不一致")
+        matches = [index for geometry, index in zip(geometries, indices)
+                   if self._mesh(geometry) == mesh]
+        if len(matches) != 1:
+            raise ValueError("SoftMod 选定输出网格缺少唯一索引")
+        geometry_index = matches[0]
         selection = om.MSelectionList()
         selection.add(source)
         fn = oma.MFnWeightGeometryFilter(selection.getDependNode(0))
         components = om.MFnSingleIndexedComponent().create(
             om.MFn.kMeshVertComponent)
         om.MFnSingleIndexedComponent(components).addElements(range(count))
-        values = fn.getWeights(int(indices[0]), components)
+        values = fn.getWeights(int(geometry_index), components)
         if len(values) != count:
             raise ValueError("SoftMod 顶点权重读取不完整")
         center = tuple(float(value) for value in cmds.softMod(
@@ -764,58 +548,98 @@ class MayaCustomControllerHost(MayaFaceHost):
             handle, float(cmds.getAttr(source + ".falloffRadius")),
             int(cmds.getAttr(source + ".falloffMode")), curve)
 
-    def deform_joint_candidates(self, mesh: str
+    def deform_joint_candidates(self, mesh: str, *, include_preferred: bool = True
                                 ) -> tuple[DeformJointCandidate, ...]:
+        """asGetDeformJointsByDistance / asCCLayout's original candidate list."""
         from maya import cmds
 
         self._mesh(mesh)
+        deformation = self.scene_address("DeformationSystem")
+        paths = (cmds.listRelatives(deformation, allDescendents=True,
+                    fullPath=True, type="joint") or [] if cmds.objExists(deformation)
+                 else cmds.ls(type="joint", long=True) or [])
         candidates = []
-        if cmds.objExists(self.scene_address(REGISTRY_NAME)):
-            registration = self.read_character_registration()
-            for item in registration.body:
-                path = self._unique(self.scene_address(item.path), "joint")
-                center = tuple(float(value) for value in cmds.xform(
-                    path, query=True, worldSpace=True, translation=True))
-                candidates.append(DeformJointCandidate(path, center))
-        elif not self.face:
-            raise ValueError("Body 自定义控制器要求已登记角色")
-        if self.face and cmds.objExists(self.scene_address(
-                "FaceDeformationSystem")):
-            root = self._unique("FaceDeformationSystem", "transform")
-            for path in cmds.listRelatives(root, allDescendents=True,
-                                           fullPath=True, type="joint") or []:
-                if path in {item.path for item in candidates}:
-                    continue
-                center = tuple(float(value) for value in cmds.xform(
-                    path, query=True, worldSpace=True, translation=True))
-                candidates.append(DeformJointCandidate(path, center))
-        if self.face and cmds.objExists(self.scene_address("FaceFitSkeleton")):
-            fit = self._unique("FaceFitSkeleton", "transform")
-            if cmds.objExists(fit + ".HeadJoint"):
-                head_name = cmds.getAttr(fit + ".HeadJoint")
-                if head_name:
-                    path = self._unique(head_name, "joint")
-                    if path not in {item.path for item in candidates}:
-                        center = tuple(float(value) for value in cmds.xform(
-                            path, query=True, worldSpace=True,
-                            translation=True))
-                        candidates.insert(0, DeformJointCandidate(path, center))
+        for path in paths:
+            leaf = path.rsplit("|", 1)[-1]
+            if leaf.endswith("_L") or "Partial_" in leaf or "Fix" in leaf:
+                continue
+            center = tuple(float(value) for value in cmds.xform(
+                path, query=True, worldSpace=True, translation=True))
+            candidates.append(DeformJointCandidate(path, center))
+        preferred = self.preferred_custom_parent() if include_preferred else None
+        if preferred and preferred not in {item.path for item in candidates}:
+            center = tuple(float(value) for value in cmds.xform(
+                preferred, query=True, worldSpace=True, translation=True))
+            candidates.insert(0, DeformJointCandidate(preferred, center))
         return tuple(candidates)
+
+    def _unique_custom_parent(self, node: str) -> str:
+        from maya import cmds
+        paths = cmds.ls(self.scene_address(node), long=True) or []
+        if len(paths) != 1 or cmds.nodeType(paths[0]) not in ("joint", "transform"):
+            raise ValueError("自定义控制父节点须为唯一的 Transform 或 Joint")
+        return paths[0]
+
+    def custom_parent_candidate(self, node: str) -> DeformJointCandidate:
+        from maya import cmds
+        path = self._unique_custom_parent(node)
+        center = tuple(float(value) for value in cmds.xform(
+            path, query=True, worldSpace=True, translation=True))
+        return DeformJointCandidate(path, center)
+
+    def custom_parent_candidates(self, region, candidates, preferred=None):
+        """Reproduce asCCLayout's ordered end-joint removals, then promotion."""
+        from maya import cmds
+        rows = sorted(candidates, key=lambda row:
+                      original_parent_distance_key(row, region.center))
+        # MEL mutates the list in its index loop. Do not turn this into a
+        # blanket filter: removal changes which following item is visited.
+        index = 0
+        while index < len(rows):
+            row = rows[index]
+            if (not cmds.listRelatives(row.path, children=True, type="joint")
+                    and not cmds.attributeQuery("control", node=row.path, exists=True)
+                    and len(rows) > 1):
+                rows.pop(index)
+            index += 1
+        if preferred:
+            preferred = self._unique_custom_parent(preferred)
+            rows = [row for row in rows if row.path != preferred]
+            rows.insert(0, self.custom_parent_candidate(preferred))
+        return tuple(rows)
 
     def preferred_custom_parent(self) -> str | None:
         from maya import cmds
 
-        if not self.face:
-            return None
+        preferred = None
         fit_name = self.scene_address("FaceFitSkeleton")
-        if cmds.objExists(fit_name + ".HeadJoint"):
+        if self.face and cmds.objExists(fit_name + ".HeadJoint"):
             head = cmds.getAttr(fit_name + ".HeadJoint")
-            if head:
-                return self._unique(head, "joint")
-        head_name = self.scene_address("Head_M")
-        if cmds.objExists(head_name):
-            return self._unique(head_name, "joint")
-        return None
+            if head:preferred = self._unique_custom_parent(head)
+        selected = cmds.ls(selection=True, type="transform", long=True) or []
+        if len(selected) > 1:
+            preferred = self._unique_custom_parent(selected[1])
+        return preferred
+
+    def custom_parent_for_source(self, deformer: str) -> str:
+        """Choose the dialog's parent in the input pose, before UV/build pose."""
+        from types import SimpleNamespace
+        from maya import cmds
+        preferred = self.preferred_custom_parent()
+        source = self._unique(deformer, "softMod")
+        mesh = self.softmod_target_mesh(source)
+        handles = cmds.listConnections(source + ".matrix", source=True,
+                                       destination=False, type="transform") or []
+        if len(handles) != 1:raise ValueError("SoftMod 缺少唯一操作柄")
+        handle = self._unique(handles[0], "transform")
+        shapes = cmds.listRelatives(handle, shapes=True, fullPath=True) or []
+        origins = [shape for shape in shapes if cmds.objExists(shape + ".origin")]
+        if len(origins) != 1:raise ValueError("SoftMod 缺少唯一原点")
+        region = SimpleNamespace(center=tuple(cmds.getAttr(origins[0] + ".origin")[0]))
+        candidates = self.custom_parent_candidates(
+            region, self.deform_joint_candidates(mesh), preferred)
+        if not candidates:raise ValueError("自定义控制器缺少可用父节点")
+        return candidates[0].path
 
     def preflight_custom_controller(self, plan: CustomControllerPlan) -> None:
         from maya import cmds
@@ -823,7 +647,7 @@ class MayaCustomControllerHost(MayaFaceHost):
         source = self._unique(plan.region.deformer, "softMod")
         handle = self._unique(plan.region.source_handle, "transform")
         mesh = self._mesh(plan.region.mesh)
-        parent = self._unique(plan.parent_joint, "joint")
+        parent = self._unique_custom_parent(plan.parent_joint)
         if plan.partial_parent and self.face:
             raise ValueError("Face Custom Control 不支持 50% Parent")
         if self.face and (not cmds.objExists(self.scene_address(
@@ -883,467 +707,17 @@ class MayaCustomControllerHost(MayaFaceHost):
             self._create_cluster_controller(plan)
             self._register_face_owned_nodes(face_before)
             return
-        parent = self._unique(plan.parent_joint, "joint")
-        mesh = self._mesh(plan.region.mesh)
-        source = self._unique(plan.region.deformer, "softMod")
-        source_handle = self._unique(plan.region.source_handle, "transform")
-        custom_system = self._custom_system()
-        attach = cmds.createNode("transform", name=self.scene_address(
-            plan.auxiliary_name("attach")), parent=custom_system)
-        cmds.xform(attach, worldSpace=True, translation=plan.region.center)
-        self._attach_to_custom_parent(attach, parent, plan.local)
-        offset = cmds.createNode("transform", name=self.scene_address(
-            plan.offset_name), parent=attach)
-        radius = plan.region.falloff_radius * 0.25
-        base = cmds.curve(name=self.scene_address(plan.base_control_name),
-                          degree=1,
-                          point=[(0, radius * 2.5, 0),
-                                 (0, -radius * 2.5, 0), (0, 0, 0),
-                                 (radius * 2.5, 0, 0),
-                                 (-radius * 2.5, 0, 0)])
-        base = cmds.parent(base, offset, relative=True)[0]
-        control = cmds.sphere(name=self.scene_address(plan.control_name),
-                              radius=radius, constructionHistory=False)[0]
-        control = cmds.parent(control, base, relative=True)[0]
-        cmds.addAttr(base, longName="localOrient", attributeType="bool",
-                     defaultValue=plan.local)
-        cmds.addAttr(control, longName="localOrient", attributeType="bool",
-                     defaultValue=plan.local)
-        cmds.addAttr(control, longName="softModControl",
-                     attributeType="bool", defaultValue=True)
-        self._style_custom_control(base, 17)
-        self._style_custom_control(control, 14,
-            shader_name="asSoftModControlShader",
-            shader_color=(0.0, 1.0, 0.0), non_renderable=True)
-        created = cmds.softMod(mesh, name=self.scene_address(
-            plan.deformer_name))
-        if len(created) != 2:
-            raise RuntimeError("创建 SoftMod 未返回变形器和操作柄")
-        deformer = self._unique(created[0], "softMod")
-        new_handle = self._unique(created[1], "transform")
-        cmds.setAttr(deformer + ".falloffRadius", plan.region.falloff_radius)
-        cmds.setAttr(deformer + ".falloffMode", plan.region.falloff_mode)
-        for index, (value, position, interpolation) in enumerate(
-                plan.region.falloff_curve):
-            plug = deformer + ".falloffCurve[%d]." % index
-            cmds.setAttr(plug + "falloffCurve_FloatValue", value)
-            cmds.setAttr(plug + "falloffCurve_Position", position)
-            cmds.setAttr(plug + "falloffCurve_Interp", interpolation)
-        for item in plan.region.weights:
-            if item.weight != 1.0:
-                cmds.setAttr(deformer + ".weightList[0].weights[%d]" %
-                             item.index, item.weight)
-        cmds.setAttr(deformer + ".falloffCenter",
-                     *plan.region.center, type="float3")
-        locator = cmds.spaceLocator(name=self.scene_address(
-            plan.auxiliary_name("locator")))[0]
-        locator = cmds.parent(locator, base, relative=True)[0]
-        cmds.setAttr(locator + ".visibility", False)
-        shape = (cmds.listRelatives(locator, shapes=True,
-                                    fullPath=True) or [None])[0]
-        cmds.connectAttr(shape + ".worldPosition[0]",
-                         deformer + ".falloffCenter", force=True)
-        for plug in (deformer + ".matrix", deformer + ".softModXforms"):
-            for source_plug in (cmds.listConnections(
-                    plug, source=True, destination=False, plugs=True) or []):
-                cmds.disconnectAttr(source_plug, plug)
-        cmds.delete(new_handle)
-        cmds.connectAttr(attach + ".worldMatrix[0]",
-                         deformer + ".matrix", force=True)
-        cmds.connectAttr(base + ".worldInverseMatrix[0]",
-                         deformer + ".postMatrix", force=True)
-        cmds.connectAttr(base + ".worldMatrix[0]",
-                         deformer + ".preMatrix", force=True)
-        matrix = cmds.createNode("multMatrix", name=self.scene_address(
-            plan.auxiliary_name("matrix")))
-        cmds.connectAttr(control + ".worldMatrix[0]",
-                         matrix + ".matrixIn[0]")
-        cmds.connectAttr(control + ".parentInverseMatrix[0]",
-                         matrix + ".matrixIn[1]")
-        cmds.connectAttr(matrix + ".matrixSum",
-                         deformer + ".softModXforms.weightedMatrix")
-        cmds.addAttr(control, longName="falloffRadius", attributeType="double",
-                     defaultValue=1.0, keyable=True)
-        cmds.addAttr(control, longName="falloffMode", attributeType="enum",
-                     enumName="volume:surface:",
-                     defaultValue=plan.region.falloff_mode, keyable=True)
-        cmds.connectAttr(control + ".falloffMode",
-                         deformer + ".falloffMode", force=True)
-        radius_factor = cmds.createNode("multiplyDivide", name=self.scene_address(
-            plan.auxiliary_name("radius_factor")))
-        radius_scale = cmds.createNode("multiplyDivide", name=self.scene_address(
-            plan.auxiliary_name("radius_scale")))
-        cmds.connectAttr(control + ".falloffRadius",
-                         radius_factor + ".input1X")
-        cmds.setAttr(radius_factor + ".input2X", plan.region.falloff_radius)
-        cmds.connectAttr(radius_factor + ".outputX",
-                         radius_scale + ".input1X")
-        cmds.connectAttr(attach + ".scaleX", radius_scale + ".input2X")
-        cmds.connectAttr(radius_scale + ".outputX",
-                         deformer + ".falloffRadius", force=True)
-        cmds.addAttr(control, longName="advPyCustomControlKind",
-                     dataType="string")
-        cmds.setAttr(control + ".advPyCustomControlKind", plan.kind.value,
-                     type="string", lock=True)
-        cmds.addAttr(control, longName="advPyCustomControlWeightCount",
-                     attributeType="long")
-        cmds.setAttr(control + ".advPyCustomControlWeightCount",
-                     sum(item.weight > 0.0 for item in plan.region.weights),
-                     lock=True)
-        cmds.addAttr(control, longName="advPyCustomControlDeformer",
-                     attributeType="message")
-        cmds.connectAttr(deformer + ".message",
-                         control + ".advPyCustomControlDeformer")
-        cmds.addAttr(control, longName="advPyCustomControlParent",
-                     attributeType="message")
-        cmds.connectAttr(parent + ".message",
-                         control + ".advPyCustomControlParent")
-        cmds.delete(source_handle)
-        if cmds.objExists(source):
-            cmds.delete(source)
-        self._register_custom_nodes((attach, offset, base, control),
-                                    control, base)
+        from .maya_original_custom_deformers import create_softmod
+        create_softmod(self, plan)
         self._register_face_owned_nodes(face_before)
 
     def _create_skin_controller(self, plan: CustomControllerPlan) -> None:
-        from maya import cmds
-
-        self._transaction_changed = True
-        mesh = self._mesh(plan.region.mesh)
-        skin = self._skin_for_mesh(mesh, plan.skin_cluster)
-        previous_skins = cmds.ls(cmds.listHistory(mesh,
-            pruneDagObjects=True) or [], type="skinCluster") or []
-        original_skin = (self._unique(previous_skins[0], "skinCluster")
-                         if previous_skins else None)
-        layered = skin == "*new" or (original_skin is not None
-                                      and skin != original_skin)
-        base_name = self.scene_address("ExtraSkinClustersBaseJoint_M")
-        if not layered and cmds.objExists(base_name):
-            base_path = self._unique(base_name, "joint")
-            influences = cmds.skinCluster(skin, query=True,
-                                          influence=True) or []
-            layered = any(self._unique(item, "joint") == base_path
-                          for item in influences)
-        base_joint = None
-        if layered:
-            if cmds.objExists(base_name):
-                base_joint = self._unique(base_name, "joint")
-            else:
-                root_name = ("FaceDeformationSystem" if self.face and
-                             cmds.objExists(self.scene_address(
-                                 "FaceDeformationSystem"))
-                             else "DeformationSystem")
-                root = self._unique(root_name, "transform")
-                base_joint = cmds.createNode("joint", name=base_name,
-                                             parent=root)
-                cmds.setAttr(base_joint + ".drawStyle", 2)
-                cmds.setAttr(base_joint + ".inheritsTransform", False,
-                             lock=True)
-                main = next((self.scene_address(name)
-                             for name in ("Main", "AdvPy_Global")
-                             if cmds.objExists(self.scene_address(name))), None)
-                if main is not None and cmds.objExists(main + ".jointVis"):
-                    cmds.connectAttr(main + ".jointVis",
-                                     base_joint + ".visibility")
-        if skin == "*new":
-            created = cmds.skinCluster(base_joint, mesh, multi=True)
-            if len(created) != 1:
-                raise RuntimeError("新建分层 SkinCluster 未返回唯一节点")
-            skin = self._unique(created[0], "skinCluster")
-            if original_skin:
-                cmds.reorderDeformers(original_skin, skin, mesh)
-        weights = self._soft_selection_weights(plan.region)
-        source_parent = self._unique(plan.parent_joint, "joint")
-        parent = (self._ensure_custom_partial_parent(source_parent)
-                  if plan.partial_parent else source_parent)
-        joint = cmds.createNode("joint", name=self.scene_address(
-            plan.joint_name), parent=parent)
-        cmds.xform(joint, worldSpace=True, translation=plan.region.center)
-        cmds.setAttr(joint + ".segmentScaleCompensate", False)
-        cmds.addAttr(joint, longName="skinControlJoint",
-                     attributeType="bool", defaultValue=True)
-        cmds.addAttr(joint, longName="advPyAuxiliaryInfluenceKind",
-                     dataType="string")
-        cmds.setAttr(joint + ".advPyAuxiliaryInfluenceKind",
-                     "custom-skin-v1", type="string", lock=True)
-        system = self._custom_system()
-        attach = cmds.createNode("transform", name=self.scene_address(
-            plan.auxiliary_name("attach")), parent=system)
-        cmds.xform(attach, worldSpace=True, translation=plan.region.center)
-        self._attach_to_custom_parent(attach, parent, plan.local)
-        offset = cmds.createNode("transform", name=self.scene_address(
-            plan.offset_name), parent=attach)
-        scale = max(0.1, plan.region.falloff_radius / 4.0) / 2.0
-        corners = [(-1, 1, 1), (-1, 1, -1), (1, 1, -1),
-                   (1, 1, 1), (-1, 1, 1), (-1, -1, 1),
-                   (1, -1, 1), (1, -1, -1), (-1, -1, -1),
-                   (-1, -1, 1), (-1, -1, -1), (-1, 1, -1),
-                   (1, 1, -1), (1, -1, -1), (1, -1, 1), (1, 1, 1)]
-        control = cmds.curve(name=self.scene_address(plan.control_name),
-                             degree=1, point=[tuple(scale * axis for axis in p)
-                                              for p in corners])
-        control = cmds.parent(control, offset, relative=True)[0]
-        cmds.addAttr(control, longName="localOrient", attributeType="bool",
-                     defaultValue=plan.local)
-        self._style_custom_control(control, 17)
-        for shape in cmds.listRelatives(control, shapes=True,
-                                        fullPath=True) or []:
-            if cmds.objExists(shape + ".isHistoricallyInteresting"):
-                cmds.setAttr(shape + ".isHistoricallyInteresting", False)
-        constraint = cmds.parentConstraint(control, joint,
-                                           maintainOffset=False)
-        cmds.addAttr(control, longName="skinControl",
-                     attributeType="bool", defaultValue=True)
-        cmds.addAttr(control, longName="advPyLayeredSkin",
-                     attributeType="bool", defaultValue=layered)
-        cmds.setAttr(control + ".advPyLayeredSkin", lock=True)
-        joint_offset = None
-        if layered:
-            cmds.delete(constraint)
-            joint_offset = cmds.createNode("transform", name=self.scene_address(
-                "JointOffset" + plan.name + plan.side), parent=joint)
-            joint_offset = cmds.parent(joint_offset, base_joint)[0]
-            joint = cmds.parent(joint, joint_offset)[0]
-            matrix = cmds.createNode("multMatrix", name=self.scene_address(
-                plan.name + "JointMM" + plan.side))
-            cmds.connectAttr(control + ".worldMatrix[0]",
-                             matrix + ".matrixIn[0]")
-            cmds.connectAttr(offset + ".worldInverseMatrix[0]",
-                             matrix + ".matrixIn[1]")
-            cmds.connectAttr(matrix + ".matrixSum",
-                             joint + ".offsetParentMatrix")
-        cmds.skinCluster(skin, edit=True, addInfluence=joint,
-                         weight=0.0, lockWeights=False)
-        matrix_indices = cmds.getAttr(skin + ".matrix", multiIndices=True) or []
-        influence_index = None
-        for index in matrix_indices:
-            linked = cmds.listConnections(skin + ".matrix[%d]" % index,
-                                          source=True, destination=False,
-                                          type="joint") or []
-            if len(linked) == 1 and self._unique(linked[0], "joint") == joint:
-                influence_index = int(index)
-                break
-        if influence_index is None:
-            raise RuntimeError("新关节未登记到 SkinCluster 影响矩阵")
-        for item in weights:
-            cmds.setAttr(skin + ".weightList[%d].weights[%d]" %
-                         (item.index, influence_index), item.weight)
-        influences = cmds.skinCluster(skin, query=True, influence=True) or []
-        locks = {}
-        try:
-            for influence in influences:
-                path = self._unique(influence, "joint")
-                plug = path + ".lockInfluenceWeights"
-                locks[path] = bool(cmds.getAttr(plug))
-                cmds.setAttr(plug, path == joint)
-            cmds.skinPercent(skin, mesh, normalize=True)
-        finally:
-            for path, locked in locks.items():
-                cmds.setAttr(path + ".lockInfluenceWeights", locked)
-        cmds.addAttr(control, longName="advPyCustomControlKind",
-                     dataType="string")
-        cmds.setAttr(control + ".advPyCustomControlKind", plan.kind.value,
-                     type="string", lock=True)
-        cmds.addAttr(control, longName="advPyCustomControlWeightCount",
-                     attributeType="long")
-        cmds.setAttr(control + ".advPyCustomControlWeightCount",
-                     sum(item.weight > 0 for item in weights), lock=True)
-        cmds.addAttr(control, longName="advPyCustomControlDeformer",
-                     attributeType="message")
-        cmds.connectAttr(skin + ".message",
-                         control + ".advPyCustomControlDeformer")
-        cmds.addAttr(control, longName="advPyCustomControlJoint",
-                     attributeType="message")
-        cmds.connectAttr(joint + ".message",
-                         control + ".advPyCustomControlJoint")
-        cmds.addAttr(control, longName="advPyCustomControlParent",
-                     attributeType="message")
-        cmds.connectAttr(source_parent + ".message",
-                         control + ".advPyCustomControlParent")
-        cmds.delete(self._unique(plan.region.source_handle, "transform"))
-        if cmds.objExists(plan.region.deformer):
-            cmds.delete(plan.region.deformer)
-        paths = ((attach, offset, control, joint_offset, joint)
-                 if joint_offset else (attach, offset, control, joint))
-        self._register_custom_nodes(paths, control)
+        from .maya_original_custom_skin import create
+        create(self, plan)
 
     def _create_cluster_controller(self, plan: CustomControllerPlan) -> None:
-        from maya import cmds
-
-        self._transaction_changed = True
-        transfer = self._probe_softmod(plan.region)
-        parent = self._unique(plan.parent_joint, "joint")
-        mesh = self._mesh(plan.region.mesh)
-        custom_system = self._custom_system()
-        group = cmds.createNode("transform", name=self.scene_address(
-            plan.auxiliary_name("cluster_group")), parent=custom_system)
-        cmds.setAttr(group + ".inheritsTransform", False, lock=True)
-        attach = cmds.createNode("transform", name=self.scene_address(
-            plan.auxiliary_name("attach")), parent=group)
-        cmds.xform(attach, worldSpace=True, translation=plan.region.center)
-        offset_decompose = cmds.createNode("decomposeMatrix",
-            name=self.scene_address(plan.auxiliary_name("offset_decompose")))
-        cmds.connectAttr(parent + ".worldMatrix[0]",
-                         offset_decompose + ".inputMatrix")
-        cmds.connectAttr(offset_decompose + ".outputRotate",
-                         attach + ".rotate")
-        cmds.connectAttr(offset_decompose + ".outputScale",
-                         attach + ".scale")
-        offset = cmds.createNode("transform", name=self.scene_address(
-            plan.offset_name), parent=attach)
-        if not plan.local:
-            cmds.xform(offset, worldSpace=True, rotation=(0.0, 0.0, 0.0))
-        subtract = cmds.createNode("transform", name=self.scene_address(
-            plan.auxiliary_name("subtract")), parent=offset)
-        control = cmds.sphere(name=self.scene_address(plan.control_name),
-                              radius=plan.region.falloff_radius / 4.0,
-                              constructionHistory=False)[0]
-        control = cmds.parent(control, subtract, relative=True)[0]
-        cmds.addAttr(control, longName="localOrient", attributeType="bool",
-                     defaultValue=plan.local)
-        cmds.addAttr(control, longName="clusterControl",
-                     attributeType="bool", defaultValue=True)
-        self._style_custom_control(control, 13,
-            shader_name="asClusterControlShader",
-            shader_color=(1.0, 0.0, 0.0), non_renderable=True)
-        translate_subtract = cmds.createNode("plusMinusAverage",
-            name=self.scene_address(plan.auxiliary_name("translation_subtract")))
-        cmds.setAttr(translate_subtract + ".operation", 2)
-        cmds.connectAttr(control + ".translate",
-                         translate_subtract + ".input3D[1]")
-        cmds.connectAttr(translate_subtract + ".output3D",
-                         subtract + ".translate")
-        created = cmds.cluster(mesh, name=self.scene_address(
-            plan.deformer_name))
-        if len(created) != 2:
-            raise RuntimeError("创建 Cluster 未返回变形器和操作柄")
-        deformer = self._unique(created[0], "cluster")
-        handle = cmds.rename(self._unique(created[1], "transform"),
-                             self.scene_address(plan.auxiliary_name("handle")))
-        cmds.xform(handle, worldSpace=True, translation=plan.region.center)
-        handle_shape = (cmds.listRelatives(handle, shapes=True,
-                                           fullPath=True) or [None])[0]
-        if handle_shape and cmds.objExists(handle_shape + ".origin"):
-            cmds.setAttr(handle_shape + ".origin", *plan.region.center,
-                         type="float3")
-        cmds.xform(handle, worldSpace=True, pivots=plan.region.center)
-        handle = cmds.parent(handle, group)[0]
-        cmds.setAttr(handle + ".visibility", False)
-        cmds.setAttr(handle + ".visibility", lock=True)
-        matrix_nodes = {}
-        for role, matrix_role, decompose_role, slot in (
-                ("translation", "translate_matrix", "translate_decompose", 0),
-                ("rotation", "rotate_matrix", "rotate_decompose", 1)):
-            matrix = cmds.createNode("multMatrix", name=self.scene_address(
-                plan.auxiliary_name(matrix_role)))
-            decompose = cmds.createNode("decomposeMatrix",
-                name=self.scene_address(plan.auxiliary_name(decompose_role)))
-            cmds.connectAttr(control + ".matrix",
-                             matrix + ".matrixIn[%d]" % slot)
-            cmds.connectAttr(matrix + ".matrixSum",
-                             decompose + ".inputMatrix")
-            cmds.connectAttr(control + ".rotateOrder",
-                             decompose + ".inputRotateOrder")
-            matrix_nodes[role] = (matrix, decompose)
-        temp = cmds.createNode("transform", name=self.scene_address(
-            plan.name + "ClusterMatrixTemp" + plan.side))
-        try:
-            cmds.delete(cmds.orientConstraint(control, temp))
-            frame = cmds.xform(temp, query=True, objectSpace=True,
-                               matrix=True)
-            inverse = cmds.getAttr(temp + ".inverseMatrix")
-            if len(inverse) == 1 and isinstance(inverse[0], (tuple, list)):
-                inverse = inverse[0]
-            translate_matrix, translate_decompose = matrix_nodes["translation"]
-            rotate_matrix, rotate_decompose = matrix_nodes["rotation"]
-            cmds.setAttr(translate_matrix + ".matrixIn[1]", *frame,
-                         type="matrix")
-            cmds.setAttr(rotate_matrix + ".matrixIn[0]", *inverse,
-                         type="matrix")
-            cmds.setAttr(rotate_matrix + ".matrixIn[2]", *frame,
-                         type="matrix")
-        finally:
-            cmds.delete(temp)
-        cmds.connectAttr(translate_decompose + ".outputTranslate",
-                         handle + ".translate")
-        cmds.connectAttr(translate_decompose + ".outputScale",
-                         handle + ".scale")
-        cmds.connectAttr(rotate_decompose + ".outputRotate",
-                         handle + ".rotate")
-        for item in transfer.weights:
-            cmds.percent(deformer, "%s.vtx[%d]" % (mesh, item.index),
-                         value=item.weight)
-        vertex = "%s.vtx[%d]" % (mesh, transfer.attachment_vertex)
-        edges = cmds.ls(cmds.polyListComponentConversion(
-            vertex, toEdge=True) or [], flatten=True) or []
-        if not edges:
-            raise RuntimeError("最强权重顶点没有可用网格边")
-        duplicated = cmds.duplicateCurve(edges[0], constructionHistory=True,
-                                          range=False, local=False)
-        if len(duplicated) != 2:
-            raise RuntimeError("网格边曲线未返回曲线与历史节点")
-        curve = cmds.rename(duplicated[0], self.scene_address(
-            plan.auxiliary_name("edge_curve")))
-        cmds.rename(duplicated[1], self.scene_address(
-            plan.auxiliary_name("edge_source")))
-        curve = cmds.parent(curve, group)[0]
-        cmds.setAttr(curve + ".visibility", False, lock=True)
-        curve_shape = (cmds.listRelatives(curve, shapes=True,
-                                          fullPath=True) or [None])[0]
-        if not curve_shape:
-            raise RuntimeError("网格边曲线缺少 Shape 节点")
-        point_on_curve = cmds.createNode("pointOnCurveInfo",
-            name=self.scene_address(plan.auxiliary_name("curve_point")))
-        cmds.setAttr(point_on_curve + ".turnOnPercentage", True)
-        cmds.connectAttr(curve_shape + ".worldSpace[0]",
-                         point_on_curve + ".inputCurve")
-        target_position = cmds.xform(vertex, query=True,
-                                     worldSpace=True, translation=True)
-        endpoints = []
-        for parameter in (0.0, 1.0):
-            cmds.setAttr(point_on_curve + ".parameter", parameter)
-            location = cmds.getAttr(point_on_curve + ".position")[0]
-            endpoints.append(sum((a - b) ** 2 for a, b in zip(
-                target_position, location)))
-        cmds.setAttr(point_on_curve + ".parameter",
-                     0.0 if endpoints[0] <= endpoints[1] else 1.0)
-        cmds.connectAttr(point_on_curve + ".position",
-                         attach + ".translate", force=True)
-        cmds.xform(offset, worldSpace=True, translation=plan.region.center)
-        skins = cmds.ls(cmds.listHistory(mesh,
-                                        pruneDagObjects=True) or [],
-                        type="skinCluster") or []
-        if skins:
-            try:
-                cmds.reorderDeformers(skins[-1], deformer, mesh)
-            except RuntimeError:
-                pass
-        cmds.addAttr(control, longName="advPyCustomControlKind",
-                     dataType="string")
-        cmds.setAttr(control + ".advPyCustomControlKind", plan.kind.value,
-                     type="string", lock=True)
-        cmds.addAttr(control, longName="advPyCustomControlWeightCount",
-                     attributeType="long")
-        cmds.setAttr(control + ".advPyCustomControlWeightCount",
-                     sum(item.weight > 0 for item in transfer.weights),
-                     lock=True)
-        cmds.addAttr(control, longName="advPyCustomControlDeformer",
-                     attributeType="message")
-        cmds.connectAttr(deformer + ".message",
-                         control + ".advPyCustomControlDeformer")
-        cmds.addAttr(control, longName="advPyCustomControlParent",
-                     attributeType="message")
-        cmds.connectAttr(parent + ".message",
-                         control + ".advPyCustomControlParent")
-        cmds.addAttr(control, longName="advPyClusterAttachmentVertex",
-                     attributeType="long")
-        cmds.setAttr(control + ".advPyClusterAttachmentVertex",
-                     transfer.attachment_vertex, lock=True)
-        cmds.delete(self._unique(plan.region.source_handle, "transform"))
-        if cmds.objExists(plan.region.deformer):
-            cmds.delete(plan.region.deformer)
-        self._register_custom_nodes((group, attach, offset, subtract, control),
-                                    control)
+        from .maya_original_custom_deformers import create_cluster
+        create_cluster(self, plan)
 
     def capture_custom_controller(self, plan: CustomControllerPlan
                                   ) -> CustomControllerState:
@@ -1354,15 +728,39 @@ class MayaCustomControllerHost(MayaFaceHost):
 
         path = self._unique(control, "transform")
         kind_plug = path + ".advPyCustomControlKind"
-        if not cmds.objExists(kind_plug):
-            raise ValueError("所选节点不是本工程自定义控制器")
-        kind = CustomControlKind(cmds.getAttr(kind_plug))
-        links = cmds.listConnections(
-            path + ".advPyCustomControlDeformer", source=True,
-            destination=False,
-            type="softMod" if kind is CustomControlKind.SOFT_MOD
-            else "cluster" if kind is CustomControlKind.CLUSTER
-            else "skinCluster") or []
+        original = not cmds.objExists(kind_plug)
+        leaf = path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if original:
+            # Original custom controls have native type flags, .parent and
+            # source-named deformers, without Python registration metadata.
+            flags = (("softModControl", CustomControlKind.SOFT_MOD),
+                     ("clusterControl", CustomControlKind.CLUSTER),
+                     ("skinControl", CustomControlKind.SKIN))
+            kinds = [value for attr, value in flags if cmds.objExists(path + "." + attr)
+                     and cmds.getAttr(path + "." + attr)]
+            if len(kinds) != 1 or not cmds.objExists(path + ".parent") or not any(
+                    part.rsplit(":", 1)[-1] in ("CustomSystem", "FaceCustomSystem")
+                    for part in path.split("|")):
+                raise ValueError("所选节点不是原版自定义控制器")
+            kind = kinds[0]
+            stem, side = leaf.rsplit("_", 1)
+            if kind is CustomControlKind.SKIN:
+                source_joint = self._unique("Joint" + leaf, "joint")
+                links = cmds.listConnections(source_joint + ".worldMatrix[0]",
+                    source=False, destination=True, type="skinCluster") or []
+                links = list(dict.fromkeys(links))[:1]
+            else:
+                links = [self._unique(stem + "SoftMod_" + side, "softMod")
+                         if kind is CustomControlKind.SOFT_MOD else
+                         self._unique("Cluster" + leaf, "cluster")]
+        else:
+            kind = CustomControlKind(cmds.getAttr(kind_plug))
+            links = cmds.listConnections(
+                path + ".advPyCustomControlDeformer", source=True,
+                destination=False,
+                type="softMod" if kind is CustomControlKind.SOFT_MOD
+                else "cluster" if kind is CustomControlKind.CLUSTER
+                else "skinCluster") or []
         if len(links) != 1:
             raise ValueError("自定义控制器缺少唯一变形器连接")
         deformer = self._unique(links[0],
@@ -1387,14 +785,15 @@ class MayaCustomControllerHost(MayaFaceHost):
             base = None
         else:
             offset, base = base, None
-        attach = (cmds.listRelatives(offset, parent=True,
-                                    fullPath=True) or [None])[0]
-        parents = cmds.listConnections(
-            path + ".advPyCustomControlParent", source=True,
-            destination=False, type="joint") or []
+        attach = (offset if kind is CustomControlKind.SOFT_MOD else
+                  (cmds.listRelatives(offset, parent=True,
+                                      fullPath=True) or [None])[0])
+        parents = ([cmds.getAttr(path + ".parent")] if original else
+                   cmds.listConnections(path + ".advPyCustomControlParent",
+                       source=True, destination=False) or [])
         if not attach or len(parents) != 1:
             raise ValueError("自定义控制器缺少附着层或父关节")
-        parent = self._unique(parents[0], "joint")
+        parent = self._unique_custom_parent(parents[0])
         local = (self._cmds.identity.to_local if self.namespace is not None
                  else lambda node: node)
         has_registry = (not self.face and cmds.objExists(
@@ -1419,20 +818,19 @@ class MayaCustomControllerHost(MayaFaceHost):
             if (not face_path or not cmds.objExists(face_set)
                     or not cmds.sets(path, isMember=face_set)):
                 raise ValueError("自定义控制器未加入 FaceControlSet")
-        elif not has_registry or not expected <= registered:
+        elif has_registry and not original and not expected <= registered:
             raise ValueError("自定义控制器未登记到 Body 角色")
         joint = None
         if kind is CustomControlKind.SKIN:
-            joints = cmds.listConnections(
+            joints = ([source_joint] if original else cmds.listConnections(
                 path + ".advPyCustomControlJoint", source=True,
-                destination=False, type="joint") or []
+                destination=False, type="joint") or [])
             if len(joints) != 1:
                 raise ValueError("Skin Control 缺少唯一影响关节")
             joint = self._unique(joints[0], "joint")
-            if has_registry and local(joint) not in registered:
+            if has_registry and not original and local(joint) not in registered:
                 raise ValueError("Skin Control 影响关节未登记到角色")
-            if cmds.objExists(path + ".advPyLayeredSkin") and cmds.getAttr(
-                    path + ".advPyLayeredSkin"):
+            if self._is_layered_custom_skin(path, joint):
                 joint_offset = (cmds.listRelatives(joint, parent=True,
                     fullPath=True) or [None])[0]
                 offset_leaf = (joint_offset.rsplit("|", 1)[-1]
@@ -1447,7 +845,43 @@ class MayaCustomControllerHost(MayaFaceHost):
             if kind is CustomControlKind.CLUSTER
             else self._skin_joint_meshes(joint),
             joint, deformer,
-            int(cmds.getAttr(path + ".advPyCustomControlWeightCount")))
+            (int(cmds.getAttr(path + ".advPyCustomControlWeightCount"))
+             if not original else self._original_custom_weight_count(kind, deformer, joint)))
+
+    def _original_custom_weight_count(self, kind, deformer, joint):
+        """Read native weights for source controls without port metadata."""
+        from maya import cmds
+        from maya.api import OpenMaya as om, OpenMayaAnim as oma
+        selection = om.MSelectionList(); selection.add(deformer)
+        if kind is CustomControlKind.SKIN:
+            fn = oma.MFnSkinCluster(selection.getDependNode(0))
+            influence = om.MSelectionList(); influence.add(joint)
+            logical = fn.indexForInfluenceObject(influence.getDagPath(0))
+            physical = next(i for i, path in enumerate(fn.influenceObjects())
+                            if fn.indexForInfluenceObject(path) == logical)
+            meshes = self._skin_meshes(deformer)
+        else:
+            fn = oma.MFnWeightGeometryFilter(selection.getDependNode(0))
+            meshes = self._softmod_meshes(deformer) if kind is CustomControlKind.SOFT_MOD else self._cluster_meshes(deformer)
+        count = 0
+        for mesh in meshes:
+            geometry = om.MSelectionList(); geometry.add(mesh)
+            dag = geometry.getDagPath(0); dag.extendToShape()
+            component = om.MFnSingleIndexedComponent().create(om.MFn.kMeshVertComponent)
+            om.MFnSingleIndexedComponent(component).addElements(range(cmds.polyEvaluate(mesh, vertex=True)))
+            weights = (fn.getWeights(dag, component, physical) if kind is CustomControlKind.SKIN
+                       else fn.getWeights(dag, component))
+            count += sum(value > 0. for value in weights)
+        return count
+
+    @staticmethod
+    def _is_layered_custom_skin(control, joint):
+        from maya import cmds
+        plug = control + ".advPyLayeredSkin"
+        if cmds.objExists(plug):
+            return bool(cmds.getAttr(plug))
+        parents = cmds.listRelatives(joint, parent=True, fullPath=True) or []
+        return bool(parents and parents[0].rsplit("|", 1)[-1].rsplit(":", 1)[-1].startswith("JointOffset"))
 
     def preflight_custom_extension(self, kind: CustomControlKind,
                                    deformer: str, joint: str | None,
@@ -1465,11 +899,9 @@ class MayaCustomControllerHost(MayaFaceHost):
                     or cmds.referenceQuery(target, isNodeReferenced=True)):
                 raise ValueError("Skin 影响关节和目标网格须为本地可写节点")
             skins = cmds.ls(cmds.listHistory(target,
-                                            pruneDagObjects=True) or [],
+                                            pruneDagObjects=True, interestLevel=2) or [],
                             type="skinCluster") or []
-            if len(set(skins)) > 1:
-                raise ValueError("目标网格存在多个 SkinCluster，须指定目标层")
-            if skins and cmds.referenceQuery(skins[0],
+            if skins and cmds.referenceQuery(skins[-1],
                                               isNodeReferenced=True):
                 raise ValueError("目标 SkinCluster 须为本地可写节点")
             return
@@ -1497,30 +929,27 @@ class MayaCustomControllerHost(MayaFaceHost):
             target = self._mesh(mesh)
             source_joint = self._unique(joint, "joint")
             skins = cmds.ls(cmds.listHistory(target,
-                                            pruneDagObjects=True) or [],
+                                            pruneDagObjects=True, interestLevel=2) or [],
                             type="skinCluster") or []
             if skins:
-                cmds.skinCluster(skins[0], edit=True,
+                cmds.skinCluster(skins[-1], edit=True,
                                  addInfluence=source_joint,
                                  weight=0.0, lockWeights=False)
             else:
-                cmds.skinCluster(source_joint, target,
-                                 maximumInfluences=3)
-        elif kind is CustomControlKind.SOFT_MOD:
-            cmds.softMod(deformer, edit=True, geometry=mesh)
+                from .maya_original_skin_history import new_original_skin_clusters
+                cmds.select(source_joint, target, replace=True)
+                new_original_skin_clusters(commands=cmds, namespace=self.namespace)
         else:
-            cmds.cluster(deformer, edit=True, geometry=mesh)
+            from .maya_face_deformer_sets import original_deformer_set
+            cmds.sets(mesh, add=original_deformer_set(cmds, deformer))
 
     def open_cluster_weight_paint(self, deformer: str) -> None:
         from maya import cmds, mel
 
         cluster = self._unique(deformer, "cluster")
-        sets = cmds.listConnections(cluster + ".message",
-                                    source=False, destination=True,
-                                    type="objectSet") or []
-        if len(sets) != 1:
-            raise ValueError("Cluster 缺少唯一变形器集合")
-        cmds.select(sets[0], replace=True)
+        from .maya_face_deformer_sets import original_deformer_set
+        cmds.select(original_deformer_set(cmds, cluster), replace=True)
+        cmds.select(cmds.ls(selection=True, objectsOnly=True) or [], replace=True)
         mel.eval('artAttrToolScript 4 "cluster";')
         mel.eval('artSetToolAndSelectAttr("artAttrCtx", '
                  '"cluster.%s.weights");' % cluster)
@@ -1531,53 +960,8 @@ class MayaCustomControllerHost(MayaFaceHost):
 
     def mirror_cluster_weights(self, source: str, target: str,
                                mesh: str, side: str) -> None:
-        from maya import cmds
-
-        self._require_transaction()
-        source = self._unique(source, "cluster")
-        target = self._unique(target, "cluster")
-        mesh = self._mesh(mesh)
-        if (side not in ("L", "R") or source == target
-                or mesh not in self._cluster_meshes(source)
-                or mesh not in self._cluster_meshes(target)):
-            raise ValueError("Cluster 镜像源、目标或侧别无效")
-        shape = (cmds.listRelatives(mesh, shapes=True,
-                                    noIntermediate=True, fullPath=True,
-                                    type="mesh") or [None])[0]
-        count = int(cmds.polyEvaluate(mesh, vertex=True))
-        samples = []
-        for index in range(count):
-            vertex = "%s.vtx[%d]" % (mesh, index)
-            values = cmds.percent(source, vertex, query=True, value=True) or []
-            weight = float(values[0]) if values else 0.0
-            if weight <= 0:
-                continue
-            position = cmds.xform(vertex, query=True,
-                                  worldSpace=True, translation=True)
-            if ((side == "R" and position[0] > -0.001)
-                    or (side == "L" and position[0] < 0.001)):
-                continue
-            samples.append((weight, position))
-        if not samples:
-            raise ValueError("源侧 Cluster 没有可镜像的顶点权重")
-        sampler = cmds.createNode("closestPointOnMesh")
-        try:
-            cmds.connectAttr(shape + ".outMesh", sampler + ".inMesh")
-            cmds.connectAttr(shape + ".worldMatrix[0]",
-                             sampler + ".inputMatrix")
-            mapped = {}
-            for weight, position in samples:
-                cmds.setAttr(sampler + ".inPosition", -position[0],
-                             position[1], position[2], type="double3")
-                index = int(cmds.getAttr(sampler + ".closestVertexIndex"))
-                mapped[index] = max(weight, mapped.get(index, 0.0))
-            self._transaction_changed = True
-            cmds.percent(target, mesh, value=0.0)
-            for index, weight in mapped.items():
-                cmds.percent(target, "%s.vtx[%d]" % (mesh, index),
-                             value=weight)
-        finally:
-            cmds.delete(sampler)
+        from .maya_original_custom_mirror import mirror_cluster_weights
+        mirror_cluster_weights(self, source, target, mesh, side)
 
     def custom_control_exists(self, control: str) -> bool:
         from maya import cmds
@@ -1628,7 +1012,10 @@ class MayaCustomControllerHost(MayaFaceHost):
                                     fullPath=True) or [None])[0]
         if not attach:
             raise ValueError("自定义控制器缺少附着层")
-        delete_root = attach
+        delete_root = (state.offset if state.kind is CustomControlKind.SOFT_MOD
+                       or state.kind is CustomControlKind.SKIN
+                       and attach.rsplit("|", 1)[-1].rsplit(":", 1)[-1].startswith("ParentConstraintTo")
+                       else attach)
         if state.kind is CustomControlKind.CLUSTER:
             delete_root = (cmds.listRelatives(attach, parent=True,
                                              fullPath=True) or [None])[0]
@@ -1644,8 +1031,7 @@ class MayaCustomControllerHost(MayaFaceHost):
                        or node.path.startswith(attach_local + "|")}
             if state.joint:
                 removed.add(local(state.joint))
-                if (cmds.objExists(state.control + ".advPyLayeredSkin")
-                        and cmds.getAttr(state.control + ".advPyLayeredSkin")):
+                if self._is_layered_custom_skin(state.control, state.joint):
                     joint_offset = (cmds.listRelatives(
                         state.joint, parent=True, fullPath=True) or [None])[0]
                     if joint_offset:
@@ -1655,8 +1041,6 @@ class MayaCustomControllerHost(MayaFaceHost):
                                         if node.path not in removed),
                             channels=tuple(channel for channel in before.channels
                                            if channel.node not in removed))
-            if len(after.nodes) == len(before.nodes):
-                raise ValueError("自定义控制器不在角色登记中")
             self._validate_character_registration(after)
             registry = self.scene_address(REGISTRY_NAME)
             document = registry + ".advPyRegistryDocument"
@@ -1677,9 +1061,7 @@ class MayaCustomControllerHost(MayaFaceHost):
             cmds.setAttr(members, lock=True)
         if state.kind is CustomControlKind.SKIN:
             joint = self._unique(state.joint, "joint")
-            layered = (cmds.objExists(state.control + ".advPyLayeredSkin")
-                       and bool(cmds.getAttr(state.control +
-                                             ".advPyLayeredSkin")))
+            layered = self._is_layered_custom_skin(state.control, joint)
             joint_offset = ((cmds.listRelatives(joint, parent=True,
                 fullPath=True) or [None])[0] if layered else None)
             for skin in cmds.ls(type="skinCluster") or []:
@@ -1733,5 +1115,13 @@ class MayaCustomControllerHost(MayaFaceHost):
                     if cmds.objExists(helper):
                         cmds.delete(helper)
         cmds.delete(delete_root)
+        from adv_py.core.original_build_pose_cleanup import original_build_pose_commands
+        pose = self.scene_address("faceBuildPose" if self.face else "buildPose")
+        for attribute in ("udAttr", "udExtraAttr"):
+            plug = pose + "." + attribute
+            if cmds.objExists(plug):
+                text = original_build_pose_commands(cmds.getAttr(plug) or "",
+                    lambda token: cmds.objExists(token.strip('"')))
+                cmds.setAttr(plug, text, type="string")
         if not self.face and cmds.objExists(self.scene_address(REGISTRY_NAME)):
             self.read_character_registration()

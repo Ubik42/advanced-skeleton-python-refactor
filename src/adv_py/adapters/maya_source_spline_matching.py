@@ -89,13 +89,24 @@ def _custom_orient(c,control):
 
 def _endpoint_rotation(host,registration,binding,index):
     """Evaluate the original AlignIKTo rest offset in the current FKX frame."""
-    import maya.api.OpenMaya as om
     c=host._cmds
+    if getattr(binding,'native_scene',False):
+        control=binding.ik_controls[index]
+        align=binding.endpoint_aligns[0 if index==0 else 1]
+        order=c.xform(control,query=True,rotateOrder=True)
+        c.xform(align,preserve=True,rotateOrder=order)
+        return tuple(c.xform(align,query=True,worldSpace=True,rotation=True))
     plan=binding.plan
+    if plan.source_alignment_frames:
+        from .maya_source_spline_alignment import endpoint_rotation
+        return endpoint_rotation(host,plan,index)
+    import maya.api.OpenMaya as om
     body_index=0 if index==0 else len(plan.body_joints)-1
     control=plan.targets[index]
     driver=binding.fk_drivers[body_index]
-    rest=next(joint.matrix for joint in registration.body if joint.path==plan.body_joints[body_index])
+    from adv_py.core.character_body_retirement import complete_body_bindings
+    rest=next(joint.matrix for joint in complete_body_bindings(registration)
+              if joint.path==plan.body_joints[body_index])
     # Strip scale from the bind frame: AlignIKTo inherits FKX orientation;
     # controller axes are a constant rest offset, not an Euler copy.
     axes=(plan.source_control_axes[index] if plan.source_control_axes and plan.source_ik_local
@@ -116,61 +127,80 @@ def align(host,registration,binding,mode,*,baking=False):
     host._require_transaction()
     if mode not in ('fk','ik'):raise CharacterRegistryError('来源 Spline 对齐方向需要 fk / ik')
     c=host._cmds
-    plan=binding.plan
+    native=getattr(binding,'native_scene',False)
+    plan=None if native else binding.plan
     auto=bool(c.autoKeyframe(query=True,state=True))
     host._transaction_changed=True
     with _restore_selection(c):
         c.autoKeyframe(state=bool(baking))
         try:
+            for temporary in ('IK2FKTempCurve','IK2FKTempXform1','IK2FKTempXform2','IK2FKTempCurveInfo'):
+                if c.objExists(temporary):c.delete(temporary)
             if mode=='fk':
-                # Capture every IKX before moving its parent FK controller.
-                frames=tuple((tuple(c.xform(driver,query=True,worldSpace=True,translation=True)),
-                              tuple(c.xform(driver,query=True,worldSpace=True,rotation=True)))
-                             for driver in binding.ik_drivers)
-                for control,(position,rotation) in zip(binding.fk_controls,frames):
-                    if not any(ch.node==control for ch in registration.channels):continue
+                # Source samples each IKX immediately before its FK writes,
+                # and uses ControlSet membership rather than channel records.
+                for control,driver in zip(binding.fk_controls,binding.ik_drivers):
+                    if not c.objExists(driver) or not c.objExists(control):continue
+                    if not c.sets(control,isMember='ControlSet'):continue
+                    position=tuple(c.xform(driver,query=True,worldSpace=True,translation=True))
+                    rotation=tuple(c.xform(driver,query=True,worldSpace=True,rotation=True))
                     for _ in range(2):
                         c.xform(control,worldSpace=True,translation=position,rotation=rotation)
                     _custom_orient(c,control)
                 return
+            targets=binding.ik_controls if native else plan.targets
+            hybrids=binding.hybrid_controls if native else plan.hybrid_controls
+            body_joints=binding.physical_chain if native else plan.body_joints
             positions=tuple(tuple(c.xform(joint,query=True,worldSpace=True,translation=True))
                             for joint in binding.physical_chain)
-            deform=(c.listRelatives('DeformationSystem',allDescendents=True,type='joint',fullPath=True)
-                    if c.objExists('DeformationSystem') else [joint.path for joint in registration.body]) or []
-            deform_positions=tuple((joint,tuple(c.xform(joint,query=True,worldSpace=True,translation=True)))
-                                   for joint in deform)
-            deform_rotations={joint:tuple(c.xform(joint,query=True,worldSpace=True,rotation=True))
-                              for joint in deform}
-            # End orientation must be read before Hybrid parenting changes FKX.
-            endpoint={len(plan.targets)-1:_endpoint_rotation(host,registration,binding,len(plan.targets)-1)}
-            if plan.body_joints[0].rsplit('|',1)[-1].rsplit(':',1)[-1]=='Root_M':
-                endpoint[0]=_endpoint_rotation(host,registration,binding,0)
-            curve=c.curve(name='AdvPy_FK2IKCurve',degree=1,point=positions)
+            # MEL evaluates the graph again for every Hybrid. Earlier
+            # controls can change the deform positions and FKX reference.
+            def nearest_rotation(position):
+                deform=(c.listRelatives('DeformationSystem',allDescendents=True,type='joint',fullPath=True)
+                        if c.objExists('DeformationSystem') else c.ls(type='joint',long=True)) or []
+                positions=tuple((joint,tuple(c.xform(joint,query=True,worldSpace=True,translation=True)))
+                                for joint in deform)
+                nearest=source_spline_nearest_deform(position,positions)
+                return tuple(c.xform(nearest,query=True,worldSpace=True,rotation=True))
+            endpoint={len(targets)-1}
+            if body_joints[0].rsplit('|',1)[-1].rsplit(':',1)[-1]=='Root_M':
+                endpoint.add(0)
+            if c.objExists('FK2IKCurve'):c.delete('FK2IKCurve')
+            curve=c.curve(name='FK2IKCurve',degree=1,point=positions)
             info=None
             try:
                 curve=c.rebuildCurve(curve,constructionHistory=False,replaceOriginal=True,
                     rebuildType=0,endKnots=1,keepRange=0,keepControlPoints=False,
                     keepEndPoints=True,keepTangents=False,spans=0,degree=3,tolerance=.01)[0]
                 shape=(c.listRelatives(curve,shapes=True,fullPath=True) or [None])[0]
-                info=c.createNode('pointOnCurveInfo',name='AdvPy_FK2IKCurveInfo',skipSelect=True)
+                c.addAttr(curve,longName='nameSpace',dataType='string')
+                namespace=getattr(host,'namespace',None) or ''
+                c.setAttr(curve+'.nameSpace',namespace.rstrip(':')+':' if namespace else '',type='string')
+                if c.objExists('tempPointOnCurveInfo'):c.delete('tempPointOnCurveInfo')
+                info=c.createNode('pointOnCurveInfo',name='tempPointOnCurveInfo',skipSelect=True)
                 c.setAttr(info+'.turnOnPercentage',True)
                 c.connectAttr(shape+'.worldSpace[0]',info+'.inputCurve')
                 def sample(index):
-                    c.setAttr(info+'.parameter',index/(len(plan.targets)-1.))
+                    c.setAttr(info+'.parameter',index/(len(targets)-1.))
                     return tuple(c.getAttr(info+'.position')[0])
-                for index,control in enumerate(plan.hybrid_controls):
+                for index,control in enumerate(hybrids):
                     position=sample(index)
-                    nearest=source_spline_nearest_deform(position,deform_positions)
-                    c.xform(control,worldSpace=True,translation=position,rotation=deform_rotations[nearest])
+                    c.xform(control,worldSpace=True,translation=position,rotation=nearest_rotation(position))
                     _custom_orient(c,control)
-                for index in source_spline_align_order(len(plan.targets)):
-                    control=plan.targets[index]
-                    c.xform(control,worldSpace=True,translation=sample(index))
-                    c.setAttr(control+'.rotate',0.,0.,0.)
-                    if index in endpoint:c.xform(control,worldSpace=True,rotation=endpoint[index])
+                for index in source_spline_align_order(len(targets)):
+                    control=targets[index]
+                    position=sample(index)
+                    # MEL queries nearest deformation here even though this
+                    # pass uses AlignIKTo for the endpoint rotation instead.
+                    nearest_rotation(position)
+                    c.xform(control,worldSpace=True,translation=position)
+                    c.xform(control,objectSpace=True,rotation=(0.,0.,0.))
+                    if index in endpoint:
+                        c.xform(control,worldSpace=True,rotation=_endpoint_rotation(host,registration,binding,index))
                     if index==0:_custom_orient(c,control)
             finally:
-                if info is not None and c.objExists(info):c.delete(info)
+                # Original keeps this disconnected sampler until the next
+                # FK→IK alignment, which deletes it before making a new one.
                 if c.objExists(curve):c.delete(curve)
             c.warning('与原版 ADV 一致：FK 转曲线 IK 时，目标可能无法完全对齐。')
         finally:c.autoKeyframe(state=auto)
@@ -178,7 +208,12 @@ def align(host,registration,binding,mode,*,baking=False):
 
 def _key(c,binding):
     c.setKeyframe(binding.blend_plug)
-    for control in binding.controls:
+    if getattr(binding,'native_scene',False):
+        controls=(*binding.fk_controls,*(node for pair in zip(binding.ik_controls,binding.hybrid_controls) for node in pair))
+    else:
+        controls=(*binding.fk_controls,*(node for pair in zip(binding.plan.targets,binding.plan.hybrid_controls) for node in pair))
+    for control in controls:
+        if not c.objExists(control):continue
         for attr in ('translate','rotate'):
             c.setKeyframe(control,attribute=attr)
 
@@ -188,8 +223,9 @@ def switch(host,registration,binding,mode,*,time_range=None):
     host._require_transaction()
     c=host._cmds
     if mode not in ('fk','ik'):raise CharacterRegistryError('来源 Spline 切换方向需要 fk / ik')
-    target=binding.plan.mode_maximum if mode=='ik' else 0.
-    inverse=binding.plan.mode_maximum-target
+    maximum=binding.mode_maximum
+    target=maximum if mode=='ik' else 0.
+    inverse=maximum-target
     current=float(c.currentTime(query=True))
     start,end=(current,current+1.) if time_range is None else time_range
     from math import isfinite
@@ -198,7 +234,8 @@ def switch(host,registration,binding,mode,*,time_range=None):
     ranged=end-start>1.
     if ranged:c.currentTime(start,edit=True,update=True)
     frame=float(c.currentTime(query=True))
-    if abs(float(c.getAttr(binding.blend_plug))-inverse)>1e-8:
+    value=float(c.getAttr(binding.blend_plug))
+    if mode=='ik' and value>0 or mode=='fk' and value<maximum:
         c.warning('当前 Spline 混合值不在源 FK / IK 端点，不能切换。')
         c.currentTime(current,edit=True,update=True)
         return False

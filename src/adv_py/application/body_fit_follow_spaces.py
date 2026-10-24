@@ -38,11 +38,13 @@ class BuildFitFollowSpaces:
         self._host = host
 
     def apply(self, metadata, controls, body_joints, *, main_path, root_path,
-              main_extra_paths=()):
+              main_extra_paths=(), instances=(), source_native=False,
+              use_offset_parent_matrix=True):
         specs = plan_body_fit_follow_spaces(
             tuple(metadata), tuple(controls), tuple(body_joints),
             main_path=main_path, root_path=root_path,
-            main_extra_paths=tuple(main_extra_paths))
+            main_extra_paths=tuple(main_extra_paths), instances=instances,
+            source_native=source_native, use_offset_parent_matrix=use_offset_parent_matrix)
         states = tuple(self._host.preflight_body_fit_follow_spaces(spec)
                        for spec in specs)
         if not specs:

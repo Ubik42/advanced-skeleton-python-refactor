@@ -1,0 +1,168 @@
+{
+  "pid": 67600,
+  "scope": "OPM authored asymmetric Fit AimAt, self/target Up Object and 0/5/10 weights; full preserved rebuild; no attachment mesh or FBX.",
+  "authored_fields": [
+    [
+      "MiddleFinger1",
+      "aimAt",
+      "IndexFinger1"
+    ],
+    [
+      "MiddleFinger1_NonSymmetry",
+      "aimAt",
+      "RingFinger1"
+    ]
+  ],
+  "lifecycle": {
+    "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-aim-opm-current\\input.ma",
+    "reused_saved_build": false,
+    "body_joints": 72,
+    "opm": true,
+    "bendy": true,
+    "bendy_count": 3,
+    "bendy_joints": [
+      "Shoulder",
+      "Elbow"
+    ],
+    "part_joints": 18,
+    "channels": 2299,
+    "skins": [
+      "AdvPy_BodySkin"
+    ],
+    "additional_animated_channels": [],
+    "restricted_skin": false,
+    "portable_pose_roundtrip": true,
+    "portable_animation_roundtrip": true,
+    "native_global_deformation": true,
+    "registry_reopened": true,
+    "fbx_bytes": null,
+    "export_tested": false,
+    "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-aim-opm-current\\python\\original-biped-current.mb",
+    "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-aim-opm-current\\python\\original-biped-rebuilt.mb",
+    "rebuilt_scene_reopened": true,
+    "native_skin_curve_identity_preserved": true,
+    "single_undo_redo_preserved": true,
+    "native_rebuild_retained_skin_animation": true,
+    "skin_weights_membership_preserved": true,
+    "all_vertex_frames": [
+      1,
+      3,
+      5
+    ],
+    "all_vertex_rebuild_maximum_error": 1.4210854715202004e-14,
+    "status": "passed"
+  },
+  "poses": [
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_target",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_target",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_half",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_half",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_zero",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_zero",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_target_position",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_target_position_half",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_target_position_zero",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_target",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_target",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_half",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_half",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_zero",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_zero",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_target_position",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_target_position_half",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_target_position_zero",
+      "maximum_error": 2.633148301045436e-06
+    }
+  ],
+  "neutral_errors": {
+    "original-biped-current.mb": 2.6331483004678257e-06,
+    "original-biped-rebuilt.mb": 2.6331483000479697e-06
+  },
+  "aim_weight_response": {
+    "half_to_zero": 0.012604343138416796,
+    "full_to_half": 0.01249676494170826
+  },
+  "status": "passed_for_tested_scope",
+  "lifecycle_pid": 67600,
+  "native_reference_pid": 67600,
+  "process_exited": true,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "threshold": 0.0001,
+  "runtime_report": "validation/results/source-non-symmetry-aim-opm-current/report.json",
+  "remaining": [
+    "Full lifecycle predates final literal asAlign refinement; final refinement validated by separate native/Python nonuniform matrix test",
+    "self Up Object with independently translating target in full character not covered",
+    "combined attachments and old approximate AimAt migration not covered",
+    "FBX and default model appearance not tested"
+  ]
+}

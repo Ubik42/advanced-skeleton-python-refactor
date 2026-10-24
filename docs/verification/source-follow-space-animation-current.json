@@ -1,0 +1,480 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 49168,
+  "poses": [
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_translate_0",
+      "maximum_error": 2.633148298913513e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_rotate_0",
+      "maximum_error": 2.633100164235743e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_scale_0",
+      "maximum_error": 1.3186562553890724e-05
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_root_rotate_0",
+      "maximum_error": 2.6318619968089884e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_chest_rotate_0",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_translate_5",
+      "maximum_error": 2.633148298913513e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_rotate_5",
+      "maximum_error": 2.633100164235743e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_scale_5",
+      "maximum_error": 1.3186562553890724e-05
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_root_rotate_5",
+      "maximum_error": 2.6318619968089884e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_chest_rotate_5",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_translate_10",
+      "maximum_error": 2.633148298913513e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_rotate_10",
+      "maximum_error": 2.633100164235743e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_main_scale_10",
+      "maximum_error": 1.3186562553890724e-05
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_root_rotate_10",
+      "maximum_error": 2.6318619968089884e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "R_chest_rotate_10",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_translate_0",
+      "maximum_error": 2.633148298913513e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_rotate_0",
+      "maximum_error": 2.633100164235743e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_scale_0",
+      "maximum_error": 1.3186562553890724e-05
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_root_rotate_0",
+      "maximum_error": 2.6318619968089884e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_chest_rotate_0",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_translate_5",
+      "maximum_error": 2.633148298913513e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_rotate_5",
+      "maximum_error": 2.633100164235743e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_scale_5",
+      "maximum_error": 1.3186562553890724e-05
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_root_rotate_5",
+      "maximum_error": 2.6318619968089884e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_chest_rotate_5",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_translate_10",
+      "maximum_error": 2.633148298913513e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_rotate_10",
+      "maximum_error": 2.633100164235743e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_main_scale_10",
+      "maximum_error": 1.3186562553890724e-05
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_root_rotate_10",
+      "maximum_error": 2.6318619968089884e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "L_chest_rotate_10",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_translate_0",
+      "maximum_error": 2.6331483011564606e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_rotate_0",
+      "maximum_error": 2.633148304377841e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_scale_0",
+      "maximum_error": 1.3186562556555259e-05
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_root_rotate_0",
+      "maximum_error": 2.631862002382595e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_chest_rotate_0",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_translate_5",
+      "maximum_error": 2.6331483011564606e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_rotate_5",
+      "maximum_error": 2.633148304377841e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_scale_5",
+      "maximum_error": 1.3186562556555259e-05
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_root_rotate_5",
+      "maximum_error": 2.631862002382595e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_chest_rotate_5",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_translate_10",
+      "maximum_error": 2.6331483011564606e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_rotate_10",
+      "maximum_error": 2.633148304377841e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_main_scale_10",
+      "maximum_error": 1.3186562556555259e-05
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_root_rotate_10",
+      "maximum_error": 2.631862002382595e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "R_chest_rotate_10",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_translate_0",
+      "maximum_error": 2.6331483011564606e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_rotate_0",
+      "maximum_error": 2.633148304377841e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_scale_0",
+      "maximum_error": 1.3186562556555259e-05
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_root_rotate_0",
+      "maximum_error": 2.631862002382595e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_chest_rotate_0",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_translate_5",
+      "maximum_error": 2.6331483011564606e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_rotate_5",
+      "maximum_error": 2.633148304377841e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_scale_5",
+      "maximum_error": 1.3186562556555259e-05
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_root_rotate_5",
+      "maximum_error": 2.631862002382595e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_chest_rotate_5",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_translate_10",
+      "maximum_error": 2.6331483011564606e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_rotate_10",
+      "maximum_error": 2.633148304377841e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_main_scale_10",
+      "maximum_error": 1.3186562556555259e-05
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_root_rotate_10",
+      "maximum_error": 2.631862002382595e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "L_chest_rotate_10",
+      "maximum_error": 2.633148301045436e-06
+    }
+  ],
+  "source_lifecycle_pid": 84824,
+  "stage": "weight_animation_preserved_rebuild",
+  "maximum_error": 1.3186562556555259e-05,
+  "lifecycle": {
+    "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-follow-opm-current\\input.ma",
+    "reused_saved_build": true,
+    "body_joints": 72,
+    "opm": true,
+    "bendy": true,
+    "bendy_count": 3,
+    "bendy_joints": [
+      "Shoulder",
+      "Elbow"
+    ],
+    "part_joints": 18,
+    "channels": 2313,
+    "skins": [
+      "AdvPy_BodySkin"
+    ],
+    "additional_animated_channels": [
+      [
+        "AdvPy_PinkyFinger1_RFK",
+        "followParent",
+        10.0
+      ],
+      [
+        "AdvPy_PinkyFinger1_RFK",
+        "followChest",
+        7.0
+      ],
+      [
+        "AdvPy_PinkyFinger1_LFK",
+        "followRoot",
+        5.0
+      ],
+      [
+        "AdvPy_Scapula_LFK",
+        "follow",
+        8.0
+      ],
+      [
+        "AdvPy_RingFinger1_RFK",
+        "followRoot",
+        6.0
+      ],
+      [
+        "AdvPy_ArmIK_L",
+        "ikFollow",
+        9.0
+      ],
+      [
+        "AdvPy_IndexFinger1_RFK",
+        "parentConstraint",
+        4.0
+      ]
+    ],
+    "restricted_skin": false,
+    "portable_pose_roundtrip": true,
+    "portable_animation_roundtrip": true,
+    "native_global_deformation": true,
+    "registry_reopened": true,
+    "fbx_bytes": null,
+    "export_tested": false,
+    "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-follow-space-animation-current\\python\\original-biped-current.mb",
+    "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-follow-space-animation-current\\python\\original-biped-rebuilt.mb",
+    "rebuilt_scene_reopened": true,
+    "native_skin_curve_identity_preserved": true,
+    "single_undo_redo_preserved": true,
+    "native_rebuild_retained_skin_animation": true,
+    "skin_weights_membership_preserved": true,
+    "all_vertex_frames": [
+      1,
+      3,
+      5
+    ],
+    "all_vertex_rebuild_maximum_error": 1.4210854715202004e-14,
+    "status": "passed"
+  },
+  "animated_weights": [
+    {
+      "node": "AdvPy_PinkyFinger1_RFK",
+      "attribute": "followParent",
+      "times": [
+        1.0,
+        5.0
+      ],
+      "values": [
+        0.0,
+        10.0
+      ]
+    },
+    {
+      "node": "AdvPy_PinkyFinger1_RFK",
+      "attribute": "followChest",
+      "times": [
+        1.0,
+        5.0
+      ],
+      "values": [
+        0.0,
+        7.0
+      ]
+    },
+    {
+      "node": "AdvPy_PinkyFinger1_LFK",
+      "attribute": "followRoot",
+      "times": [
+        1.0,
+        5.0
+      ],
+      "values": [
+        0.0,
+        5.0
+      ]
+    },
+    {
+      "node": "AdvPy_Scapula_LFK",
+      "attribute": "follow",
+      "times": [
+        1.0,
+        5.0
+      ],
+      "values": [
+        0.0,
+        8.0
+      ]
+    },
+    {
+      "node": "AdvPy_RingFinger1_RFK",
+      "attribute": "followRoot",
+      "times": [
+        1.0,
+        5.0
+      ],
+      "values": [
+        0.0,
+        6.0
+      ]
+    },
+    {
+      "node": "AdvPy_ArmIK_L",
+      "attribute": "ikFollow",
+      "times": [
+        1.0,
+        5.0
+      ],
+      "values": [
+        0.0,
+        9.0
+      ]
+    },
+    {
+      "node": "AdvPy_IndexFinger1_RFK",
+      "attribute": "parentConstraint",
+      "times": [
+        1.0,
+        5.0
+      ],
+      "values": [
+        0.0,
+        4.0
+      ]
+    }
+  ],
+  "process_exited": true,
+  "threshold": 0.0001,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "runtime_report": "validation/results/source-follow-space-animation-current/report.json",
+  "scope": "OPM Main translation/rotation/nonuniform scale, Root/Chest rotation, independent sides and mixed 0/5/10 FK spaces before/after rebuild; seven native Follow/Spaces/IKFollow/Constraint curves, retained Skin, vertex samples 1/3/5, Undo/Redo and reopen",
+  "remaining": [
+    "MainExtra, namespaces and old approximate graph migration not covered",
+    "Non-OPM whole character separately passed with final native constraints in source-non-symmetry-follow-current.json; expanded mixed weights/animation in this result are OPM only",
+    "FBX and model appearance excluded"
+  ]
+}

@@ -23,86 +23,13 @@ def command_registration(commands, namespace=''):
 
 
 def fk_bindings(saved):
-    if saved is None:
-        return {}
-    result = {}
-    for channel in saved.channels:
-        if (not channel.key.startswith('generic.fk.')
-                or '.extra.' in channel.key or '.sub.' in channel.key):
-            continue
-        role = channel.key[len('generic.fk.'):].split('.', 1)[0]
-        if role.endswith('FK'):
-            result[role[:-2]] = leaf(channel.node)
-    for limb in saved.source_limbs:
-        result.update((leaf(row.body), leaf(row.control)) for row in limb.joints
-                      if row.control != row.fk_driver)
-    for spline in (saved.spine, *saved.additional_spines):
-        if spline is not None:
-            result.update((leaf(joint), leaf(control))
-                          for joint, control in zip(spline.body_joints, spline.fk_controls))
-    return result
+    from adv_py.core.source_control_identity import source_fk_bindings
+    return {joint: leaf(control) for joint, control in source_fk_bindings(saved)}
 
 
 def control_roles(saved):
-    result = {control: 'FK' + joint for joint, control in fk_bindings(saved).items()}
-    if saved is not None:
-        for node in getattr(saved, 'nodes', ()):
-            name = leaf(node.path)
-            if name == 'AdvPy_Global':
-                result['AdvPy_Global'] = 'Main'
-            if name in ('AdvPy_RootX_M', 'AdvPy_RootExtraX_M', 'AdvPy_RootOffsetX_M'):
-                result[name] = name.removeprefix('AdvPy_')
-            if name.startswith('AdvPy_COG'):
-                result[name] = name.removeprefix('AdvPy_')
-        channels = {row.key: row for row in saved.channels}
-        for row in saved.channels:
-            if not row.key.startswith('generic.fk.'):
-                continue
-            stem, *tail = row.key[len('generic.fk.'):].split('.')
-            if not stem.endswith('FK') or not tail:
-                continue
-            if tail[0] in ('extra', 'sub'):
-                prefix = 'FKExtra' if tail[0] == 'extra' else 'FKSub'
-                result[leaf(row.node)] = prefix + stem[:-2]
-        for limb in saved.source_limbs:
-            result[leaf(limb.ik_control)] = 'IK' + limb.label + '_' + limb.side
-            result[leaf(limb.pole_control)] = 'Pole' + limb.label + '_' + limb.side
-            if getattr(limb, 'toe_control', None) and limb.toe_source:
-                body = next((row.body for row in limb.joints
-                             if leaf(row.fk_driver) == leaf(limb.toe_source)), None)
-                if body is not None:
-                    result[leaf(limb.toe_control)] = 'IK' + leaf(body)
-            for index, hybrid in enumerate(getattr(limb, 'hybrid_controls', ()), start=1):
-                result[leaf(hybrid.control)] = 'IKhybrid' + limb.label + str(index) + '_' + limb.side
-            roll_prefix = 'AdvPy_' + limb.label + '_Foot_Roll'
-            for control in limb.reset_controls:
-                name = leaf(control)
-                if name.startswith(roll_prefix):
-                    result[name] = 'Roll' + name[len(roll_prefix):]
-                local_prefix = 'AdvPy_' + limb.label + 'IKLocal'
-                if name == local_prefix + '_' + limb.side:
-                    result[name] = 'IKLocal' + limb.label + '_' + limb.side
-                if name == local_prefix + 'Extra_' + limb.side:
-                    result[name] = 'IKLocalExtra' + limb.label + '_' + limb.side
-                if name == 'AdvPy_' + limb.label + 'IKExtra_' + limb.side:
-                    result[name] = 'IKExtra' + limb.label + '_' + limb.side
-                if name == 'AdvPy_' + limb.label + 'IKSub_' + limb.side:
-                    result[name] = 'IKSub' + limb.label + '_' + limb.side
-                if name == 'AdvPy_' + limb.label + 'PVExtra_' + limb.side:
-                    result[name] = 'PoleExtra' + limb.label + '_' + limb.side
-            if getattr(limb, 'toe_control', None):
-                source = result.get(leaf(limb.toe_control))
-                if source:
-                    for control in limb.reset_controls:
-                        name = leaf(control)
-                        if name == leaf(limb.toe_control).replace('IK_', 'IKExtra_', 1):
-                            result[name] = 'IKExtra' + source[2:]
-                        if name == leaf(limb.toe_control).replace('IK_', 'IKSub_', 1):
-                            result[name] = 'IKSub' + source[2:]
-            mode = channels.get(limb.blend_key)
-            if mode is not None and mode.attribute == 'FKIKBlend':
-                result[leaf(mode.node)] = 'FKIK' + limb.label + '_' + limb.side
-    return result
+    from adv_py.core.source_control_identity import source_control_roles
+    return source_control_roles(saved)
 
 
 def source_control_name(host, control):

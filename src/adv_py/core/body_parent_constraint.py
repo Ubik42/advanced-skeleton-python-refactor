@@ -76,12 +76,12 @@ def _node_stem(driven: str) -> tuple[str, str]:
     leaf = driven.rsplit("|", 1)[-1]
     if not leaf:
         raise ValueError("约束目标名称无效")
-    stem, separator, side = leaf.rpartition("_")
-    if not separator or side not in ("R", "L", "M"):
-        return leaf, ""
-    if not stem or not side:
+    # MEL tokenize skips empty fields and always treats the final token as
+    # the suffix. A one-token legacy `root` therefore becomes rootMM_root.
+    tokens = tuple(token for token in leaf.split('_') if token)
+    if not tokens:
         raise ValueError("约束目标侧别后缀无效")
-    return stem, "_" + side
+    return ('_'.join(tokens[:-1]) if len(tokens) > 1 else tokens[0], '_' + tokens[-1])
 
 
 def plan_body_parent_constraint(

@@ -1,0 +1,163 @@
+{
+  "status": "passed",
+  "rows": [
+    {
+      "label": "None",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Root",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Hip",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Foot",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "ToesEnd",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Shoulder",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Hand",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "PropA",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "PropB",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "PropC",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Other",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Chest",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Mid",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Toes",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Heel",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "BigToe",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "PinkyToe",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "LegAim",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "QToes",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Eye",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "Wheel",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "0",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "1",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "2",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    },
+    {
+      "label": "3",
+      "add_remove_equal": true,
+      "undo_redo": true,
+      "help_equal": true
+    }
+  ],
+  "save_reopen": true,
+  "empty_selection": true,
+  "namespace": true,
+  "unselected_joint_and_transform_unchanged": true,
+  "source_attribute_help_count": 35,
+  "pid": 62040,
+  "process_exited": true,
+  "scope": "Original MEL versus Python Fit label operations and help; 25 palette values, 35 attribute entries"
+}

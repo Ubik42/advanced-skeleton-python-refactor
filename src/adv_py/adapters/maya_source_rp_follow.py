@@ -9,10 +9,13 @@ from adv_py.core.character_registry import canonical, safe_json, exact, Characte
 MARKER='advPySourceRpFollow'
 
 
-def create(host,body,limbs,global_control,root,*,leg_aim=()):
+def create(host,body,limbs,global_control,root,*,leg_aim=(),
+           use_offset_parent_matrix=True,native_controls=None,hierarchy=None,instances=()):
     host._require_transaction()
     c=host._cmds
-    plans=plan_source_rp_follows(body,limbs,global_control,root,leg_aim=leg_aim)
+    plans=plan_source_rp_follows(body,limbs,global_control,root,leg_aim=leg_aim,
+        use_offset_parent_matrix=use_offset_parent_matrix,native_controls=native_controls,
+        hierarchy=hierarchy,instances=instances)
     for plan in plans:
         swivel=plan.control+'.swivel'
         if not c.objExists(swivel):
@@ -38,12 +41,23 @@ def decode(text):
     p=exact(raw['plan'],('control','pole','handle_twist','spaces','pole_aim'))
     spaces=[]
     for row in p['spaces']:
+        row=dict(row)
+        native=row.pop('source_rp',False)
+        pole_target=row.pop('source_rp_pole_target',None)
+        mode=row.pop('use_offset_parent_matrix',True)
+        if type(native) is not bool or type(mode) is not bool or not native and (not mode or pole_target is not None):
+            raise CharacterRegistryError('RP Follow 输出记录无效')
+        # These shared spec fields belong to FK followSpaces. RP records
+        # retain their established graph; accept old rows without fields.
+        if row.pop('source_native',False) is not False:
+            raise CharacterRegistryError('RP Follow 不接受 FK 空间输出分支')
         exact(row,('source_body','fk_control','fk_offset','offset_parent','targets','blend_node','output_node'))
         targets=[]
         for t in row['targets']:
             exact(t,('label','source','weight','matrix_node','weight_node'))
             targets.append(BodyFitFollowSpaceTarget(identifier(t['label']),path(t['source']),finite(t['weight']),identifier(t['matrix_node']),identifier(t['weight_node'])))
-        spaces.append(BodyFitFollowSpacesSpec(*(path(row[k]) for k in ('source_body','fk_control','fk_offset','offset_parent')),tuple(targets),identifier(row['blend_node']),identifier(row['output_node'])))
+        spaces.append(BodyFitFollowSpacesSpec(*(path(row[k]) for k in ('source_body','fk_control','fk_offset','offset_parent')),tuple(targets),identifier(row['blend_node']),identifier(row['output_node']),
+            use_offset_parent_matrix=mode,source_rp=native,source_rp_pole_target=path(pole_target) if pole_target is not None else None))
     states=[]
     for s in raw['states']:
         exact(s,('offset_world','parent_world','target_worlds','opm_source','opm_value','inherits_transform'))
@@ -56,8 +70,13 @@ def decode(text):
         from dataclasses import fields
         a=dict(p['pole_aim'])
         a.setdefault('aligned_orientation_source',None)
+        a.setdefault('source_frame',None)
+        a.setdefault('use_offset_parent_matrix',True)
         a=exact(a,(f.name for f in fields(BodyLegPoleAimSpec)))
-        aim=BodyLegPoleAimSpec(**{**a,'side':FitBuildSide(a['side']),'pole_position':vector(a['pole_position'],3)})
+        if type(a['use_offset_parent_matrix']) is not bool:
+            raise CharacterRegistryError('RP PoleAim 矩阵模式无效')
+        aim=BodyLegPoleAimSpec(**{**a,'side':FitBuildSide(a['side']),'pole_position':vector(a['pole_position'],3),
+            'source_frame':path(a['source_frame']) if a['source_frame'] is not None else None})
     plan=SourceRpFollowPlan(path(p['control']),path(p['pole']),p['handle_twist'],tuple(spaces),aim)
     if not plan.handle_twist.endswith('.twist'):raise CharacterRegistryError('RP Follow Handle 插口无效')
     return plan,tuple(states)

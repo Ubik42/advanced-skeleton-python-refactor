@@ -11,7 +11,7 @@ IK_MARKERS = (
     ("ik_foot_r", "ik_foot_root", "Ankle_R"),
     ("ik_hand_root", "<root>", None),
     ("ik_hand_gun", "ik_hand_root", "Wrist_R"),
-    ("ik_hand_l", "ik_hand_root", "Wrist_L"),
+    ("ik_hand_l", "ik_hand_gun", "Wrist_L"),
     ("ik_hand_r", "ik_hand_gun", None),
 )
 

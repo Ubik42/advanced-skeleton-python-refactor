@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from contextlib import nullcontext
 
 from adv_py.core.squash_controller import (
     SquashPlan, SquashSelection, plan_mirrored_squash_selection,
@@ -31,23 +32,33 @@ class CreateSquashController:
               mirror: bool = True) -> tuple[SquashPlan, ...]:
         if not isinstance(mirror, bool):
             raise ValueError("Squash 镜像选项须为布尔值")
+        confirm = getattr(self._host, "confirm_squash_build_pose", None)
+        if confirm is not None and not confirm():return ()
         selection = self._host.capture_squash_selection()
         name = base_name or self._host.choose_squash_name(selection)
         plan = plan_squash_controller(selection, name)
         plans = [plan]
-        if mirror and plan.side == "_R":
-            mesh, vertices, parent = self._host.capture_squash_mirror_candidates(plan)
-            mirrored = plan_mirrored_squash_selection(
-                plan, mesh, vertices, parent)
-            plans.append(plan_squash_controller(mirrored, name))
-        for item in plans:
-            for node in item.nodes:
-                if self._host.find_name_collisions(node):
-                    raise ValueError("Squash 节点名称冲突：" + node)
-            self._host.preflight_squash_controller(item)
         with self._host.transaction("创建 Squash Controller"):
-            for item in plans:
-                self._host.create_squash_controller(item)
+            pose_session = getattr(self._host, "squash_build_pose_session", None)
+            native_mirror = getattr(self._host, "capture_squash_mirror_selection", None)
+            if mirror and plan.side == "_R" and native_mirror is None:
+                mesh, vertices, parent = self._host.capture_squash_mirror_candidates(plan)
+                mirrored = plan_mirrored_squash_selection(plan, mesh, vertices, parent)
+                plans.append(plan_squash_controller(mirrored, name))
+            index = 0
+            while index < len(plans):
+                item = plans[index]
+                for node in item.nodes:
+                    if self._host.find_name_collisions(node):
+                        raise ValueError("Squash 节点名称冲突：" + node)
+                self._host.preflight_squash_controller(item)
+                with pose_session(item) if pose_session is not None else nullcontext():
+                    self._host.create_squash_controller(item)
+                # Source mirror selection is made after completing the first
+                # graph and moving the original rig into build pose.
+                if index == 0 and mirror and plan.side == "_R" and native_mirror is not None:
+                    plans.append(plan_squash_controller(native_mirror(plan), name))
+                index += 1
             for item in plans:
                 control, parent, joint_count = self._host.capture_squash_controller(
                     item.control)

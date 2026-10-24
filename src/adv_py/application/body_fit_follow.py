@@ -34,9 +34,9 @@ class BuildFitFollow:
     def __init__(self, host: FitFollowHost) -> None:
         self._host = host
 
-    def apply(self, metadata, controls, body_joints):
+    def apply(self, metadata, controls, body_joints, *, instances=()):
         specs = plan_body_fit_follow(
-            tuple(metadata), tuple(controls), tuple(body_joints))
+            tuple(metadata), tuple(controls), tuple(body_joints), instances=instances)
         states = tuple(self._host.preflight_body_fit_follow(spec)
                        for spec in specs)
         if not specs:

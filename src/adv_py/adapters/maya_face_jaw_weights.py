@@ -114,6 +114,10 @@ class MayaFaceJawWeightsMixin:
         finally:
             for joint in influences: raw.setAttr(joint+".lockInfluenceWeights",False)
             raw.setToolTo("selectSuperContext")
+        # Native paint redo uses the context's last selected influence.
+        # Preserve the result of this source flood before later floods/copies
+        # change that context. This writes the same weights, without repainting.
+        self.apply_dense_skin(self.capture_dense_skin(skin))
 
     def _jaw_mirror_layer(self):
         raw=getattr(self._cmds,"raw",self._cmds)

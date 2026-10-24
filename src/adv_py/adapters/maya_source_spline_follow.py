@@ -37,8 +37,15 @@ def create(host,plan):
         c.setAttr(matrix+'.matrixIn[1]',*inverse,type='matrix')
         c.connectAttr(path+'.worldMatrix[0]',matrix+'.matrixIn[2]')
         c.connectAttr(matrix+'.matrixSum',blend+f'.target[{index}].targetMatrix')
+        # MEL 74470-74481 defines the attribute first; 81479-81480 then
+        # sets followRoot's current value to 10. On nested Spline chains its
+        # declared default stays 0, so reset-to-default must keep that value.
+        declared_default = (10. if label == 'Main' or index == len(plan.source_follow_targets)-1
+                            else 0.) if plan.source_native_follow else default
         c.addAttr(plan.settings,longName='follow'+label,attributeType='double',
-                  minValue=0,maxValue=10,defaultValue=default,keyable=True)
+                  minValue=0,maxValue=10,defaultValue=declared_default,keyable=True)
+        if declared_default != default:
+            c.setAttr(plan.settings+'.follow'+label,default)
         weight=c.createNode('multDoubleLinear',name=stem+'Weight',skipSelect=True)
         c.connectAttr(plan.settings+'.follow'+label,weight+'.input1')
         c.setAttr(weight+'.input2',.1)

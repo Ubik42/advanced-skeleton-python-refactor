@@ -90,7 +90,7 @@ def finalize_body_character_sets(
     fit_container: str = "FitSkeleton",
     create_sets: bool = True,
     populate_all: bool = True,
-) -> None:
+) -> CharacterRegistration:
     """Finish ownership only after the last rig/Skin node has been created.
 
     Rebuild can defer this step until its legacy channels are reconciled.
@@ -110,3 +110,7 @@ def finalize_body_character_sets(
             raise ValueError("登记 AllSet 需要构建前场景快照")
         from .body_all_set import PopulateBodyAllSet
         PopulateBodyAllSet(host).apply(scene_before, fit_container)
+        # Native converter naming changes saved input addresses. Return the
+        # final validated registration rather than the pre-name snapshot.
+        registration = host.read_character_registration()
+    return registration

@@ -132,11 +132,11 @@ class MayaFaceRestoreControlsMixin:
         # for the multi-Skin branch instead of requiring a single Skin.
         for mesh in self._all_head_meshes():
             skin = self.original_face_bs_skin(mesh)
-            freeze_native_skin_cluster(skin)
+            freeze_native_skin_cluster(skin, cmds=raw)
             raw.setAttr(skin + ".envelope", 1)
         if c.objExists("FaceJointsLayer") and c.objExists("asFaceBS"):
             for mesh in c.listRelatives("FaceJointsLayer", children=True) or []:
                 skin = self.original_face_bs_skin(mesh)
-                freeze_native_skin_cluster(skin)
+                freeze_native_skin_cluster(skin, cmds=raw)
         raw.dgdirty(allPlugs=True)
         raw.select([item for item in selection if raw.objExists(item)], replace=True)

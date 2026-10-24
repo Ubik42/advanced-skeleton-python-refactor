@@ -129,6 +129,7 @@ def audit(host,plan):
     """Called inside the normal Spline scope, with canonical node names."""
     from adv_py.core.source_body_matrix import decode_source_body_matrix
     c=host._cmds
+    from .maya_character_body_retirement import source_record,is_connected_or_retired
     n=len(plan.body_joints)
     for index in plan.source_bendy_matrix_indices:
         from .maya_source_bendy_body_matrix import audit_joint
@@ -144,9 +145,7 @@ def audit(host,plan):
     for index in plan.source_body_matrix_indices:
         target=plan.body_joints[index]
         plug=target+'.advPySourceFkMatrix'
-        if not c.objExists(plug) or not c.getAttr(plug,lock=True):
-            raise CharacterRegistryError('来源 Spline Body 矩阵登记缺失：'+target)
-        saved=decode_source_body_matrix(c.getAttr(plug))
+        saved=decode_source_body_matrix(source_record(host,target,'advPySourceFkMatrix'))
         if saved.body!=target:
             raise CharacterRegistryError('来源 Spline Body 矩阵登记身份变化')
         stem=f'AdvPy_SplineBody{index}'
@@ -162,7 +161,7 @@ def audit(host,plan):
         if (not c.isConnected(plan.mode_weight,scale+'.blender')
                 or not c.isConnected(plan.mode_weight,stem+'BodyBM.target[0].weight')
                 or not c.isConnected(ik+'.worldMatrix[0]',stem+'BodyBM.target[0].targetMatrix')
-                or not c.isConnected(stem+'BodyMM.matrixSum',target+'.offsetParentMatrix')):
+                or not is_connected_or_retired(host,stem+'BodyMM.matrixSum',target+'.offsetParentMatrix')):
             raise CharacterRegistryError('来源 Spline Body FK／IK 矩阵混合变化')
         # Full edge/constants validation is shared with other source Body
         # records at character registration; check here too for direct audit.
@@ -173,7 +172,7 @@ def audit(host,plan):
                 if abs(float(c.getAttr(node.name+'.'+attr))-value)>1e-8:
                     raise CharacterRegistryError('来源 Spline Body 矩阵常量变化')
             for source,attr in node.connections:
-                if not c.isConnected(source,node.name+'.'+attr):
+                if not is_connected_or_retired(host,source,node.name+'.'+attr):
                     raise CharacterRegistryError('来源 Spline Body 矩阵连接变化')
 
 

@@ -181,6 +181,99 @@ def _missing_fit_fat_connection(host,edge,container):
             and not c.connectionInfo(destination,sourceFromDestination=True))
 
 
+def _source_fit_driving_edges(host, registration):
+    """Exact Fit catalogue edges written by source asDsToFitSkeleton.
+
+    Completed rigs can have removed their old Fit templates. Entering edit
+    mode repopulates the bool catalogue from live driver outputs. Compute
+    that source operation read-only while the original rig is retained.
+    """
+    planner = getattr(host, 'plan_body_driving_fit_sync', None)
+    plan = planner(registration.container) if planner else None
+    if plan is None:
+        return frozenset()
+    c = host._cmds
+    edges = set()
+    for control in plan.controls:
+        index = 0
+        for attribute in control.attributes:
+            for curve in attribute.curves:
+                if not c.nodeType(curve).startswith('animCurve'):
+                    raise CharacterRegistryError('Fit SDK 目录来源不是原生动画曲线：' + curve)
+                node = c.identity.to_local(curve) if hasattr(c, 'identity') else curve
+                edges.add((registration.container + '.' + control.fit_attribute
+                           + '[' + str(index) + ']', node + '.' + attribute.name))
+                index += 1
+    return frozenset(edges)
+
+
+def _source_rp_reverse_ownership_edges(host, registration):
+    """Declared bookkeeping upgrade for pre-owner-marker source RP rigs.
+
+    This message link retains the same native reverse while transitional
+    constraints are removed. Its numeric input/output boundary is still
+    checked by source mode validation and the complete graph comparison.
+    """
+    from .maya_source_limb_mode import PLAN_MARKER, REVERSE_MARKER
+    from adv_py.core.source_limb_mode import decode_source_limb_mode
+    channels = {row.key: row for row in registration.channels}
+    c = host._cmds
+    edges = set()
+    for binding in registration.source_limbs:
+        channel = channels[binding.blend_key]
+        if channel.attribute != 'FKIKBlend':
+            continue
+        plan = decode_source_limb_mode(c.getAttr(channel.node + '.' + PLAN_MARKER))
+        if plan.source_mode.control != channel.node:
+            raise CharacterRegistryError('RP 归属迁移的控制器身份不符')
+        reverse = 'FKIKBlend' + plan.source_mode.token + 'Reverse'
+        if c.nodeType(reverse) != 'reverse':
+            raise CharacterRegistryError('RP 归属迁移的原版反向节点类型不符')
+        edges.add((reverse + '.message', channel.node + '.' + REVERSE_MARKER))
+    return frozenset(edges)
+
+
+def _source_spline_alignment_additions(host,target,original,replacement,systems):
+    """Only explicitly migrated native reference frames may be new nodes."""
+    if not systems:return frozenset()
+    from adv_py.core.source_spline_alignment_upgrade import audit_source_spline_alignment_upgrade
+    from .maya_source_spline_alignment import read
+    audit_source_spline_alignment_upgrade(original,replacement,systems)
+    selected=set(systems)
+    result=set()
+    for plan in (replacement.spine,*replacement.additional_spines):
+        if plan is None or plan.system_name not in selected:continue
+        for frame in read(target,plan):
+            if host._cmds.objExists(frame.target):continue
+            if target._cmds.nodeType(frame.target)!='transform':
+                raise CharacterRegistryError('AlignIKTo 迁移新增节点类型无效：'+frame.target)
+            result.add(frame.target)
+    return frozenset(result)
+
+
+def _source_fk_follower_ownership_edges(host,target,original,replacement):
+    """Retain old numeric followers while adding their exact Body role link."""
+    from adv_py.core.character_body_retirement import complete_body_bindings
+    bodies={row.path for row in complete_body_bindings(original)}
+    owned={row.path for row in original.nodes}
+    edges=set()
+    for row in replacement.nodes:
+        if (row.node_type!='transform' or row.path not in owned
+                or not row.path.rsplit('|',1)[-1].startswith('AdvPy_GenericFKFollow_')):
+            continue
+        plug=row.path+'.advPySourceFkFollowerScaleBody'
+        if host._cmds.objExists(plug) or not target._cmds.objExists(plug):continue
+        peers=target._cmds.listConnections(plug,source=True,destination=False) or []
+        paths=target._cmds.ls(peers,long=True,type='joint') or []
+        if (target._cmds.getAttr(plug,type=True)!='message'
+                or not target._cmds.getAttr(plug,lock=True)
+                or len(paths)!=1 or paths[0] not in bodies
+                or not target._cmds.isConnected(paths[0]+'.message',plug)):
+            raise CharacterRegistryError('旧 FK 跟随层归属迁移的 Body 角色无效：'+row.path)
+        edges.add((paths[0]+'.message',plug))
+    return frozenset(edges)
+
+
 def audit(host,staged):
     """Reject unhandled connections or children before any deletion is possible."""
     from .maya_body import MayaBodyBuildHost
@@ -191,6 +284,8 @@ def audit(host,staged):
                 if not (n==fit or n.startswith(fit+'|')))
     change=staged.spline_change
     changing=change is not None and bool(change.systems)
+    alignment_added=_source_spline_alignment_additions(host,target,
+        staged.original.registration,reg,getattr(staged,'spline_alignment_systems',()))
     old_role_nodes={}
     if changing:
         for name in names:
@@ -210,6 +305,9 @@ def audit(host,staged):
         removed_names={name for name in old_members
                        if (change.affects(name) or _spline_conversion(host,name,change,old_members))
                        and name not in old_role_nodes.values()}
+    from .maya_body_face_rebuild import retired_body_helpers
+    face_retired=retired_body_helpers(host,staged.original.registration,names)
+    removed_names.update(face_retired)
     # Audit applies to the pristine stage, before preserved curves move there.
     for node in names:
         kind=target._cmds.nodeType(node)
@@ -218,7 +316,8 @@ def audit(host,staged):
             raise CharacterRegistryError('所有权审计需要尚未交接动画的暂存角色')
     retained_shapes,created_shapes=_control_shape_changes(
         host,target,tuple(name for name in common_names if host._cmds.objExists(name))
-        if changing else names,staged.original.registration,reg)
+        if changing else tuple(name for name in names if name not in alignment_added),
+        staged.original.registration,reg)
     retained_names={row[0] for row in retained_shapes}
     created_names={row[0] for row in created_shapes}
     external_conversions={row[0] for row in (
@@ -229,7 +328,7 @@ def audit(host,staged):
     if external_conversions & set(names):
         raise CharacterRegistryError('Geometry 保留单位转换与新 Rig 同名')
     old_names=tuple(old_role_nodes[name] for name in common_names) if changing else tuple(
-        name for name in names if name not in created_names)
+        name for name in names if name not in created_names|alignment_added)
     old_nodes,old_edges=_graph(host,old_names+tuple(sorted(removed_names)),
         external_conversions=external_conversions,
         roles={node:role for role,node in old_role_nodes.items()} if changing else None,
@@ -249,7 +348,7 @@ def audit(host,staged):
             if (not change.affects(old_nodes[role]) and not role.startswith('@conversion:')
                     and not _spline_conversion(host,old_nodes[role],change,set(old_nodes.values()))):
                 raise CharacterRegistryError('Spline 数量变更删除了非所属生成节点：'+role)
-    elif set(old_nodes)!=set(new_nodes)-created_names:
+    elif set(old_nodes)-face_retired!=set(new_nodes)-created_names-alignment_added:
         raise CharacterRegistryError('新旧 Rig 的独占单位转换边界不一致')
     rows=[];shapes=[];curve_geometry=[]
     original=staged.original
@@ -260,6 +359,8 @@ def audit(host,staged):
         for skin in original.skins for shape, _, _ in skin.meshes)}
     retained_children.update(geometry_roots)
     retained_children.update(retained_names)
+    from .maya_body_face_rebuild import retained_roots
+    retained_children.update(retained_roots(host, original.registration))
     properties={row.path:{a[0] for a in row.attributes} for row in original.properties}
     for role in sorted(set(old_nodes)&set(new_nodes)):
         old,new=old_nodes[role],new_nodes[role]
@@ -330,6 +431,19 @@ def audit(host,staged):
     permitted.update(staged.geometry_container_drivers)
     permitted.update(staged.geometry_container_outputs)
     permitted.update(edge for row in original.selection_sets for edge in row.connections)
+    from .maya_body_face_rebuild import boundary_edges
+    permitted.update(boundary_edges(host,old_edges,original.registration))
+    if (any(row.path.rsplit('|',1)[-1]=='AimSystem'
+            for row in original.registration.nodes)
+            and not any(row.path.rsplit('|',1)[-1]=='AimSystem'
+                        for row in reg.nodes)
+            and retained_roots(host,original.registration)):
+        # EyeBall Fit removes the old Body Aim registration. A new empty
+        # AimSystem may still be generated for other Body aim options.
+        permitted.update(edge for edge in old_edges if
+            edge[0].rsplit('.',1)[0].rsplit('|',1)[-1]=='AimSystem'
+            and edge[0].endswith('.message')
+            and edge[1].startswith('AdvPy_CharacterRegistry.members['))
     permitted.update((converter+'.output',destination)
         for converter,destination in staged.geometry_output_conversions)
     permitted.update((upstream,converter+'.input')
@@ -379,8 +493,30 @@ def audit(host,staged):
         and any(plug.split('.', 1)[0] in retained_mesh_nodes
                 for plug in edge)
     )
-    extra=set(old_edges)-set(new_edges)-permitted
-    missing=set(new_edges)-set(old_edges)
+    # Absolute root-namespace markers are address syntax, not node identity.
+    # Scoped reads retain |:Mesh to avoid writing into the replacement namespace;
+    # root reads return |Mesh. Compare both spellings without dropping namespaces
+    # or any attribute/index, and keep original addresses in the saved ownership.
+    def canonical_edge(edge):
+        result=[]
+        for plug in edge:
+            node,attribute=plug.split('.',1)
+            node='|'.join(part.removeprefix(':') for part in node.split('|'))
+            result.append(node+'.'+attribute)
+        return tuple(result)
+    old_comparison={canonical_edge(edge) for edge in old_edges}
+    new_comparison={canonical_edge(edge) for edge in new_edges}
+    extra=old_comparison-new_comparison-{canonical_edge(edge) for edge in permitted}
+    missing=new_comparison-old_comparison
+    # These declared native edit-mode catalogue links replace deleted Fit
+    # templates. Every unrelated new edge still fails the ownership audit.
+    missing -= _source_fit_driving_edges(host, original.registration)
+    missing -= _source_rp_reverse_ownership_edges(host, original.registration)
+    missing -= _source_fk_follower_ownership_edges(host,target,original.registration,reg)
+    missing -= {(node+'.message','AdvPy_CharacterRegistry.members[*]')
+                for node in alignment_added}
+    missing -= {(node+'.instObjGroups[0]','AllSet.dagSetMembers[*]')
+                for node in alignment_added}
     missing={edge for edge in missing if not _missing_fit_fat_connection(
         host,edge,original.registration.container)}
     if changing:
@@ -394,6 +530,8 @@ def audit(host,staged):
                             for node in peers))
         extra={edge for edge in extra if not regenerated(edge,set(old_nodes))}
         missing={edge for edge in missing if not regenerated(edge,set(new_nodes))}
+    extra={edge for edge in extra if not any(
+        plug.split('.',1)[0] in face_retired for plug in edge)}
     retained_edges={edge for _,_,_,links in retained_shapes for edge in links}
     extra-=retained_edges
     for edge in tuple(missing):
@@ -401,7 +539,7 @@ def audit(host,staged):
         if members & created_names and members<=new_owned:
             missing.remove(edge)
     if extra or missing:
-        raise CharacterRegistryError('旧 Rig 连接不符合重建边界：'+repr((sorted(extra)[:3],sorted(missing)[:3])))
+        raise CharacterRegistryError('旧 Rig 连接不符合重建边界：'+repr((sorted(extra)[:24],sorted(missing)[:24])))
     result=RebuildOwnership(tuple(rows),old_edges,tuple(shapes),tuple(curve_geometry),
         retained_shapes,created_shapes,
         tuple((role,target._cmds.ls(new_nodes[role],uuid=True)[0],

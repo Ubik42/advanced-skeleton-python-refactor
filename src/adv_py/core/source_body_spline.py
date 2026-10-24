@@ -11,7 +11,7 @@ from .fit_settings import FitSkeletonValidationError
 from .joint_labels import JointLabel
 
 
-def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=(),saved_layouts=None,control_counts=(),parts=()):
+def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), *,instances=(),saved_layouts=None,control_counts=(),parts=(),non_terminal_fit=()):
     label_by_name = dict(labels)
     fit_labels = {node.path: (JointLabel.parse(label_by_name[name])
                              if name in label_by_name else None)
@@ -28,6 +28,9 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
     used=set()
     from .source_fit_identity import source_fit_build_name,source_fit_reference,source_fit_side_sign
     for info in found:
+        # Keep physical Fit paths; map only the public Body system token,
+        # just as asAdvJointIKInfo maps asFitJointIKInfo's returned strings.
+        info=replace(info,name=source_fit_build_name(info.name))
         for side in ('M','R','L'):
             source=tuple(by_name.get(source_fit_build_name(nodes[path].short_name)+'_'+side)
                          for path in info.joints)
@@ -62,7 +65,8 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
         generated_sources={joint.path:joint.source_joint for plan in plans for joint in plan.joints}
         fk,spline=_plan_source_chain(fk,source,info,options,metadata,system,generated_sources)
         spline=replace(spline,source_fixed_orient_unique=True,source_first_translate=True,
-                       source_world_controls=True,source_fit_control_count=fit_control_count)
+                       source_world_controls=True,source_fit_control_count=fit_control_count,
+                       source_alignment_frames=True)
         from .source_spline_mode import SourceSplineModePlan,source_mode_icon_scale
         # MEL asks for the immediate physical joint parent, including an
         # inserted Part. A Body-only parent table omits those receivers.
@@ -87,7 +91,8 @@ def plan_source_body_splines(body, hierarchy, labels, fk, options, metadata=(), 
         if expanded_plan.source_ik_chain:
             tail=expanded_plan.native_ik[-1]
             # MEL IKfake1 lives below the end unless it is an unbound leaf.
-            has_child=any(node.dag_parent==info.end for node in hierarchy.joints)
+            from .source_fit_identity import source_fit_is_end_joint
+            has_child=not source_fit_is_end_joint(hierarchy,info.end,non_terminal_fit)
             parent=tail.path if has_child else expanded_plan.native_ik[-2].path
             from .body_limb_mechanisms import BodyLimbMechanismJointSpec
             end_fake=BodyLimbMechanismJointSpec(tail.role,tail.side,tail.source_joint,

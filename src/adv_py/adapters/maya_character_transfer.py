@@ -111,8 +111,20 @@ def preflight(host,staged):
     registered={n.path for n in staged.original.registration.nodes}
     custom={row.path+'.'+a[0] for row in staged.custom_properties for a in row.attributes}
     animator={channel.node+'.'+channel.attribute for channel in actual.channels}
-    if any(c.objExists(target.scene_address(plug)) for plug in custom-animator):
-        raise CharacterRegistryError('暂存用户属性名称已被占用')
+    from .maya_character_preservation import capture_extension
+    source_properties={row.path+'.'+attribute[0]:attribute
+                       for row in staged.original.properties
+                       for attribute in row.attributes}
+    for plug in sorted(custom-animator):
+        if not c.objExists(target.scene_address(plug)):
+            continue
+        node,name=plug.rsplit('.',1)
+        expected=source_properties.get(plug)
+        actual=dict((item[0],item) for item in capture_extension(target,node).attributes).get(name)
+        definition=lambda item:(item[0],item[1],tuple(
+            (key,value) for key,value in item[5] if key!='channelBox'))
+        if expected is None or actual is None or definition(expected)!=definition(actual):
+            raise CharacterRegistryError('暂存用户属性名称已被占用：'+plug)
     if any(row.path in registered for row in staged.original.extensions):
         raise CharacterRegistryError('当前交接的附件应为独立用户节点，不得包含整个已登记 Rig')
     for row in staged.original.extensions:
@@ -219,8 +231,13 @@ def transfer(host,staged):
         selection.append((c.ls(node,uuid=True)[0],separator+component))
     try:
         from .maya_character_properties import install,lock_and_verify
+        existing_properties=frozenset(
+            row.path+'.'+attribute[0]
+            for row in staged.custom_properties for attribute in row.attributes
+            if target._cmds.objExists(row.path+'.'+attribute[0]))
         install(target,staged.custom_properties,existing_plugs=frozenset(
-            channel.node+'.'+channel.attribute for channel in staged.registration.channels))
+            channel.node+'.'+channel.attribute
+            for channel in staged.registration.channels) | existing_properties)
         from .maya_character_ownership import transfer_shapes
         transfer_shapes(target,staged.ownership,old.selection_sets)
         from .maya_character_selection_preservation import install as install_selection_sets
@@ -403,6 +420,27 @@ def transfer(host,staged):
                 if _move_set_member(c,a,b,x,y):continue
                 with _writable_connection(c,b,y):
                     c.disconnectAttr(a,b);c.connectAttr(x,y)
+        # Native MEL leaves FaceAllSet alive while Body is renamed and built.
+        # Its exact Body-facing edges must follow the replacement graph before
+        # the old Head and Group are deleted. The Face nodes keep their UUIDs.
+        from .maya_body_face_rebuild import boundary_edges
+        for source,destination in sorted(boundary_edges(
+                host,staged.ownership.connections,old.registration)):
+            a=host.scene_address(source);b=host.scene_address(destination)
+            x,y=redirect(a),redirect(b)
+            if x is None or y is None:
+                raise CharacterRegistryError('Face 接线的 Body 目标在重建中被移除')
+            if (a,b)==(x,y):
+                continue
+            if _move_set_member(c,a,b,x,y):
+                continue
+            if c.isConnected(x,y):
+                continue
+            if not c.isConnected(a,b):
+                raise CharacterRegistryError('Face 接线在交接前变化：'+source+' -> '+destination)
+            with _writable_connection(c,b,y):
+                c.disconnectAttr(a,b)
+                c.connectAttr(x,y)
         # Retained DAG objects are reparented by UUID, with their local channels
         # intact; descendants follow their retained parent without renaming.
         for row in old.extensions:
@@ -413,6 +451,10 @@ def transfer(host,staged):
                 continue
             if row.parent and host.scene_address(row.parent) in old_nodes:
                 c.parent(node,old_nodes[host.scene_address(row.parent)],relative=True)
+        from .maya_source_mocap_rebuild import install as install_mocap
+        install_mocap(host,staged)
+        from .maya_original_quick_ik_rebuild import install as install_quick
+        install_quick(host,staged)
         c.currentTime(c.currentTime(q=True),edit=True,update=True)
         # A static rig has no time-driven transform to invalidate Maya's skin
         # matrix cache after rewiring. Pull the new influence inputs before
@@ -447,6 +489,10 @@ def verify_retained(host,staged):
             destination for _,destination in staged.geometry_container_drivers}:
         raise RuntimeError('暂存 Geometry 原生驱动连接变化')
     old=staged.original
+    from .maya_source_mocap_rebuild import verify as verify_mocap, extension_without_document
+    verify_mocap(host,staged)
+    from .maya_original_quick_ik_rebuild import verify as verify_quick, extension_without_document as quick_extension
+    verify_quick(host,staged)
     from .maya_character_control_state import verify as verify_control_states
     from .maya_spline_control_rebuild import control_states
     verify_control_states(target,control_states(staged))
@@ -528,6 +574,8 @@ def verify_retained(host,staged):
         raise RuntimeError('交接改变了生产变形器单位转换输出')
     for row in staged.original.extensions:
         actual=capture_extension(host,_by_uuid(c,row.uuid))
+        actual=extension_without_document(actual,old.mocap_session,old.native_animation)
+        actual=quick_extension(actual,old.quick_ik)
         expected_parent=(row.parent if row.path.startswith('|Group|Geometry|')
                          else local(row.parent) if row.parent else None)
         expected=replace(row,path=local(row.path),parent=expected_parent,
@@ -538,11 +586,11 @@ def verify_retained(host,staged):
             changed=[field.name for field in fields(row) if getattr(actual,field.name)!=getattr(expected,field.name)]
             changed_attrs=[a[0] for a,b in zip(actual.attributes,expected.attributes) if a!=b]
             raise RuntimeError('交接改变了用户附件属性或局部变换：'+row.path+'；'+str(changed)+'；'+str(changed_attrs))
-    from .maya_character_properties import lock_and_verify
+    from .maya_character_properties import lock_and_verify, connection_plugs
     lock_and_verify(target,staged.custom_properties)
     for row in staged.custom_properties:
         actual=capture_extension(target,row.path)
-        plugs={row.path+'.'+a[0] for a in row.attributes}
+        plugs=connection_plugs(row)
         actual_edges=tuple((a,b) for a,b in actual.connections if a in plugs or b in plugs)
         expected_edges=tuple(sorted((target._cmds.identity.to_local(physical(a)),target._cmds.identity.to_local(physical(b))) for a,b in row.connections))
         actual_edges=_set_connection_identity(target,actual_edges)

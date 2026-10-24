@@ -61,10 +61,15 @@ class ResampleFitChain:
                     chain, chain[1:]
                 ) if select_fit_orientation_child(snapshot, parent) == child)
                 if targets:
-                    orient = OrientFitJoints(self._host)
-                    orientation = orient.plan(FitOrientationRequest(targets),
-                                              container)
-                    orient.apply_plan_in_transaction(orientation)
+                    native=getattr(self._host,'update_source_fit_orientations',None)
+                    if callable(native):
+                        native(tuple(select_fit_orientation_child(snapshot,parent)
+                                     for parent in targets),container=container)
+                    else:
+                        orient = OrientFitJoints(self._host)
+                        orientation = orient.plan(FitOrientationRequest(targets),
+                                                  container)
+                        orient.apply_plan_in_transaction(orientation)
             self._host.finalize_fit_resample(plan, created)
             verified = self._host.capture_fit_hierarchy(container)
             paths = {node.path: node for node in verified.joints}

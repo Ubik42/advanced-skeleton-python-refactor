@@ -1,0 +1,24 @@
+{
+  "scope": "Traditional registered Body rebuilt while retaining an existing ordinary Complete Face and attached eyebrow/eyelash meshes",
+  "source_mel": "local/adv_6_925/AdvancedSkeleton.mel",
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "source_locations": ["31549-31562", "77930-77935", "78313-78355", "78505-78508", "78540"],
+  "validation": "validation/maya_body_face_rebuild_lifecycle.py",
+  "report": "validation/results/body-face-rebuild-current/report.json",
+  "saved_scene": "validation/results/body-face-rebuild-current/body-face-body-rebuilt.mb",
+  "maya_pid": 17324,
+  "status": "passed",
+  "body_joints": 75,
+  "face_joints": 195,
+  "face_set_members": 5043,
+  "face_skins": 33,
+  "skin_error": 0.0,
+  "pose_error": 0.0,
+  "undo_redo": true,
+  "save_reopen_skin_error": 0.0,
+  "save_reopen_pose_error": 0.0,
+  "limitations": [
+    "This is the traditional Body plus ordinary Complete Face input. OPM Body plus Face and edited layered Face weights are separate pending ranges.",
+    "The original Body and Face comparison uses the saved full-character scene. This run does not compare a newly built combined character against MEL from scratch."
+  ]
+}

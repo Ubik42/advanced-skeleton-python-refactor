@@ -32,6 +32,9 @@ class RenameToUnreal:
                                   self.host.capture_spine_names())
         self.host.preflight_rename(plan)
         with self.host.transaction("重命名为 Unreal 骨架"):
+            begin = getattr(self.host, 'begin_unreal_rename', None)
+            if begin:
+                begin()
             self.host.create_export_root()
             self.host.rename_joints(plan)
             self.host.flatten_twist_hierarchy(plan)
@@ -52,5 +55,8 @@ class RestoreAdvNames:
             self.host.restore_joint_names()
             self.host.restore_export_root()
             self.host.reparent_export_geometry()
+            finish = getattr(self.host, 'finish_unreal_restore', None)
+            if finish:
+                finish()
             if self.host.is_renamed():
                 raise RuntimeError("ADV 关节名称恢复复检失败")

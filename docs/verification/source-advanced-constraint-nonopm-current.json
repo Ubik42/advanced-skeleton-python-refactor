@@ -1,0 +1,352 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 42052,
+  "use_offset_parent_matrix": false,
+  "cases": [
+    {
+      "kind": "parent",
+      "align": false,
+      "central": false,
+      "weight": 0.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "kind": "parent",
+      "align": false,
+      "central": false,
+      "weight": 5.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "kind": "parent",
+      "align": false,
+      "central": false,
+      "weight": 10.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "kind": "parent",
+      "align": false,
+      "central": true,
+      "weight": 0.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "kind": "parent",
+      "align": false,
+      "central": true,
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "parent",
+      "align": false,
+      "central": true,
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "parent",
+      "align": true,
+      "central": false,
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "kind": "parent",
+      "align": true,
+      "central": false,
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "parent",
+      "align": true,
+      "central": false,
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "parent",
+      "align": true,
+      "central": true,
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "kind": "parent",
+      "align": true,
+      "central": true,
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "parent",
+      "align": true,
+      "central": true,
+      "weight": 10.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "kind": "point",
+      "align": false,
+      "central": false,
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "kind": "point",
+      "align": false,
+      "central": false,
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "point",
+      "align": false,
+      "central": false,
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "point",
+      "align": false,
+      "central": true,
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "kind": "point",
+      "align": false,
+      "central": true,
+      "weight": 5.0,
+      "maximum_error": 0.0
+    },
+    {
+      "kind": "point",
+      "align": false,
+      "central": true,
+      "weight": 10.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "kind": "point",
+      "align": true,
+      "central": false,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "kind": "point",
+      "align": true,
+      "central": false,
+      "weight": 5.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "kind": "point",
+      "align": true,
+      "central": false,
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "point",
+      "align": true,
+      "central": true,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "kind": "point",
+      "align": true,
+      "central": true,
+      "weight": 5.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "kind": "point",
+      "align": true,
+      "central": true,
+      "weight": 10.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "kind": "orient",
+      "align": false,
+      "central": false,
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "kind": "orient",
+      "align": false,
+      "central": false,
+      "weight": 5.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "kind": "orient",
+      "align": false,
+      "central": false,
+      "weight": 10.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "kind": "orient",
+      "align": false,
+      "central": true,
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "kind": "orient",
+      "align": false,
+      "central": true,
+      "weight": 5.0,
+      "maximum_error": 5.551115123125783e-17
+    },
+    {
+      "kind": "orient",
+      "align": false,
+      "central": true,
+      "weight": 10.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "kind": "orient",
+      "align": true,
+      "central": false,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-15
+    },
+    {
+      "kind": "orient",
+      "align": true,
+      "central": false,
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "orient",
+      "align": true,
+      "central": false,
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "orient",
+      "align": true,
+      "central": true,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-15
+    },
+    {
+      "kind": "orient",
+      "align": true,
+      "central": true,
+      "weight": 5.0,
+      "maximum_error": 3.552713678800501e-15
+    },
+    {
+      "kind": "orient",
+      "align": true,
+      "central": true,
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "scale",
+      "align": false,
+      "central": false,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "kind": "scale",
+      "align": false,
+      "central": false,
+      "weight": 5.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "kind": "scale",
+      "align": false,
+      "central": false,
+      "weight": 10.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "kind": "scale",
+      "align": false,
+      "central": true,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "kind": "scale",
+      "align": false,
+      "central": true,
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "kind": "scale",
+      "align": false,
+      "central": true,
+      "weight": 10.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "kind": "scale",
+      "align": true,
+      "central": false,
+      "weight": 0.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "kind": "scale",
+      "align": true,
+      "central": false,
+      "weight": 5.0,
+      "maximum_error": 2.6645352591003757e-15
+    },
+    {
+      "kind": "scale",
+      "align": true,
+      "central": false,
+      "weight": 10.0,
+      "maximum_error": 1.3322676295501878e-15
+    },
+    {
+      "kind": "scale",
+      "align": true,
+      "central": true,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-15
+    },
+    {
+      "kind": "scale",
+      "align": true,
+      "central": true,
+      "weight": 5.0,
+      "maximum_error": 2.6645352591003757e-15
+    },
+    {
+      "kind": "scale",
+      "align": true,
+      "central": true,
+      "weight": 10.0,
+      "maximum_error": 2.220446049250313e-16
+    }
+  ],
+  "maximum_error": 3.552713678800501e-15,
+  "process_exited": true,
+  "threshold": 1e-05,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "runtime_report": "validation/results/source-advanced-constraint-nonopm-current/report.json",
+  "scope": "Literal MEL Advanced Constraint versus source Python, all four kinds, alignment off/on, side and central dual targets, nonuniform parents and moving targets, weights 0/5/10; non-OPM central parent/scale driver branch",
+  "remaining": [
+    "Complete namespaces and historical approximate graph migration not covered"
+  ]
+}

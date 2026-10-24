@@ -1,0 +1,91 @@
+{
+  "updated": "2026-10-11",
+  "status": "passed",
+  "pid": 46516,
+  "process_exited": true,
+  "source_lines": [
+    "74287-74356",
+    "80670-80683"
+  ],
+  "scope": "Production generic Aim follow constructor against native asParentConstraintBlend and caller local matrix; traditional/OPM, initial Main transforms, 0/5/10 follow, Head/Main nonuniform scale",
+  "cases": 36,
+  "maximum_error": 1.7763568394002505e-15,
+  "legacy_tr_readable": 2,
+  "saved_graphs_reopened": 4,
+  "changes": [
+    "Keep native static driven-world matrix without removing initial Main transform",
+    "Copy follow receiver rotation order and emit compound TRS; source follow does not emit shear",
+    "Resolve actual follow decompose node when reading saved graph",
+    "Preserve readable legacy TR graph; require native outputs on marked new graph"
+  ],
+  "traditional_character": {
+    "body_joints": 81,
+    "part_joints": 27,
+    "channels": 2552,
+    "lifecycle": {
+      "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-spline-part-lifecycle-current\\traditional\\input.ma",
+      "reused_saved_build": false,
+      "body_joints": 81,
+      "opm": false,
+      "bendy": false,
+      "bendy_count": 0,
+      "bendy_joints": [],
+      "part_joints": 27,
+      "channels": 2552,
+      "skins": [
+        "AdvPy_BodySkin"
+      ],
+      "additional_animated_channels": [],
+      "restricted_skin": false,
+      "portable_pose_roundtrip": true,
+      "portable_animation_roundtrip": true,
+      "native_global_deformation": true,
+      "registry_reopened": true,
+      "fbx_bytes": null,
+      "export_tested": false,
+      "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-follow-lifecycle-final-current\\traditional\\original-biped-current.mb",
+      "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-follow-lifecycle-final-current\\traditional\\original-biped-rebuilt.mb",
+      "rebuilt_scene_reopened": true,
+      "native_skin_curve_identity_preserved": true,
+      "single_undo_redo_preserved": true,
+      "native_rebuild_retained_skin_animation": true,
+      "skin_weights_membership_preserved": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "all_vertex_rebuild_maximum_error": 0.0,
+      "status": "passed"
+    },
+    "poses": [
+      {
+        "scene": "original-biped-current.mb",
+        "status": "passed",
+        "passed": 31,
+        "total": 31,
+        "tolerance": 0.0001,
+        "maximum_error": 3.1161475173032658e-06,
+        "neck_fk_nonuniform": 2.63318662985591e-06,
+        "failures": []
+      },
+      {
+        "scene": "original-biped-rebuilt.mb",
+        "status": "passed",
+        "passed": 31,
+        "total": 31,
+        "tolerance": 0.0001,
+        "maximum_error": 3.1161475200940885e-06,
+        "neck_fk_nonuniform": 2.6331866331710233e-06,
+        "failures": []
+      }
+    ]
+  },
+  "full_report": "validation/results/source-fit-aim-follow-current/report.json",
+  "character_report": "validation/results/source-fit-aim-follow-lifecycle-final-current/report.json",
+  "export_tested": false,
+  "full_reconstruction_complete": false,
+  "remaining_source_aim_scope": [],
+  "latest_controls_proof": "docs/verification/source-fit-aim-controls-current.json",
+  "traditional_character_precedes_side_channel_fix": true
+}

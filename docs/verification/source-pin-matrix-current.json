@@ -1,0 +1,81 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 87028,
+  "cases": [
+    {
+      "mirrored": false,
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "mirrored": false,
+      "weight": 5.0,
+      "maximum_error": 0.0
+    },
+    {
+      "mirrored": false,
+      "weight": 10.0,
+      "maximum_error": 1.1102230246251565e-16
+    },
+    {
+      "mirrored": true,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "mirrored": true,
+      "weight": 5.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "mirrored": true,
+      "weight": 10.0,
+      "maximum_error": 4.440892098500626e-16
+    }
+  ],
+  "local_scale": [
+    {
+      "mirrored": false,
+      "native": [
+        [
+          1.0,
+          1.0,
+          1.0
+        ]
+      ],
+      "python": [
+        [
+          1.0,
+          1.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "mirrored": true,
+      "native": [
+        [
+          1.0,
+          1.0,
+          1.0
+        ]
+      ],
+      "python": [
+        [
+          1.0,
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  ],
+  "scope": "Native asProximityPin versus source Python, nonuniform positive/reflection offset scale, retained receiver OPM, moving/scaled mesh, 0/5/10 weight",
+  "process_exited": true,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "threshold": 1e-05,
+  "runtime_report": "validation/results/source-pin-matrix-current/report.json",
+  "remaining": [
+    "Default Maya ProximityPin generator options tested; other input/output option combinations not covered",
+    "Independent full character lifecycle is separate and pending"
+  ]
+}

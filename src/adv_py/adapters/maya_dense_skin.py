@@ -9,7 +9,20 @@ from adv_py.core.dense_skin_transfer import DenseSkinWeights, validate_dense_ski
 from .maya_body import MayaBodyBuildHost
 
 
+def prepare_dense_skin_plugin(host):
+    """Load the existing weight journal before an enclosing build chunk."""
+    raw = getattr(host._cmds, "raw", host._cmds)
+    plugin = Path(__file__).resolve().parents[1] / "maya_plugins" / "skin_bulk.py"
+    if not raw.pluginInfo(str(plugin), query=True, loaded=True):
+        if getattr(host, "_transaction_active", False):
+            raise RuntimeError("Skin 权重依赖必须在打开绑定撤销事务前加载")
+        raw.loadPlugin(str(plugin), quiet=True)
+
+
 class MayaDenseSkinHost(MayaBodyBuildHost):
+    def prepare_dense_skin_dependencies(self):
+        prepare_dense_skin_plugin(self)
+
     def _skin_api(self, skin_name: str):
         from maya.api import OpenMaya as om
         from maya.api import OpenMayaAnim as oma
@@ -60,7 +73,9 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
             raise ValueError("Skin 目标在批量写入前发生变化")
         plugin = (Path(__file__).resolve().parents[1] / "maya_plugins"
                   / "skin_bulk.py")
-        self._cmds.loadPlugin(str(plugin), quiet=True)
+        raw = getattr(self._cmds, "raw", self._cmds)
+        if not raw.pluginInfo(str(plugin), query=True, loaded=True):
+            raw.loadPlugin(str(plugin), quiet=True)
         with tempfile.TemporaryDirectory(prefix="advpy-skin-") as directory:
             path = Path(directory) / "weights.bin"
             path.write_bytes(data.values)
@@ -85,7 +100,9 @@ class MayaDenseSkinHost(MayaBodyBuildHost):
             raise ValueError("Skin 双四元数混合权重无效")
         plugin = (Path(__file__).resolve().parents[1] / "maya_plugins"
                   / "skin_bulk.py")
-        self._cmds.loadPlugin(str(plugin), quiet=True)
+        raw = getattr(self._cmds, "raw", self._cmds)
+        if not raw.pluginInfo(str(plugin), query=True, loaded=True):
+            raw.loadPlugin(str(plugin), quiet=True)
         with tempfile.TemporaryDirectory(prefix="advpy-skin-blend-") as directory:
             path = Path(directory) / "blend.bin"
             path.write_bytes(values.tobytes())

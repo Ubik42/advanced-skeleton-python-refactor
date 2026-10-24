@@ -48,11 +48,8 @@ class MayaBodyParentConstraintMixin:
             driven_world = om.MMatrix(_matrix(c.getAttr(driven + ".worldMatrix[0]")))
             driver_world = om.MMatrix(_matrix(c.getAttr(driver + ".worldMatrix[0]")))
             offset = tuple(driven_world * driver_world.inverse())
-        leaf = driven.rsplit("|", 1)[-1]
-        stem, separator, side = leaf.rpartition("_")
-        if not separator or side not in ("R", "L", "M"):
-            stem, side = leaf, ""
-        suffix = "_" + side if side else ""
+        from adv_py.core.body_parent_constraint import _node_stem
+        stem, suffix = _node_stem(driven)
         mm = stem + "MM" + suffix
         pm = stem + "PM" + suffix
         return BodyParentConstraintInput(

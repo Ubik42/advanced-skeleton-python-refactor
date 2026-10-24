@@ -1,0 +1,16 @@
+{
+  "updated": "2026-10-11",
+  "status": "passed",
+  "pid": 46412,
+  "source_procedure": "asDsSdk",
+  "cases": 24,
+  "poses": 528,
+  "maximum_error": 0.0,
+  "maximum_redo_error": 0.0,
+  "scope": [
+    "Three additive drivers; linear, angular and unitless inputs; linear, angular, scale and unitless destinations; explicit output BlendWeighted on/off.",
+    "Curve type, float keys and values, tangent types, weighted tangent flag and infinity match unmodified source.",
+    "Python full graph Undo/Redo identity checked."
+  ],
+  "implementation": "The existing explicit SDK curve and BlendWeighted insertion path now covers ordinary Face SDK creation as well as ARKit Quick. This removes implicit native setDrivenKeyframe curves left after full Face Undo."
+}

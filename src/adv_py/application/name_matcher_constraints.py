@@ -22,6 +22,10 @@ class ConnectNameMatchedSkeleton:
     def apply(self, source_root: str, rows: tuple[NameMatcherRow, ...],
               rules: NameMatcherRules) -> NameMatcherConstraintResult:
         host = self._host
+        native = getattr(host, 'attach_source_name_matcher_skeleton', None)
+        if callable(native):
+            with host.transaction('NameMatcher 外部骨架跟随 Body'):
+                return native(source_root, rows, rules)
         source = host.capture_source_skeleton(source_root)
         advanced = host.capture_name_matcher_advanced_joints()
         plan = plan_name_matcher_constraints(advanced,
@@ -62,9 +66,17 @@ class TransferNameMatchedSkinInfluences:
     def apply(self, source_root: str, rows: tuple[NameMatcherRow, ...],
               rules: NameMatcherRules) -> NameMatcherSkinTransferResult:
         host = self._host
+        native = getattr(host, 'transfer_source_name_matcher_skin', None)
+        if callable(native):
+            with host.transaction('NameMatcher Skin 影响关节转接'):
+                return native(source_root, rows, rules)
         source = host.capture_source_skeleton(source_root)
         advanced = host.capture_name_matcher_advanced_joints()
-        plan = plan_name_matcher_constraints(advanced,
+        planner = plan_name_matcher_constraints
+        if callable(getattr(host, 'attach_source_name_matcher_skeleton', None)):
+            from adv_py.core.source_name_matcher import plan_source_name_matcher_constraints
+            planner = plan_source_name_matcher_constraints
+        plan = planner(advanced,
             tuple((joint.path, joint.name) for joint in source), rows, rules)
         links = host.capture_name_matcher_skin_links(plan)
         handoff = host.capture_name_matcher_source_handoff(

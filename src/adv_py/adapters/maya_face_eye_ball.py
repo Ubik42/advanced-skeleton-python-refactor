@@ -1,4 +1,5 @@
 """Original asFaceEyeBall graph and non-spherical eyes, MEL 32138–32559."""
+from .maya_face_body_roles import face_body_main
 from contextlib import contextmanager, nullcontext
 from math import dist
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -44,7 +45,7 @@ class MayaFaceEyeBallMixin:
         c.connectAttr(multiply+".output",blend+".target[0].weight")
         static=c.createNode("multMatrix",name="AimEyeFollowMMStatic_M")
         c.setAttr(static+".matrixIn[0]",*world,type="matrix")
-        if c.objExists("Main"): c.connectAttr("Main.worldMatrix[0]",static+".matrixIn[1]")
+        if c.objExists(face_body_main(self)): c.connectAttr(face_body_main(self)+".worldMatrix[0]",static+".matrixIn[1]")
         else:
             c.setAttr(static+".matrixIn[0]",1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,type="matrix")
             c.connectAttr(head+".worldMatrix[0]",static+".matrixIn[1]")

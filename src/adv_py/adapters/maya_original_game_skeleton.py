@@ -4,10 +4,50 @@ The export skeleton is a native duplicate. Skin transfer replaces the same
 matrix edges and freezes their bind matrices; it does not resample weights.
 """
 from adv_py.core.original_joint_orientation import original_game_joint_rotations
-from .maya_original_control_orient import _uuid, _by_uuid, _parent
+from .maya_original_control_orient import _uuid, _by_uuid
 from .maya_original_control_identity import leaf
 
 ROOT = 'GameSkeletonRoot_M'
+
+
+def retained_roots(host, registration):
+    """The source's separate export skeleton survives a Body replacement.
+
+    It stays outside the generated Body/AllSet and keeps its native objects.
+    Existing parent/scale constraints are handed across as extension edges.
+    """
+    c = host._cmds
+    if not c.objExists(ROOT):
+        return ()
+    roots = c.ls(ROOT, long=True, type='joint') or []
+    if len(roots) != 1:
+        raise ValueError('GameSkeletonRoot_M 缺失或不唯一')
+    root = roots[0]
+    if leaf(registration.body_root) != 'Root_M':
+        return ()
+    if root in {node.path for node in registration.nodes}:
+        raise ValueError('GameSkeleton 不应替代已登记 Body')
+    parents = c.listRelatives(root, parent=True, fullPath=True) or []
+    if len(parents) == 1 and leaf(parents[0]) == 'GameSkeletonRoot':
+        if c.nodeType(parents[0]) != 'joint':
+            raise ValueError('GameSkeletonRoot 原版包装关节类型变化')
+        root = parents[0]
+    return (root,)
+
+
+def _remove_python_build_metadata(c, joint):
+    # Native duplicate copies our bookkeeping along with source joint data.
+    # Export joints must not claim the original Body's identities or records.
+    # Keep every native ADV field and every unknown authored attribute.
+    from adv_py.core.character_generated_attributes import GENERATED_CHARACTER_ATTRIBUTES
+    native = {'GameEngineScalingSSC', 'GameEngineScalingSX',
+              'GameEngineScalingSY', 'GameEngineScalingSZ', 'originalParent'}
+    for attribute in c.listAttr(joint, userDefined=True) or []:
+        if attribute not in GENERATED_CHARACTER_ATTRIBUTES - native:
+            continue
+        plug = joint + '.' + attribute
+        c.setAttr(plug, lock=False)
+        c.deleteAttr(joint, attribute=attribute)
 
 
 def _joints(c, root):
@@ -32,6 +72,7 @@ def create(host, primary='X', secondary='Y'):
     identities = tuple(_uuid(c, joint) for joint in _joints(c, ROOT))
     for identity in identities:
         joint = _by_uuid(host, identity)
+        _remove_python_build_metadata(c, joint)
         children = tuple(_uuid(c, child) for child in
             c.listRelatives(joint, children=True, type='joint', fullPath=True) or [])
         parent = c.listRelatives(joint, parent=True, type='joint', fullPath=True) or []
@@ -41,7 +82,7 @@ def create(host, primary='X', secondary='Y'):
         if parent_id:
             c.parent(_by_uuid(host, identity), world=True)
         for rotation in rotations:
-            c.rotate(*rotation, _by_uuid(host, identity), relative=True, objectSpace=True, forceOrder=True)
+            c.rotate(*rotation, _by_uuid(host, identity), relative=True, objectSpace=True, forceOrderXYZ=True)
         if parent_id:
             c.parent(_by_uuid(host, identity), _by_uuid(host, parent_id))
         if children:
@@ -113,26 +154,39 @@ def transfer_skin(host):
     destination = _joints(c, ROOT)
     if len(source) != len(destination):
         raise ValueError('原骨架与 GameSkeleton 的原版遍历列表长度不一致')
+    transfer_back = (bool(c.getAttr(ROOT + '.skinTransferred'))
+        if c.objExists(ROOT + '.skinTransferred') else False)
+    if transfer_back:
+        source, destination = destination, source
+    raw = getattr(c, 'raw', c)
+    # These are production Skin nodes discovered only from the exact native
+    # worldMatrix edges, and may live outside the rig namespace. Keep the
+    # ordinary character boundary closed; make this explicit handoff here.
+    transfers = []
+    skins = []
+    for old, new in zip(source, destination):
+        old_plug = host.scene_address(old + '.worldMatrix[0]')
+        new_plug = host.scene_address(new + '.worldMatrix[0]')
+        plugs = raw.listConnections(old_plug, source=False, destination=True,
+                                    type='skinCluster', plugs=True) or []
+        for plug in plugs:
+            if not raw.isConnected(old_plug, plug):
+                raise ValueError('GameSkeleton 蒙皮矩阵连接在交接前变化：' + plug)
+            transfers.append((old_plug, new_plug, plug))
+            cluster = plug.split('.', 1)[0]
+            if cluster not in skins:
+                skins.append(cluster)
     host._transaction_changed = True
-    transfer_back = False
     if c.objExists(ROOT + '.skinTransferred'):
-        transfer_back = bool(c.getAttr(ROOT + '.skinTransferred'))
         c.setAttr(ROOT + '.skinTransferred', not transfer_back)
     else:
         c.addAttr(ROOT, longName='skinTransferred', attributeType='bool', defaultValue=True)
-    if transfer_back:
-        source, destination = destination, source
-    skins = []
-    for old, new in zip(source, destination):
-        clusters = c.listConnections(old + '.worldMatrix[0]', type='skinCluster', plugs=False) or []
-        plugs = c.listConnections(old + '.worldMatrix[0]', type='skinCluster', plugs=True) or []
-        for plug in plugs:
-            c.connectAttr(new + '.worldMatrix[0]', plug, force=True)
-        for cluster in clusters:
-            if cluster not in skins:
-                skins.append(cluster)
+    # Reverse is decided by the same source skinTransferred flag. Discovery
+    # must therefore use the actual old side, before changing that flag.
+    for old, new, plug in transfers:
+        raw.connectAttr(new, plug, force=True)
     from .maya_deform_skinning import freeze_native_skin_cluster
     for skin in skins:
-        freeze_native_skin_cluster(host.scene_address(skin))
-    getattr(c, 'raw', c).dgdirty(allPlugs=True)
+        freeze_native_skin_cluster(skin, cmds=raw)
+    raw.dgdirty(allPlugs=True)
     return transfer_back, tuple(skins)

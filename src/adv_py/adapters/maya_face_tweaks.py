@@ -1,5 +1,6 @@
 """Original Face/Tweaks area selection and skin smoothing operations."""
 from __future__ import annotations
+from .maya_face_body_roles import face_body_main
 
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -123,7 +124,7 @@ class MayaFaceTweaksHost(MayaFacePreHost):
         if type(visible) is not bool:
             raise ValueError("Face 关节显示状态无效")
         c = self._maya
-        main = self._name("Main")
+        main = self.scene_address(face_body_main(self))
         legacy_root = self._name("root")
         fit = self._name("FitSkeleton")
         main_plug = (main + ".jointVis"

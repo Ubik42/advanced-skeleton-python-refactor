@@ -6,8 +6,9 @@ from adv_py.core.character_registry import CharacterRegistryError,canonical
 from .maya_source_graph_connections import SourceGraphConnections
 
 
-def _reset_body(c,target):
-    for attr in ('translate','rotate','scale','jointOrient'):
+def _reset_body(c,target, *,preserve_scale=False):
+    attributes=('translate','rotate','jointOrient') if preserve_scale else ('translate','rotate','scale','jointOrient')
+    for attr in attributes:
         compound=target+'.'+attr
         source=c.connectionInfo(compound,sourceFromDestination=True)
         if source:c.disconnectAttr(source,compound)
@@ -86,7 +87,27 @@ def configure_fk(host,body,fk, *,excluded=frozenset(),include_root=False):
 def audit_fk(host,registration):
     from adv_py.core.source_body_matrix import decode_source_body_matrix
     c=host._cmds
-    for joint in registration.body:
+    from .maya_character_body_retirement import source_record,source_property,is_connected_or_retired
+    retired = {row.path:row for row in registration.retired_body}
+    for joint in (*registration.body,*registration.retired_body):
+        if joint.path in retired:
+            if 'advPySourceFkMatrix' not in dict(joint.records):continue
+            plan=decode_source_body_matrix(source_record(host,joint.path,'advPySourceFkMatrix'))
+            source_property(host,joint.path,'advPySourceFkPoint')
+            if plan.body!=joint.path:
+                raise CharacterRegistryError('已清理 FK Body 的原图身份变化')
+            for node in plan.nodes:
+                if not c.objExists(node.name) or c.nodeType(node.name)!=node.kind:
+                    raise CharacterRegistryError('已清理 FK Body 的保留矩阵节点缺失：'+node.name)
+                for attr,value in node.values:
+                    if abs(float(c.getAttr(node.name+'.'+attr))-value)>1e-8:
+                        raise CharacterRegistryError('已清理 FK Body 的保留矩阵常量变化')
+                for source,attr in node.connections:
+                    if not is_connected_or_retired(host,source,node.name+'.'+attr):
+                        raise CharacterRegistryError('已清理 FK Body 的保留矩阵输入变化')
+            if not all(is_connected_or_retired(host,source,target) for source,target in plan.outputs):
+                raise CharacterRegistryError('已清理 FK Body 的原矩阵输出记录变化')
+            continue
         end_plug=joint.path+'.advPySourceEndMatrix'
         if c.objExists(end_plug):
             from adv_py.core.character_registry import safe_json,exact,path,vector
@@ -127,7 +148,7 @@ def audit_fk(host,registration):
                 raise CharacterRegistryError('来源 FK Body OPM 本地变换变化：'+plan.body)
 
 
-def rebase_fk_records(host,registration,rewrites):
+def rebase_fk_records(host,registration,rewrites, *,root_parent_inverse=None):
     from adv_py.core.source_body_matrix import decode_source_body_matrix
     from adv_py.core.fit_part import FitPartFinalPaths,rebase_plan_paths_after_parts
     paths=FitPartFinalPaths((),(),tuple(rewrites))
@@ -161,12 +182,14 @@ def rebase_fk_records(host,registration,rewrites):
                     if node.name==matrix_name and source.endswith('.worldInverseMatrix[0]'):
                         if parent is None:
                             raise CharacterRegistryError('来源 Body 改挂后缺少实际父级')
-                        expected=parent+'.worldInverseMatrix[0]'
+                        expected=(root_parent_inverse if joint_path==registration.body_root
+                            and attribute=='advPySourceFkMatrix' and root_parent_inverse is not None
+                            else parent+'.worldInverseMatrix[0]')
                         destination=node.name+'.'+attr
                         actual=c.connectionInfo(destination,sourceFromDestination=True)
                         if actual:
-                            name,attribute=actual.split('.',1)
-                            actual=host._resolve_connected_node(name)+'.'+attribute
+                            name,actual_attribute=actual.split('.',1)
+                            actual=host._resolve_connected_node(name)+'.'+actual_attribute
                         if actual!=expected:
                             if actual:c.disconnectAttr(actual,destination)
                             c.connectAttr(expected,destination)
@@ -176,7 +199,10 @@ def rebase_fk_records(host,registration,rewrites):
                 changed.append(replace(node,connections=tuple(connections)))
             updated=replace(updated,nodes=tuple(changed))
             if retargeted:
-                _reset_body(c,body)
+                # Readdressing an existing parent inverse must keep the same
+                # authored/native scale input, including the Game detour.
+                # Initial construction still resets all four compounds.
+                _reset_body(c,body,preserve_scale=True)
             if plan==updated:continue
             c.setAttr(plug,lock=False)
             c.setAttr(plug,canonical(asdict(updated)),type='string',lock=True)

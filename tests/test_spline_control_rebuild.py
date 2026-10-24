@@ -29,6 +29,21 @@ def registration(count):
 
 
 class SplineControlRebuildTests(unittest.TestCase):
+    def test_opm_chest_nodes_follow_native_parent_constraint_naming(self):
+        from adv_py.core.spline_names import scope_spline_plan, remap_spline_value
+        plan = replace(registration(3).spine, use_offset_parent_matrix=True,
+                       chest_space='|Group|AdvPy_SplineChestSpace')
+        self.assertIn('AdvPyMM_SplineChestSpace', plan.node_names)
+        self.assertIn('AdvPyPM_SplineChestSpace', plan.node_names)
+        self.assertNotIn('AdvPy_SplineChestSpaceMM', plan.node_names)
+        first = scope_spline_plan(plan, 'Spine1')
+        second = scope_spline_plan(plan, 'Tail')
+        expected = 'AdvPy_Spline_Spine1MM_ChestSpace'
+        self.assertIn(expected, first.node_names)
+        self.assertNotIn(expected, second.node_names)
+        self.assertEqual(remap_spline_value(expected, 'Spine1', canonical=True),
+                         'AdvPyMM_SplineChestSpace')
+
     def test_indexed_animation_survives_and_endpoint_setting_moves(self):
         before,after=registration(3),registration(5)
         plan=plan_spline_control_rebuild(before,after,(('',5),))

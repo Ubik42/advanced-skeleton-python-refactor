@@ -24,10 +24,12 @@ class BodyLegPoleAimSpec:
     local_name: str
     follow_name: str | None = None
     aligned_orientation_source: str | None = None
+    source_frame: str | None = None
+    use_offset_parent_matrix: bool = True
 
     @property
     def frame_path(self):
-        return self.ik_root + '|' + self.frame_name
+        return self.source_frame or self.ik_root + '|' + self.frame_name
 
     @property
     def aligned_path(self):
@@ -43,10 +45,14 @@ class BodyLegPoleAimSpec:
 
     @property
     def node_names(self):
-        return (self.frame_name, self.aligned_name, self.aim_name,
-                self.target_name, self.matrix_name, self.swivel_name,
-                self.local_name, self.frame_name + 'Constraint') + (
-                    (self.follow_name,) if self.follow_name else ())
+        nodes=(self.aligned_name, self.aim_name, self.target_name,
+               self.matrix_name, self.swivel_name, self.local_name)
+        if self.source_frame:
+            if not self.use_offset_parent_matrix:
+                nodes += (self.aim_name+'DM',)
+        else:
+            nodes=(self.frame_name,)+nodes+(self.frame_name+'Constraint',)
+        return nodes+((self.follow_name,) if self.follow_name else ())
 
 
 def plan_body_leg_pole_aim(ik, torso=None, *, foot=None,

@@ -1,0 +1,182 @@
+{
+  "status": "passed",
+  "pid": 79044,
+  "scope": "Current native phase parity and retry semantics; complete biped AutoPlace not accepted",
+  "force_math": [
+    {
+      "degrees": -360.0,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": -180.0,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": -90.0,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": -63.43494882292201,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": -33.6900675259798,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": 33.6900675259798,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": 63.43494882292201,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": 90.0,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": 180.0,
+      "maximum_error": 0.0
+    },
+    {
+      "degrees": 360.0,
+      "maximum_error": 0.0
+    }
+  ],
+  "phases": {
+    "status": "passed",
+    "cases": [
+      {
+        "case": "ncloth",
+        "errors": {
+          "vertices": 0.0
+        },
+        "minimum_x_error": 0.0,
+        "status": "passed"
+      },
+      {
+        "case": "zLoft",
+        "errors": {
+          "vertices": 0.0,
+          "right_vertices": 0.0,
+          "pivots": 0.0,
+          "offsets": 0.0
+        },
+        "status": "passed"
+      },
+      {
+        "case": "yLoft",
+        "errors": {
+          "vertices": 0.0,
+          "right_vertices": 0.0,
+          "pivots": 0.0,
+          "offsets": 0.0
+        },
+        "status": "passed"
+      },
+      {
+        "case": "ncloth_foreign_active_solver",
+        "status": "passed",
+        "preserved_solver": true,
+        "preserved_active_solver": true
+      },
+      {
+        "case": "thumb",
+        "status": "passed",
+        "maximum_error": 0.0
+      },
+      {
+        "case": "ncloth_character_namespace",
+        "status": "passed",
+        "namespace": "AutoPlaceRig",
+        "foreign_solver_preserved": true
+      }
+    ]
+  },
+  "fingers": {
+    "status": "passed",
+    "cases": [
+      {
+        "case": "connected_four_finger_hand",
+        "status": "passed",
+        "native_detected": true,
+        "python_detected": true,
+        "maximum_error": 4.9419413006290824e-11,
+        "curves": 4,
+        "pivots": 9
+      },
+      {
+        "case": "detect_straighten_and_rescan",
+        "status": "passed",
+        "native_detected": true,
+        "python_detected": true,
+        "maximum_error": 4.885253090947117e-09,
+        "ncloth_completed": true,
+        "rescan_completed": true
+      }
+    ]
+  },
+  "retries": [
+    {
+      "case": "curve",
+      "status": "passed",
+      "source_failure": "FingerCurveIndex ambiguity",
+      "python_same_failure": true,
+      "rollback": true
+    },
+    {
+      "case": "pivot",
+      "status": "passed",
+      "maximum_error": 4.9419413006290824e-11,
+      "source_requested_name_preserved": true
+    }
+  ],
+  "process_exited": true,
+  "limitations": [
+    "Controlled hand/Loft phase acceptance only; complete biped AutoPlace and full namespace workflow remain unaccepted."
+  ],
+  "latest_full_sam": {
+    "pid": 71832,
+    "process_exited": true,
+    "result": {
+      "status": "not_detected",
+      "axes": [
+        "z",
+        "x",
+        "yArmStraight",
+        "yElbowStraight",
+        "y"
+      ],
+      "finger_detected": false,
+      "guides_active": false,
+      "scope": "Current Python full Sam input; original full success not confirmed"
+    },
+    "scope": "Full Sam run preceded the final force correction; no full success claim"
+  },
+  "source_corrections": [
+    "Requested-name addressing for sampled finger pivots and curves, including source retry ambiguity.",
+    "Source asAlign parent/reset/restore sequence for Loft projection replacement.",
+    "Source float3 writes for scan transforms, Loft scales, shoulder/elbow restoration and localForce.",
+    "Maya stock selected binding and selected geometry weight transfer after straightening.",
+    "Stock first-finger Nucleus creation when no foreign solver exists; foreign solver preserved.",
+    "MEL deg_to_rad multiplier 0.01745329, verified against native runtime."
+  ],
+  "force_diagnosis": {
+    "pid": 39088,
+    "process_exited": true,
+    "native_replay_input_error": 0.0,
+    "native_replay_output_error": 0.0,
+    "pre_fix_python_force_error": 1.52587890625e-05,
+    "pre_fix_python_vertex_error": 5.054473876953125e-05,
+    "pre_fix_mesh_input_error": 0.0,
+    "current_proof_pid": 79044,
+    "current_ncloth_vertex_error": 0.0,
+    "current_ncloth_bbox_error": 0.0
+  },
+  "reference_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02"
+}

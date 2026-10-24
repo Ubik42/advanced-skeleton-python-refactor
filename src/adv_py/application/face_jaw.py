@@ -11,6 +11,7 @@ class BuildFaceJaw:
             "LipDeform","mouthOpenSoftMod","mouthOpenSoftModHandle")
         collisions=[name for name in names if self.host.find_name_collisions(name)]
         if collisions: raise FitSkeletonValidationError("Jaw 构建节点名称已占用："+"、".join(collisions))
+        self.host.prepare_dense_skin_dependencies()
         with self.host.transaction("建立 Jaw 权重层与 Teeth"):
             if self.host.capture_jaw_input(smooth_iterations)!=source: raise RuntimeError("Jaw 输入在构建前变化")
             before=self.host.capture_face_build_node_ids()
@@ -24,6 +25,7 @@ class UpdateFaceJawWeights:
     def apply(self,smooth_iterations=50):
         source=self.host.capture_jaw_input(smooth_iterations)
         if source is None: return None
+        self.host.prepare_dense_skin_dependencies()
         with self.host.transaction("更新 Jaw 曲线边界权重"):
             if self.host.capture_jaw_input(smooth_iterations)!=source: raise RuntimeError("Jaw 输入在更新前变化")
             before=self.host.capture_face_build_node_ids()
@@ -36,6 +38,7 @@ class FinishFaceJaw:
     def apply(self,smooth_iterations=50):
         source=self.host.capture_jaw_finish_input(smooth_iterations)
         if source is None: return None
+        self.host.prepare_dense_skin_dependencies()
         with self.host.transaction("合并 Jaw 权重并接入下颌跟随"):
             before=self.host.capture_face_build_node_ids()
             result=self.host.finish_original_jaw_weighing(source)
@@ -46,6 +49,8 @@ class FinishFaceJaw:
 class RecordFaceTeeth:
     def __init__(self,host): self.host=host
     def apply(self,part):
+        from .face_input_upgrade import check_original_face_input_upgrade
+        check_original_face_input_upgrade(self.host)
         with self.host.transaction("记录 "+part+" 输入"):
             return self.host.record_original_face_parts(part)
 
@@ -61,6 +66,7 @@ class FitFaceJawPose:
         if stage not in methods: raise ValueError("未知 Jaw/Lip 修形阶段："+stage)
         source=self.host.capture_jaw_finish_input(smooth_iterations) if stage=="open" else None
         if stage=="open" and source is None: return None
+        self.host.prepare_dense_skin_dependencies()
         with self.host.transaction("Face 修形："+stage):
             before=self.host.capture_face_build_node_ids()
             operation=getattr(self.host,methods[stage])

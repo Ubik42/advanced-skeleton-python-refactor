@@ -3,7 +3,13 @@ from .maya_fit_auto_place_guides import stock_wrap
 
 
 def cast(components,destination):
-    return [destination+'.'+component.split('.',1)[1] for component in components]
+    # asobjSetCast takes the source object from the first entry, then performs
+    # one substitution in every entry. Do not silently remap components from
+    # additional objects: the source leaves those strings unchanged.
+    components=tuple(components)
+    if not components:return []
+    source=components[0].split('.',1)[0]
+    return [component.replace(source,destination,1) for component in components]
 
 
 def faces(c,contained=False):
@@ -28,11 +34,21 @@ def invert(c):
     selected=c.ls(selection=True) or []
     if not selected:return
     objects=c.ls(selection=True,objectsOnly=True) or []
-    kind=selected[0].split('.',1)[1].split('[',1)[0]
-    flag={'vtx':'vertex','f':'face','e':'edge'}[kind]
-    count=int(c.polyEvaluate(objects[0],**{flag:True}))
-    c.select(objects[0]+'.'+kind+'[0:'+str(count-1)+']',replace=True)
-    c.select(selected,deselect=True)
+    first=selected[0]
+    kind=next((kind for kind in ('vtx','f','e') if '.'+kind in first),None)
+    if kind:
+        # Preserve the explicit source range, including its upper limit.
+        # Maya clips it to existing components; evaluating the whole mesh and
+        # synthesizing a different range changes the original selection rule.
+        c.select(objects[0]+'.'+kind+'[0:999999]',replace=True)
+        c.select(selected,deselect=True)
+    else:
+        # This is Maya's stock command, not an ADV procedure. UV/object
+        # inversion follows the same fallback as asInvertSelection.
+        from maya import mel
+        from contextlib import nullcontext
+        with c._creation_namespace() if hasattr(c,'_creation_namespace') else nullcontext():
+            mel.eval('InvertSelection;')
 
 
 def grow_past_shell(host):

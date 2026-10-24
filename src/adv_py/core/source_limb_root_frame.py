@@ -34,7 +34,7 @@ def decode_record(text):
     raw=safe_json(text)
     if isinstance(raw,dict) and 'measurements' not in raw:raw={**raw,'measurements':[]}
     raw=exact(raw,('graph','offset','offset_matrix','joint','rotate_order','measurements'))
-    graph=decode_source_body_matrix(canonical(raw['graph']))
+    graph=decode_source_body_matrix(canonical(raw['graph']), allow_decompose_outputs=True)
     offset=path(raw['offset']);joint=path(raw['joint']);order=raw['rotate_order']
     if (type(order) is not int or not 0<=order<=5 or offset.rsplit('|',1)[0]!=graph.body
             or joint.rsplit('|',1)[0]!=offset):
@@ -47,6 +47,29 @@ def decode_record(text):
     if any(node.rsplit('|',1)[0]!=graph.body or node in (offset,joint) for node,_ in measurements):
         raise CharacterRegistryError('来源 IK 起点测量绑定父级无效')
     return SourceIkRootFrameRecord(graph,offset,vector(raw['offset_matrix'],16),joint,order,measurements)
+
+
+def plan_graph(frame, parent, source, rotate_order, use_offset_parent_matrix):
+    """MEL asParentConstraint -includePickMatrix -FMM respects Fit.opm."""
+    from .source_rp_dynamics import SourceRpNode
+    if type(use_offset_parent_matrix) is not bool:
+        raise ValueError('IK root matrix mode must be boolean')
+    stem = frame.rsplit('|', 1)[-1]
+    matrix, pick, dm = stem + 'MM', stem + 'PM', stem + 'DM'
+    nodes = [SourceRpNode(matrix, 'multMatrix', connections=(
+        (source + '.worldMatrix[0]', 'matrixIn[0]'), (parent + '.worldInverseMatrix[0]', 'matrixIn[1]'))),
+        SourceRpNode(pick, 'pickMatrix', (('useScale', 0.), ('useShear', 0.)),
+                     ((matrix + '.matrixSum', 'inputMatrix'),))]
+    if use_offset_parent_matrix:
+        outputs = ((pick + '.outputMatrix', frame + '.offsetParentMatrix'),)
+    else:
+        nodes.append(SourceRpNode(dm, 'decomposeMatrix', (('inputRotateOrder', float(rotate_order)),),
+                                  ((pick + '.outputMatrix', 'inputMatrix'),)))
+        outputs = tuple((dm + '.output' + channel + axis, frame + '.' + target + suffix)
+                        for channel, target in (('Translate', 'translate'), ('Rotate', 'rotate'),
+                                                ('Scale', 'scale'), ('Shear', 'shear'))
+                        for axis, suffix in zip('XYZ', ('XY', 'XZ', 'YZ') if target == 'shear' else 'XYZ'))
+    return SourceBodyMatrixPlan(frame, tuple(nodes), outputs)
 
 
 def configure(plan,body):

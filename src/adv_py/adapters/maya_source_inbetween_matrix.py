@@ -120,6 +120,7 @@ def configure_fk(host,fk,segments,global_control,metadata,instances):
 
 
 def audit_target(host,target):
+    from .maya_character_body_retirement import is_connected_or_retired
     c=host._cmds;plug=target+'.'+MARKER
     if not c.getAttr(plug,lock=True):raise CharacterRegistryError('来源 Inbetween 矩阵记录已解锁')
     saved=decode(c.getAttr(plug));graph=saved.graph
@@ -130,12 +131,12 @@ def audit_target(host,target):
         for attr,value in node.values:
             if abs(float(c.getAttr(node.name+'.'+attr))-value)>1e-8:raise CharacterRegistryError('来源 Inbetween 矩阵常量变化')
         for source,attr in node.connections:
-            if not c.isConnected(source,node.name+'.'+attr):raise CharacterRegistryError('来源 Inbetween 矩阵接线变化')
+            if not is_connected_or_retired(host,source,node.name+'.'+attr):raise CharacterRegistryError('来源 Inbetween 矩阵接线变化')
     for plug,values in saved.matrices:
         if c.connectionInfo(plug,isDestination=True) or max(abs(a-b) for a,b in zip(c.getAttr(plug),values))>1e-8:
             raise CharacterRegistryError('来源 Inbetween 绑定矩阵变化')
     for source,target in graph.outputs:
-        if not c.isConnected(source,target):raise CharacterRegistryError('来源 Inbetween 矩阵输出变化')
+        if not is_connected_or_retired(host,source,target):raise CharacterRegistryError('来源 Inbetween 矩阵输出变化')
 
 
 def audit_registered(host,registration):

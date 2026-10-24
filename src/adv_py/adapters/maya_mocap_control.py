@@ -84,7 +84,10 @@ class MayaMocapControlHost(MayaBodyBuildHost):
             plug=self.scene_address(channel.node)+'.'+channel.attribute
             sampled=tuple(float(self._cmds.getAttr(plug,time=frame))
                           for frame in frames)
-            if any((min(abs(value),abs(value-1.)) if replace_existing_modes
+            # Source FKIKBlend is the original 0–10 user control. Only the
+            # solver conversion and historical Python blend channels use 0–1.
+            ik_value=10. if channel.attribute=='FKIKBlend' else 1.
+            if any((min(abs(value),abs(value-ik_value)) if replace_existing_modes
                     else abs(value))>1e-8 for value in sampled):
                 raise CharacterRegistryError(
                     '事件动捕要求写入区间的来源模式为可写的 FK/IK 端点：'+key)

@@ -19,6 +19,11 @@ class GameRootMotionInput:
     character_height: float
     use_offset_parent_matrix: bool
     exists: bool
+    root_joint_name: str = "RootMotion_M"
+    deformation_children: tuple[str, ...] | None = None
+    range_node_name: str | None = None
+    constraint_node_name: str | None = None
+    root_joint_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +76,6 @@ def plan_game_root_motion(source: GameRootMotionInput, *,
     if (type(create) is not bool or type(source.exists) is not bool
             or type(source.use_offset_parent_matrix) is not bool
             or not isfinite(source.character_height)
-            or source.character_height <= 0
             or not source.deformation.startswith("|")
             or not source.root_system.startswith("|")
             or not source.main_system.startswith("|")
@@ -82,27 +86,48 @@ def plan_game_root_motion(source: GameRootMotionInput, *,
     prefix = source.namespace_prefix
     if prefix and not prefix.endswith(":"):
         raise ValueError("Root Motion 命名空间格式无效")
-    joint = source.deformation + "|" + prefix + "RootMotion_M"
-    offset = source.root_system + "|" + prefix + "FKOffsetRootMotion_M"
-    follow = offset + "|" + prefix + "FKFollowRootMotion_M"
-    extra = follow + "|" + prefix + "FKExtraRootMotion_M"
-    control = extra + "|" + prefix + "FKRootMotion_M"
+    root_name = source.root_joint_name
+    if root_name not in ("RootMotion_M", "root"):
+        raise ValueError("Root Motion 原版关节名无效")
+    joint = ((source.root_joint_path or source.deformation + "|" + prefix + root_name)
+             if not create else source.deformation + "|" + prefix + root_name)
+    if (not joint.startswith(source.deformation + '|')
+            or joint.rsplit('|', 1)[-1] != prefix + root_name):
+        raise ValueError('Root Motion 已存在关节路径无效')
+    offset = source.root_system + "|" + prefix + "FKOffset" + root_name
+    follow = offset + "|" + prefix + "FKFollow" + root_name
+    extra = follow + "|" + prefix + "FKExtra" + root_name
+    control = extra + "|" + prefix + "FK" + root_name
     body_name = source.body_root.rsplit("|", 1)[-1]
     if body_name.rsplit(":", 1)[-1] != "Root_M":
         raise ValueError("Root Motion 只接已登记的 Root_M")
-    expected_body = (source.deformation + "|" + body_name
-                     if create else joint + "|" + body_name)
-    if source.body_root != expected_body:
-        raise ValueError("Root Motion 的 Body 根父级不符")
+    if not source.body_root.startswith(source.deformation + "|"):
+        raise ValueError("Root Motion 的 Body 根不在变形系统下")
+    # MEL moves direct joint children, which may be export wrappers rather
+    # than Root_M. An empty RootMotion joint after Unreal export is valid:
+    # deleting it leaves the separate UnrealRoot branch where it is.
+    parent = source.deformation if create else joint
+    children = source.deformation_children
+    if children is None:
+        children = (parent + "|" + body_name,)
+    if any(not child.startswith(parent + "|")
+           or "|" in child[len(parent) + 1:] for child in children):
+        raise ValueError("Root Motion 直接子关节记录无效")
+    destination = joint if create else source.deformation
+    body_path = source.body_root
+    for child in children:
+        if body_path == child or body_path.startswith(child + "|"):
+            body_path = destination + "|" + child.rsplit("|", 1)[-1] + body_path[len(child):]
+            break
     return GameRootMotionPlan(
         create, source, joint,
-        joint + "|" + body_name if create else source.deformation + "|" + body_name,
+        body_path,
         offset, follow, extra, control,
-        prefix + "RootMotion_MRange",
-        prefix + "FKFollowRootMotion_M_parentConstraint1",
-        prefix + "RootMotion_M_parentConstraint1",
-        prefix + "RootMotion_MFollowMM",
-        max(source.character_height / 20.0, 0.01))
+        source.range_node_name or prefix + root_name + "Range",
+        prefix + "FKFollow" + root_name + "_parentConstraint1",
+        source.constraint_node_name or prefix + root_name + "_parentConstraint1",
+        prefix + ("RootMotionMM_M" if root_name == "RootMotion_M" else "rootMM_root"),
+        source.character_height / 20.0)
 
 
 def audit_game_root_motion(plan: GameRootMotionPlan,

@@ -1,0 +1,63 @@
+{
+  "updated": "2026-10-11",
+  "pid": 6960,
+  "status": "passed",
+  "scope": "Production FKAim decompose constructor on saved traditional scene; neutral and neck nonuniform scale; 14 Head/Neck/Eye joints",
+  "source_lines": [
+    "74619-74627",
+    "80711"
+  ],
+  "fresh_character_lifecycle_verified": true,
+  "saved_scenes_modified": false,
+  "process_exited": true,
+  "rows": [
+    {
+      "case": "neutral",
+      "version": "python_neck",
+      "joints": 14,
+      "maximum_error": 4.171845624512116e-08
+    },
+    {
+      "case": "neutral",
+      "version": "python_neck_source_frame",
+      "joints": 14,
+      "maximum_error": 4.171845624512116e-08
+    },
+    {
+      "case": "neck_scale",
+      "version": "python_neck",
+      "joints": 14,
+      "maximum_error": 0.010543686145324927
+    },
+    {
+      "case": "neck_scale",
+      "version": "python_neck_source_frame",
+      "joints": 14,
+      "maximum_error": 9.32468608993986e-08
+    }
+  ],
+  "cause": "Receiver rotateOrder=2 in both scenes; legacy Python decomposeMatrix used default order 0 and only TR outputs. Production constructor now copies receiver order and connects all twelve TRS/shear outputs.",
+  "fresh_lifecycle_pid": 18656,
+  "fresh_lifecycle_report": "validation/results/source-fit-aim-controls-current/report.json",
+  "fresh_character_poses": [
+    {
+      "scene": "original-biped-current.mb",
+      "status": "passed",
+      "passed": 34,
+      "total": 34,
+      "tolerance": 0.0001,
+      "maximum_error": 3.1161475173032658e-06,
+      "failures": []
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "status": "passed",
+      "passed": 34,
+      "total": 34,
+      "tolerance": 0.0001,
+      "maximum_error": 3.1161475200940885e-06,
+      "failures": []
+    }
+  ],
+  "preceding_decompose_only_lifecycle_pid": 11808
+}

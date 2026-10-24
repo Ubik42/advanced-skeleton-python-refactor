@@ -4,6 +4,14 @@ from adv_py.core.character_registry import CharacterRegistryError
 from .maya_character_preservation import capture_extension
 
 
+def connection_plugs(row):
+    """Definitions may already exist, but their saved edges still transfer."""
+    plugs = {row.path + '.' + attribute[0] for attribute in row.attributes}
+    plugs.update(plug for edge in row.connections for plug in edge
+                 if plug.split('.', 1)[0] == row.path)
+    return frozenset(plugs)
+
+
 def plan(host,original,namespace,*,derived_plugs=frozenset()):
     from .maya_body import MayaBodyBuildHost
     target=MayaBodyBuildHost(namespace=namespace)
@@ -21,14 +29,15 @@ def plan(host,original,namespace,*,derived_plugs=frozenset()):
                 left=source[name];right=actual.get(name)
                 if right is None:return False
                 if row.path+'.'+name in derived_plugs:
-                    # Native SDK outputs evaluate from the copied graph;
-                    # preserve the definition without writing a sampled value.
+                    # Native SDK outputs and source Fit dimensions evaluate
+                    # from the rebuilt graph; keep their definitions without
+                    # writing a previously sampled or computed value.
                     # The separate ownership audit still compares all edges.
                     return (*left[:2],*left[3:])==(*right[:2],*right[3:])
-                if row.path+'.'+name not in animator:return left==right
-                # Values and Lock/Hide are authored state, not attribute
-                # definitions. A fresh default is expected to differ from an
-                # animated saved value. Keep the closed type/range contract.
+                # MEL restores Main's authored display attributes after the
+                # rebuild. Face may edit Main.jointVis on an existing Body.
+                # Compare the attribute definition here; transfer its live
+                # value and Lock/Hide state with the other retained properties.
                 definition=lambda item:(item[0],item[1],tuple(
                     (key,value) for key,value in item[5] if key!='channelBox'))
                 return definition(left)==definition(right)
@@ -40,7 +49,11 @@ def plan(host,original,namespace,*,derived_plugs=frozenset()):
                          if a[0]!='lockInfluenceWeights'
                          and row.path+'.'+a[0] not in derived_plugs
                          and (not c.objExists(row.path+'.'+a[0])
-                              or row.path+'.'+a[0] in animator))
+                              or row.path+'.'+a[0] in animator
+                              or (a[0] in existing
+                                  and source[a[0]] != actual[a[0]]
+                                  and not c.connectionInfo(
+                                      row.path+'.'+a[0],sourceFromDestination=True))))
         if not attributes and not existing:continue
         pending={item[0] for item in attributes}
         for name,datatype,value,locked,keyable,metadata in attributes:

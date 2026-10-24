@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-13",
+  "scope": "OPM Body, ordinary Complete Face, Face rebuild, then Body rebuild on the retained Face",
+  "mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "face_build": {
+    "initial_run_pid": 38796,
+    "initial_run_status": "Face Fit handoff, full build, undo/redo and reopen passed; subsequent Face rebuild failed bind-pre comparison and was repaired",
+    "body_joint_count_before": 81,
+    "body_joint_count_after": 75,
+    "global_animation_error": 4.76837158203125e-7
+  },
+  "face_rebuild": {
+    "current_pid": 37844,
+    "reused_saved_complete_build": true,
+    "status": "passed",
+    "stages": 30,
+    "skin_bind_and_weight_max_error": 8.881784197001252e-15,
+    "pose_max_error": 9.5367431640625e-7,
+    "single_undo_redo": true,
+    "saved_reopened": true,
+    "cause_and_fix": "Surviving Face-part Skins and regenerated primary HeadSkin received new bindPreMatrix values when old Face joints were replaced under the OPM Body. The rebuild now stages existing Face-joint bind-pre values and restores them to matching new influences when Keep Skin Weights is enabled."
+  },
+  "body_rebuild_after_face": {
+    "pid": 10476,
+    "status": "passed",
+    "body_joints": 75,
+    "face_joints": 195,
+    "face_set_members": 4725,
+    "face_skins": 33,
+    "skin_error": 0,
+    "pose_error": 9.5367431640625e-7,
+    "single_undo_redo": true,
+    "reopened_skin_error": 0,
+    "reopened_pose_error": 9.5367431640625e-7
+  },
+  "ordinary_face_regression": {
+    "pid": 45956,
+    "status": "passed",
+    "authored_data_preserved": true,
+    "single_undo_redo_and_reopen": true
+  },
+  "limits": [
+    "The OPM Body source comparison still has four near-straight arm cases above the unchanged 1e-4 threshold.",
+    "The original MEL stages only one Skin per All Head geometry and does not retain separately edited Lip/Tongue layer weights; the original multi-layer rebuild also stops at Prep on the saved Maya 2024 input.",
+    "This batch does not cover all Include, Legacy, RigType or default model variants."
+  ]
+}

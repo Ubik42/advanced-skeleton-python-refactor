@@ -159,6 +159,22 @@ def rebase_plan_paths_after_parts(value: object,
     Body snapshots and symmetry instances need a new immediate parent, which
     cannot be obtained by merely replacing the old parent path's prefix.
     """
+    from .character_body_retirement import CharacterRetiredBodyJoint
+    if isinstance(value,CharacterRetiredBodyJoint):
+        from .character_registry import safe_json,canonical
+        # A deleted Body tip still has a semantic path and captured source
+        # records. Readdress those records alongside the live parent chain;
+        # retain its original UUID and cached values without recreating it.
+        values={field.name:rebase_plan_paths_after_parts(getattr(value,field.name),paths)
+                for field in fields(value) if field.name!='records'}
+        # Part insertion changes the immediate physical parent, including
+        # when the tip was removed by the source export cleanup. Its bind
+        # identity and values remain historical, but its address follows the
+        # same actual hierarchy as live Body joints.
+        values['parent']=values['path'].rsplit('|',1)[0] or None
+        values['records']=tuple((name,canonical(rebase_plan_paths_after_parts(safe_json(text),paths)))
+                               for name,text in value.records)
+        return replace(value,**values)
     if isinstance(value, BodySkeletonSnapshot):
         if {joint.path for joint in value.joints} == {
                 before for before, _ in paths.body_rewrites}:

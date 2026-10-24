@@ -64,11 +64,16 @@ class MayaFaceCageWeightsMixin:
 
     def _cage_mask_without_perimeter(self,source):
         c=self._cmds; raw=getattr(c,"raw",c)
+        fit=self._fit(required=True)
+        # The MEL stage selects FaceFitSkeleton.Mask as it exists at this
+        # point in the build. Prep can clear this string while the Python
+        # upgrade payload still retains the earlier mask faces.
+        if not (c.getAttr(fit+".Mask") or "").strip():
+            return ()
         mesh,faces,_=self.read_face_mask()
         selected=[self.scene_address(mesh)+f".f[{i}]" for i in faces]
         vertices=set(raw.ls(raw.polyListComponentConversion(selected,toVertex=True),long=True,flatten=True) or [])
-        fit=self._fit(required=True)
-        lash=c.getAttr(fit+".EyeLash") if c.objExists(fit+".EyeLash") else ""
+        lash=self.original_face_part_text('Eyelash')
         if lash:
             raw.select(selected,replace=True)
             raw.select(tuple(self.scene_address(token) for token in lash.split()),deselect=True)

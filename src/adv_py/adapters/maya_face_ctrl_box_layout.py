@@ -1,5 +1,6 @@
 """asFaceCtrlBox / asFaceCreateCtrlBox, including original optional icons."""
 from __future__ import annotations
+from .maya_face_body_roles import face_body_main
 from dataclasses import replace
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.face_ctrl_box import SQUARE, SLIDERS, VISIBILITY, OPTIONAL_ICONS
@@ -243,7 +244,7 @@ class MayaFaceCtrlBoxMixin(MayaFaceControllersMixin):
         c.parent("ctrlBox","ctrlBoxOffset",absolute=True)
         for attr in ("limits",*VISIBILITY):
             c.addAttr("ctrlBox",longName=attr,attributeType="bool",defaultValue=True,keyable=True)
-        if not c.objExists("Main.jointVis"):
+        if not c.objExists(face_body_main(self)+".jointVis"):
             c.addAttr("ctrlBox",longName="jointsVis",attributeType="bool",defaultValue=False,keyable=True)
             c.connectAttr("ctrlBox.jointsVis","FaceJoint_M.visibility")
         for attr in ("AimCtrlVis","RegionsCtrlVis"): c.setAttr("ctrlBox."+attr,False)

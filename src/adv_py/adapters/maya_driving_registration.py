@@ -15,6 +15,46 @@ from adv_py.core.fit_part import FitPartFinalPaths, rebase_plan_paths_after_part
 SDK_MARKER = 'advPySourceDrivingSDK'
 
 
+def preserve_driver_channel_contract(host, stage, original, replacement):
+    """Keep saved portable channel bounds while retaining native authored limits.
+
+    SDK attributes can be edited after registration. Their Maya definitions
+    are copied by the native SDK restoration, independently of the portable
+    animation contract. Only accept the same declared driving control and
+    verify the copied hard AND soft limits before keeping that contract.
+    """
+    old_by_key = {channel.key: channel for channel in original.channels}
+    channels = []
+    for channel in replacement.channels:
+        old = old_by_key.get(channel.key)
+        if (old is None or not channel.key.startswith('driving.')
+                or (old.minimum, old.maximum) == (channel.minimum, channel.maximum)):
+            channels.append(channel)
+            continue
+        definitions = []
+        for owner, row in ((host, old), (stage, channel)):
+            c = owner._cmds
+            root = c.ls(owner.scene_address('DrivingSystem'), long=True) or []
+            physical = owner.scene_address(row.node)
+            control = c.ls(physical, long=True) or []
+            if (len(root) != 1 or len(control) != 1
+                    or control[0].rsplit('|', 1)[0] != root[0]
+                    or row.key != 'driving.' + control[0].rsplit('|', 1)[-1].rsplit(':', 1)[-1] + '.' + row.attribute
+                    or not c.sets(physical, isMember=owner.scene_address('AllSet'))):
+                raise CharacterRegistryError('SDK 属性范围迁移不属于已登记 DrivingSystem：' + row.key)
+            limits = []
+            for exists, query in (('minExists', 'minimum'), ('maxExists', 'maximum'),
+                                  ('softMinExists', 'softMin'), ('softMaxExists', 'softMax')):
+                limits.append(float(c.attributeQuery(row.attribute, node=physical, **{query: True})[0])
+                              if c.attributeQuery(row.attribute, node=physical, **{exists: True}) else None)
+            definitions.append((c.getAttr(physical + '.' + row.attribute, type=True), tuple(limits)))
+        if (definitions[0] != definitions[1]
+                or definitions[1][1][:2] != (channel.minimum, channel.maximum)):
+            raise CharacterRegistryError('重建未保留 SDK 属性的实际类型或硬软范围：' + channel.key)
+        channels.append(replace(channel, minimum=old.minimum, maximum=old.maximum))
+    return replace(replacement, channels=tuple(channels))
+
+
 def _plug(host, plug):
     node, attribute = plug.split('.', 1)
     aliases = {'s': 'scale', 'sx': 'scaleX', 'sy': 'scaleY', 'sz': 'scaleZ'}
@@ -132,6 +172,9 @@ def _rebase_records(host, registration, paths, replacements, descriptor):
             original = c.getAttr(plug) or ''
             if command:
                 updated = _command_addresses(original, physical)
+            elif attribute == 'advPySourceGameScaling':
+                from adv_py.core.original_game_scaling_record import remap_record
+                updated = remap_record(original, both.remap_body_reference)
             elif original.lstrip().startswith(('{', '[')):
                 value = safe_json(original, max_bytes=8_000_000)
                 rebased = rebase_plan_paths_after_parts(value, both)

@@ -1,0 +1,394 @@
+{
+  "updated": "2026-10-11",
+  "status": "paused-by-user",
+  "source_lines": [
+    "78982",
+    "79106-79127",
+    "80634-80724"
+  ],
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "changes": [
+    "Capture raw native Fit descendant order at all three production planners",
+    "Distinguish authored NonSymmetry L from mirrored L",
+    "Keep authored parent side in shared Aim follow, including mirrored-only input",
+    "Preserve saved channel layout independently of native creation order"
+  ],
+  "component": {
+    "pid": 45904,
+    "status": "passed",
+    "process_exited": true,
+    "cases": [
+      {
+        "opm": false,
+        "legacy": false,
+        "source_fit_order": [
+          "|Fit|Head|B_NonSymmetry|BEnd_NonSymmetry",
+          "|Fit|Head|B_NonSymmetry",
+          "|Fit|Head|A|AEnd",
+          "|Fit|Head|A",
+          "|Fit|Head|Parent|C|CEnd",
+          "|Fit|Head|Parent|C",
+          "|Fit|Head|Parent",
+          "|Fit|Head"
+        ],
+        "creation_order": [
+          [
+            "B",
+            "L"
+          ],
+          [
+            "A",
+            "R"
+          ],
+          [
+            "A",
+            "L"
+          ],
+          [
+            "C",
+            "L"
+          ]
+        ],
+        "registration_order": [
+          [
+            "B",
+            [
+              "L"
+            ]
+          ],
+          [
+            "A",
+            [
+              "R",
+              "L"
+            ]
+          ],
+          [
+            "C",
+            [
+              "L"
+            ]
+          ]
+        ],
+        "undo_redo_identity": true,
+        "reopened": true
+      },
+      {
+        "opm": false,
+        "legacy": true,
+        "source_fit_order": [
+          "|Fit|Head|B_NonSymmetry|BEnd_NonSymmetry",
+          "|Fit|Head|B_NonSymmetry",
+          "|Fit|Head|A|AEnd",
+          "|Fit|Head|A",
+          "|Fit|Head|Parent|C|CEnd",
+          "|Fit|Head|Parent|C",
+          "|Fit|Head|Parent",
+          "|Fit|Head"
+        ],
+        "creation_order": [
+          [
+            "B",
+            "L"
+          ],
+          [
+            "A",
+            "R"
+          ],
+          [
+            "A",
+            "L"
+          ],
+          [
+            "C",
+            "L"
+          ]
+        ],
+        "registration_order": [
+          [
+            "A",
+            [
+              "L",
+              "R"
+            ]
+          ],
+          [
+            "B",
+            [
+              "L"
+            ]
+          ],
+          [
+            "C",
+            [
+              "L"
+            ]
+          ]
+        ],
+        "undo_redo_identity": true,
+        "reopened": true
+      },
+      {
+        "opm": true,
+        "legacy": false,
+        "source_fit_order": [
+          "|Fit|Head|B_NonSymmetry|BEnd_NonSymmetry",
+          "|Fit|Head|B_NonSymmetry",
+          "|Fit|Head|A|AEnd",
+          "|Fit|Head|A",
+          "|Fit|Head|Parent|C|CEnd",
+          "|Fit|Head|Parent|C",
+          "|Fit|Head|Parent",
+          "|Fit|Head"
+        ],
+        "creation_order": [
+          [
+            "B",
+            "L"
+          ],
+          [
+            "A",
+            "R"
+          ],
+          [
+            "A",
+            "L"
+          ],
+          [
+            "C",
+            "L"
+          ]
+        ],
+        "registration_order": [
+          [
+            "B",
+            [
+              "L"
+            ]
+          ],
+          [
+            "A",
+            [
+              "R",
+              "L"
+            ]
+          ],
+          [
+            "C",
+            [
+              "L"
+            ]
+          ]
+        ],
+        "undo_redo_identity": true,
+        "reopened": true
+      },
+      {
+        "opm": true,
+        "legacy": true,
+        "source_fit_order": [
+          "|Fit|Head|B_NonSymmetry|BEnd_NonSymmetry",
+          "|Fit|Head|B_NonSymmetry",
+          "|Fit|Head|A|AEnd",
+          "|Fit|Head|A",
+          "|Fit|Head|Parent|C|CEnd",
+          "|Fit|Head|Parent|C",
+          "|Fit|Head|Parent",
+          "|Fit|Head"
+        ],
+        "creation_order": [
+          [
+            "B",
+            "L"
+          ],
+          [
+            "A",
+            "R"
+          ],
+          [
+            "A",
+            "L"
+          ],
+          [
+            "C",
+            "L"
+          ]
+        ],
+        "registration_order": [
+          [
+            "A",
+            [
+              "L",
+              "R"
+            ]
+          ],
+          [
+            "B",
+            [
+              "L"
+            ]
+          ],
+          [
+            "C",
+            [
+              "L"
+            ]
+          ]
+        ],
+        "undo_redo_identity": true,
+        "reopened": true
+      }
+    ],
+    "character_source_orders": [
+      {
+        "namespace": "",
+        "count": 49,
+        "same_native_order": true
+      },
+      {
+        "namespace": "AimOrder",
+        "count": 49,
+        "same_native_order": true
+      }
+    ]
+  },
+  "preceding_complete_character": {
+    "pid": 28872,
+    "status": "passed",
+    "process_exited": true,
+    "scope": "Actual symmetry provenance wired; before native-order and authored-parent-side changes",
+    "lifecycle": {
+      "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-spline-part-lifecycle-current\\traditional\\input.ma",
+      "reused_saved_build": false,
+      "body_joints": 81,
+      "opm": false,
+      "bendy": false,
+      "bendy_count": 0,
+      "bendy_joints": [],
+      "part_joints": 27,
+      "channels": 2540,
+      "skins": [
+        "AdvPy_BodySkin"
+      ],
+      "additional_animated_channels": [],
+      "restricted_skin": false,
+      "portable_pose_roundtrip": true,
+      "portable_animation_roundtrip": true,
+      "native_global_deformation": true,
+      "registry_reopened": true,
+      "fbx_bytes": null,
+      "export_tested": false,
+      "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-provenance-lifecycle-current\\traditional\\original-biped-current.mb",
+      "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-provenance-lifecycle-current\\traditional\\original-biped-rebuilt.mb",
+      "rebuilt_scene_reopened": true,
+      "native_skin_curve_identity_preserved": true,
+      "single_undo_redo_preserved": true,
+      "native_rebuild_retained_skin_animation": true,
+      "skin_weights_membership_preserved": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "all_vertex_rebuild_maximum_error": 0.0,
+      "status": "passed"
+    },
+    "poses": [
+      {
+        "scene": "original-biped-current.mb",
+        "status": "passed",
+        "total": 34,
+        "passed": 34,
+        "maximum_error": 3.1161475173032658e-06,
+        "tolerance": 0.0001
+      },
+      {
+        "scene": "original-biped-rebuilt.mb",
+        "status": "passed",
+        "total": 34,
+        "passed": 34,
+        "maximum_error": 3.1161475200940885e-06,
+        "tolerance": 0.0001
+      }
+    ]
+  },
+  "current_complete_character": {
+    "pid": 23688,
+    "status": "paused-by-user",
+    "process_exited": true,
+    "report": "validation/results/source-fit-aim-native-order-lifecycle-current/report.json",
+    "configurations": [
+      {
+        "name": "traditional",
+        "stage": "complete",
+        "lifecycle": {
+          "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-spline-part-lifecycle-current\\traditional\\input.ma",
+          "reused_saved_build": false,
+          "body_joints": 81,
+          "opm": false,
+          "bendy": false,
+          "bendy_count": 0,
+          "bendy_joints": [],
+          "part_joints": 27,
+          "channels": 2540,
+          "skins": [
+            "AdvPy_BodySkin"
+          ],
+          "additional_animated_channels": [],
+          "restricted_skin": false,
+          "portable_pose_roundtrip": true,
+          "portable_animation_roundtrip": true,
+          "native_global_deformation": true,
+          "registry_reopened": true,
+          "fbx_bytes": null,
+          "export_tested": false,
+          "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-native-order-lifecycle-current\\traditional\\original-biped-current.mb",
+          "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-native-order-lifecycle-current\\traditional\\original-biped-rebuilt.mb",
+          "rebuilt_scene_reopened": true,
+          "native_skin_curve_identity_preserved": true,
+          "single_undo_redo_preserved": true,
+          "native_rebuild_retained_skin_animation": true,
+          "skin_weights_membership_preserved": true,
+          "all_vertex_frames": [
+            1,
+            3,
+            5
+          ],
+          "all_vertex_rebuild_maximum_error": 0.0,
+          "status": "passed"
+        },
+        "lifecycle_pid": 37896,
+        "poses": [
+          {
+            "scene": "original-biped-current.mb",
+            "status": "passed",
+            "passed": 34,
+            "total": 34,
+            "maximum_error": 3.1161475173032658e-06,
+            "tolerance": 0.0001
+          },
+          {
+            "scene": "original-biped-rebuilt.mb",
+            "status": "passed",
+            "passed": 34,
+            "total": 34,
+            "maximum_error": 3.1161475200940885e-06,
+            "tolerance": 0.0001
+          }
+        ]
+      },
+      {
+        "name": "opm",
+        "stage": "build",
+        "lifecycle": null,
+        "lifecycle_pid": null,
+        "poses": []
+      }
+    ]
+  },
+  "remaining": [
+    "Resume saved traditional source comparison with ADV_RP_FOLLOW_REUSE=1, then OPM after external Maya exits",
+    "Oldest saved Toe bind differences unresolved",
+    "Face and complete project scope unchanged"
+  ]
+}

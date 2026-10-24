@@ -6,9 +6,11 @@ RECORDS=('advPySourceIkRootFrame','advPySourceRpDynamics','advPySourceFkMatrix',
          'advPySourceBendyMatrix','advPySourceLocalScale','advPySourcePartPoint',
          'advPySourceTwistPosition','advPySourceTwistReference',
          'advPySourceInbetweenMatrix','advPySourceBendyMicroMatrix',
-         'advPySourceBodyMatrix','advPySourceEndMatrix','advPySourceLegLockMatrix',
+         'advPySourceEndMatrix',
          'advPySourceRpFollow','advPySourceRpScaleLayout','advPySourceRpModePlan',
-         'advPySourceLimbAim','advPySourceDrivingSDK','advPySourceControlOrient')
+         'advPySourceLimbAim','advPySourceDrivingSDK','advPySourceControlOrient',
+         'advPySourceUnrealTwist','advPySourceGameScaling',
+         'advPySourceSplineAlignment')
 
 
 def rename_addresses(host, renames):
@@ -35,7 +37,12 @@ def rename_addresses(host, renames):
                 raise CharacterRegistryError('来源图记录属性类型变化：'+plug)
             from adv_py.core.character_registry import safe_json
             raw=safe_json(c.getAttr(plug))
-            updated=rewrite(raw)
+            if attribute == 'advPySourceGameScaling':
+                from adv_py.core.original_game_scaling_record import remap_record
+                encoded = remap_record(c.getAttr(plug), lambda address: renames.get(address, address))
+                updated=safe_json(encoded)
+            else:
+                updated=rewrite(raw)
             if updated==raw:continue
             locked=bool(c.getAttr(plug,lock=True))
             try:
@@ -43,3 +50,21 @@ def rename_addresses(host, renames):
                 c.setAttr(plug,canonical(updated),type='string')
             finally:c.setAttr(plug,lock=locked)
             host._transaction_changed=True
+    # The final native unitConversion naming pass runs after registration.
+    # Preserve its exact graph identities as well as the source records;
+    # recapturing all inputs here would silently accept unrelated changes.
+    from adv_py.core.character_registry import REGISTRY_NAME, decode_registration, encode_registration
+    from adv_py.core.fit_part import FitPartFinalPaths, rebase_plan_paths_after_parts
+    plug = REGISTRY_NAME + '.advPyRegistryDocument'
+    if c.objExists(plug):
+        before = decode_registration(c.getAttr(plug))
+        after = rebase_plan_paths_after_parts(
+            before, FitPartFinalPaths((), (), tuple(renames.items())))
+        if after != before:
+            locked = bool(c.getAttr(plug, lock=True))
+            try:
+                c.setAttr(plug, lock=False)
+                c.setAttr(plug, encode_registration(after), type='string')
+            finally:
+                c.setAttr(plug, lock=locked)
+            host._transaction_changed = True

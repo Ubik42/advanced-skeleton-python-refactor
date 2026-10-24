@@ -7,6 +7,7 @@ from .maya_source_spline_mode import create as create_mode
 MARKER='advPySourceRpMode'
 UNIT_MARKER='advPySourceRpModeUnit'
 PLAN_MARKER='advPySourceRpModePlan'
+REVERSE_MARKER='advPySourceRpModeReverse'
 
 
 def create(host,plan):
@@ -19,6 +20,12 @@ def create(host,plan):
     # asUnitConvertAndReverse always creates this reverse, including RP.
     c.createNode('reverse',name=reverse,skipSelect=True)
     c.connectAttr(mode.weight_unit+'.output',reverse+'.inputX')
+    # Replacing the last transitional FK constraint can make Maya prune its
+    # upstream reverse. Retain the native asUnitConvertAndReverse node through
+    # bookkeeping ownership, as for the source Spline mode reverse.
+    c.addAttr(mode.control,longName=REVERSE_MARKER,attributeType='message')
+    c.connectAttr(reverse+'.message',mode.control+'.'+REVERSE_MARKER)
+    c.setAttr(mode.control+'.'+REVERSE_MARKER,lock=True)
     for node,marker in ((mode.control,MARKER),(mode.weight_unit,UNIT_MARKER)):
         c.addAttr(node,longName=marker,attributeType='bool',defaultValue=True)
         c.setAttr(node+'.'+marker,True,lock=True)
@@ -120,6 +127,7 @@ def audit_registered(host,registration):
     c=host._cmds
     channels={ch.key:ch for ch in registration.channels}
     owned={node.path for node in registration.nodes}
+    owned.update(row.path for row in registration.retired_body)
     for binding in registration.source_limbs:
         channel=channels[binding.blend_key]
         control=channel.node
@@ -179,6 +187,10 @@ def audit_registered(host,registration):
         if any(not c.isConnected(source,target) for source,target in edges):
             raise CharacterRegistryError('来源 RP FKIK 用户值或显示接线改变')
         reverse='FKIKBlend'+token+'Reverse'
+        owner=control+'.'+REVERSE_MARKER
+        if c.objExists(owner) and (not c.getAttr(owner,lock=True)
+                or not c.isConnected(reverse+'.message',owner)):
+            raise CharacterRegistryError('来源 RP FKIK 反向权重归属改变')
         if c.nodeType(reverse)!='reverse' or not c.isConnected(weight+'.output',reverse+'.inputX'):
             raise CharacterRegistryError('来源 RP FKIK 原版反向权重接线改变')
         normalized=weight+'.output'

@@ -1,5 +1,6 @@
 """Shared asFaceEnsureAdvancedBase hierarchy and geometry layer port."""
 from __future__ import annotations
+from .maya_face_body_roles import face_body_main
 from dataclasses import replace
 from adv_py.core.body_parent_constraint import plan_body_parent_constraint
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -50,7 +51,7 @@ class MayaFaceBaseMixin:
                 raise FitSkeletonValidationError("Multi Skin Clusters 缺少 Body DeformationSystem")
             c.parent(joint,"DeformationSystem",absolute=True)
             c.setAttr("FaceJoint_M.inheritsTransform",False,lock=True)
-            if c.objExists("Main.jointVis"): c.connectAttr("Main.jointVis","FaceJoint_M.visibility")
+            if c.objExists(face_body_main(self)+".jointVis"): c.connectAttr(face_body_main(self)+".jointVis","FaceJoint_M.visibility")
         else: c.parent(joint,head,absolute=True)
         c.setAttr("FaceJoint_M.segmentScaleCompensate",False)
         return c.ls("FaceJoint_M",long=True,type="joint")[0]
@@ -134,6 +135,33 @@ class MayaFaceBaseMixin:
             else:
                 raw.sets(node,remove=owner)
         return tuple(adopted)
+
+    def journal_original_face_bind_pose_names(self, when, geometry):
+        """Keep existing Skin pose identities/names across native build replay."""
+        self._require_transaction()
+        import json
+        raw=getattr(self._cmds,"raw",self._cmds)
+        poses=[]
+        for mesh in geometry:
+            for skin in raw.listHistory(self.scene_address(mesh),pruneDagObjects=True) or []:
+                if raw.nodeType(skin)!="skinCluster": continue
+                poses.extend(raw.listConnections(skin+".bindPose",source=True,
+                    destination=False,type="dagPose") or [])
+        # Private Lip/Cage curve Skins are not in the pruned production
+        # mesh history. Include the original Face-owned pose/Skin members.
+        for owner in ("FaceAllSet", "prefix_FaceAllSet"):
+            address=self.scene_address(owner)
+            if not raw.objExists(address): continue
+            members=raw.sets(address,query=True) or []
+            if not members: continue
+            poses.extend(raw.ls(members,type="dagPose") or [])
+            for skin in raw.ls(members,type="skinCluster") or []:
+                poses.extend(raw.listConnections(skin+".bindPose",source=True,
+                    destination=False,type="dagPose") or [])
+        poses=list(dict.fromkeys(poses))
+        if poses:
+            raw.advPySkinPoseNames(when,json.dumps(poses))
+        return tuple(poses)
 
     def register_face_module_nodes(self, before, module_set, *, production_skins=(), reuse=False):
         """Append a completed module without replacing existing Face ownership."""
@@ -239,8 +267,8 @@ class MayaFaceBaseMixin:
             c.connectAttr("MainScaleMultiplyDivide.output",main+".input1")
             if c.getAttr("MainScaleMultiplyDivide.input1X",settable=True):
                 c.setAttr("MainScaleMultiplyDivide.input1",1,1,1)
-        elif c.objExists("Main"):
-            c.connectAttr("Main.scale",main+".input1")
+        elif c.objExists(face_body_main(self)):
+            c.connectAttr(face_body_main(self)+".scale",main+".input1")
         for node in ("FaceMotionSystem","FaceDeformationFollowHead"):
             self._face_base_follow(head,node)
         pose=c.createNode("transform",name="faceBuildPose",parent="FaceMotionSystem")

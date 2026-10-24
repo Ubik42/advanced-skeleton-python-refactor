@@ -1,0 +1,222 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 77264,
+  "scope": "Authored asymmetric Fit follow, named follow, spaces, IK follow and parent constraint; full preserved rebuild; no attachment mesh or FBX.",
+  "authored_fields": [
+    [
+      "Scapula",
+      "follow",
+      "Root"
+    ],
+    [
+      "Scapula_NonSymmetry",
+      "follow",
+      "Hip"
+    ],
+    [
+      "Wrist",
+      "ikFollow",
+      "Chest"
+    ],
+    [
+      "Wrist_NonSymmetry",
+      "ikFollow",
+      "Root"
+    ],
+    [
+      "IndexFinger1",
+      "parentConstraint",
+      "Wrist"
+    ],
+    [
+      "IndexFinger1_NonSymmetry",
+      "parentConstraint",
+      "Chest"
+    ],
+    [
+      "RingFinger1",
+      "followRoot",
+      3.0
+    ],
+    [
+      "RingFinger1_NonSymmetry",
+      "followRoot",
+      7.0
+    ],
+    [
+      "PinkyFinger1",
+      "followSpaces",
+      true
+    ],
+    [
+      "PinkyFinger1_NonSymmetry",
+      "followSpaces",
+      true
+    ]
+  ],
+  "native_reference_pid": 56884,
+  "lifecycle": {
+    "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-follow-current\\input.ma",
+    "reused_saved_build": false,
+    "body_joints": 72,
+    "opm": false,
+    "bendy": true,
+    "bendy_count": 3,
+    "bendy_joints": [
+      "Shoulder",
+      "Elbow"
+    ],
+    "part_joints": 18,
+    "channels": 2313,
+    "skins": [
+      "AdvPy_BodySkin"
+    ],
+    "additional_animated_channels": [],
+    "restricted_skin": false,
+    "portable_pose_roundtrip": true,
+    "portable_animation_roundtrip": true,
+    "native_global_deformation": true,
+    "registry_reopened": true,
+    "fbx_bytes": null,
+    "export_tested": false,
+    "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-follow-current\\python\\original-biped-current.mb",
+    "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-follow-current\\python\\original-biped-rebuilt.mb",
+    "rebuilt_scene_reopened": true,
+    "native_skin_curve_identity_preserved": true,
+    "single_undo_redo_preserved": true,
+    "native_rebuild_retained_skin_animation": true,
+    "skin_weights_membership_preserved": true,
+    "all_vertex_frames": [
+      1,
+      3,
+      5
+    ],
+    "all_vertex_rebuild_maximum_error": 6.316753342616721e-09,
+    "status": "passed"
+  },
+  "poses": [
+    {
+      "scene": "original-biped-current.mb",
+      "case": "chest",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_follow",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_follow",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_ik_follow",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_ik_follow",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_named",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_named",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_space",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_space",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_constraint",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_constraint",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "chest",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_follow",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_follow",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_ik_follow",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_ik_follow",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_named",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_named",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_space",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_space",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_constraint",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_constraint",
+      "maximum_error": 2.633215170111359e-06
+    }
+  ],
+  "neutral_errors": {
+    "original-biped-current.mb": 2.6332151703646767e-06,
+    "original-biped-rebuilt.mb": 2.633215170111359e-06
+  },
+  "process_exited": true,
+  "threshold": 0.0001,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "runtime_report": "validation/results/source-non-symmetry-follow-current/report.json",
+  "remaining": [
+    "MainExtra, complete namespaces and old approximate graph migration not covered",
+    "Extended mixed space/weight animation separately accepted for OPM only",
+    "FBX and default model appearance excluded"
+  ]
+}

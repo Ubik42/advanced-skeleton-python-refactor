@@ -1,4 +1,5 @@
 """Original conversion template, joint and additional Skin layers."""
+from .maya_face_body_roles import face_body_main
 from .maya_original_skin_history import bind_original_skin, remove_unused_for_skin
 
 
@@ -41,8 +42,8 @@ class MayaFaceBSLayersMixin:
                 c.setAttr(child + ".v", False, lock=True)
         c.parent("FaceJoint_M", "FaceDeformationSystem")
         c.setAttr("FaceJoint_M.v", lock=False)
-        if c.objExists("Main.jointVis"):
-            c.connectAttr("Main.jointVis", "FaceJoint_M.v")
+        if c.objExists(face_body_main(self)+".jointVis"):
+            c.connectAttr(face_body_main(self)+".jointVis", "FaceJoint_M.v")
         c.createNode("transform", name="DeformationLayers", parent="FaceDeformationSystem")
         for layer in ("TemplateLayer", "FaceJointsLayer"):
             c.createNode("transform", name=layer, parent="DeformationLayers")
@@ -121,6 +122,9 @@ class MayaFaceBSLayersMixin:
                     c.parent(children, "SideReverse" + side)
                 c.delete(group)
         c.parent("EyeOffset_R", "EyeOffset_L", "EyeControls")
+        # MEL 43560 switches to the visible UpMidLo meshes before native
+        # Skin painting. The paint context must operate on this layer.
+        self.show_original_face_layer_in_transaction("UpMidLo")
         children = c.listRelatives("UpMidLoLayer", children=True, type="transform") or []
         joints = ["upperFaceJoint_M", "middleFaceJoint_M", "lowerFaceJoint_M", "FaceJoint_M"]
         for mesh in children:
@@ -164,8 +168,9 @@ class MayaFaceBSLayersMixin:
                 if stem == "upper":
                     raise
         raw.polySelectConstraint(mode=0)
+        # Source 43604 selects the whole mesh before its two paint floods.
         for stem in ("upper", "lower"):
-            self.smooth_original_face_flood(main + "SC", raw.ls(self.scene_address(main) + ".vtx[*]", flatten=True) or [], stem + "FaceJoint_M", "middleFaceJoint_M", 10)
+            self.smooth_original_face_flood(main + "SC", (main,), stem + "FaceJoint_M", "middleFaceJoint_M", 10)
         remove_unused_for_skin(raw, self.scene_address(main + "SC"))
         for mesh in children:
             if self._original_restore_leaf(mesh) != main:

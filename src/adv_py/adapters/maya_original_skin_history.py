@@ -40,6 +40,38 @@ def remove_unused_for_skin(commands, skin):
     return count
 
 
+def native_skin_cluster_chain(commands, geometry):
+    """Maya skinClusterChain: reverse the deformation chain, then unique.
+
+    deformableShape's chain excludes unrelated upstream geometry histories.
+    This is distinct from ADV's asGetSkinCluster interest-level query above.
+    """
+    chain = commands.deformableShape(geometry, ch=True) or []
+    skins = (commands.ls(chain, type='skinCluster') or []) if chain else []
+    return tuple(dict.fromkeys(reversed(skins)))
+
+
+def remove_unused_selected_skin_influences(commands):
+    """Maya removeUnusedInfluences() with filterSelected=0.
+
+    The empty filter still chooses only the first SkinCluster in each native
+    chain. Keep selected-object order, including repeated visits to a Skin
+    through a selected transform and its shape, as Autodesk's helper does.
+    """
+    operated = removed = 0
+    for geometry in commands.ls(selection=True, objectsOnly=True) or []:
+        chain = native_skin_cluster_chain(commands, geometry)
+        if not chain:
+            continue
+        operated += 1
+        removed += remove_unused_for_skin(commands, chain[0])
+    if not operated:
+        raise RuntimeError('没有选中可清理无用影响的蒙皮对象')
+    if removed:
+        commands.select(commands.ls(selection=True) or [], replace=True)
+    return removed
+
+
 def new_original_skin_clusters(*, commands=None, namespace=None, mel=None,
                                maximum_influences=3):
     """Maya newSkinCluster with the flags used by ADV's original bind actions.

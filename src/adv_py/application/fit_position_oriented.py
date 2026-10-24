@@ -6,6 +6,7 @@ from typing import Protocol
 
 from adv_py.core.fit_orientation import (
     FitOrientationRequest,
+    FitOrientationSnapshot,
     select_fit_orientation_child,
 )
 from adv_py.core.fit_position import FitJointPositionPatch
@@ -29,11 +30,17 @@ class OrientedFitPositionHost(FitPositionHost, FitOrientationAutoHost, Protocol)
 @dataclass(frozen=True, slots=True)
 class OrientedFitPositionResult:
     position: FitPositionEditResult
-    orientation: FitOrientationAutoResult | None
+    orientation: FitOrientationAutoResult | NativeFitOrientationResult | None
 
     @property
     def plan(self):
         return self.position.plan
+
+
+@dataclass(frozen=True,slots=True)
+class NativeFitOrientationResult:
+    aimed_parents: tuple[str,...]
+    verified: FitOrientationSnapshot
 
 
 class EditAndOrientFitJointPositions:
@@ -66,6 +73,15 @@ class EditAndOrientFitJointPositions:
             EditFitJointPositions._verify(plan, moved, settings)
             position = FitPositionEditResult(plan, moved)
             snapshot = self._host.capture_fit_orientation(container)
+            native=getattr(self._host,'update_source_fit_orientations',None)
+            if callable(native):
+                from adv_py.core.source_fit_mode import source_fit_mode_selection
+                selected=tuple(change.joint for change in plan.changes)
+                dispatch=source_fit_mode_selection(snapshot,selected)
+                applied=native(dispatch.aiming_children,container=container)
+                verified=self._host.capture_fit_orientation(container)
+                return OrientedFitPositionResult(position,
+                    NativeFitOrientationResult(tuple(applied or ()),verified))
             nodes = {node.path: node for node in snapshot.hierarchy.joints}
             targets: set[str] = set()
             for change in plan.changes:

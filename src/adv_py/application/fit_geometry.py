@@ -1,4 +1,6 @@
 """Display and rebuild the source FitGeometry visualizer graph."""
+from contextlib import nullcontext
+
 class UpdateFitGeometry:
     def __init__(self,host):self.host=host
 
@@ -8,7 +10,11 @@ class UpdateFitGeometry:
         if gap is not None and (isinstance(gap,bool) or not isinstance(gap,(int,float))
                                 or not 0<=gap<=1):
             raise ValueError('Fit 几何间距必须在 0 到 1 之间')
-        plans=self.host.capture_fit_geometry()
+        mode_scope = getattr(self.host, 'fit_geometry_mode_scope', None)
+        with mode_scope(visible) if mode_scope is not None else nullcontext():
+            return self._execute(visible, geometry_type, gap)
+
+    def _execute(self, visible, geometry_type, gap):
         with self.host.transaction('更新 Fit 几何显示'):
             # File import must precede Fit edits: Maya import Undo restores
             # the pre-import scene, including its attributes and orientation.

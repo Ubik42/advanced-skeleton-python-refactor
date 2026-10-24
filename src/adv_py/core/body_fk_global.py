@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from .body_limb_controls import BodyLimbFkControlSpec
 from .fit_metadata import FitJointMetadata
+from .source_fit_identity import source_fit_control_reference
 
 
 GLOBAL_FOLLOW = "|Group|MotionSystem|GlobalSystem|GlobalFollowMain"
@@ -90,6 +91,7 @@ class BodyFkGlobalState:
 def plan_body_fk_global(
     metadata: tuple[FitJointMetadata, ...],
     controls: tuple[BodyLimbFkControlSpec, ...],
+    *, instances=(),
 ) -> tuple[BodyFkGlobalSpec, ...]:
     by_name: dict[str, list[FitJointMetadata]] = {}
     for item in metadata:
@@ -98,8 +100,11 @@ def plan_body_fk_global(
     result: list[BodyFkGlobalSpec] = []
     names: set[str] = set()
     for control in controls:
-        matches = next((by_name[name] for name in control.fit_joint_names
-                        if name in by_name), ())
+        reference = source_fit_control_reference(control, instances)
+        matches = ([item for item in metadata if item.joint == reference]
+                   if reference is not None else
+                   next((by_name[name] for name in control.fit_joint_names
+                         if name in by_name), ()))
         if len(matches) > 1:
             raise ValueError("Global 来源 Fit 关节短名不唯一："
                              + "／".join(control.fit_joint_names))

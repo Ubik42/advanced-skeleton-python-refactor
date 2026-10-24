@@ -87,6 +87,8 @@ class BodySpinePlan:
 
     @property
     def node_names(self) -> tuple[str, ...]:
+        from .body_parent_constraint import _node_stem
+        chest_stem, chest_side = _node_stem(self.chest_space)
         return tuple(path.rsplit("|", 1)[-1] for path in (
             self.root_path, self.ik_offset, self.ik_control, self.ik_control + "Shape",
             self.pole_offset, self.pole_control, self.pole_control + "Shape",
@@ -116,7 +118,7 @@ class BodySpinePlan:
             "AdvPy_SpinePoleLockBlend1", "AdvPy_SpinePoleLockBlend2",
             "AdvPy_SpineAntiPopNormal", "AdvPy_SpineAntiPopCurve",
             "AdvPy_SpineAntiPopWeight", "AdvPy_SpineAntiPopBlend",
-        ) + (("AdvPy_SpineChestSpaceMM", "AdvPy_SpineChestSpacePM")
+        ) + ((chest_stem + 'MM' + chest_side, chest_stem + 'PM' + chest_side)
              if self.use_offset_parent_matrix else
              ("AdvPy_SpineChestSpaceParent",))
 

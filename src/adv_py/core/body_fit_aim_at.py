@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .fit_metadata import FitJointMetadata
+from .source_fit_identity import source_fit_build_name, source_fit_control_matches, source_fit_side_sign
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,9 +26,13 @@ class BodyFitAimAtSpec:
     delta_matrix: str
     rotation_pick: str
     receiver_matrix: str
+    source_native: bool = False
 
     @property
     def node_names(self) -> tuple[str, ...]:
+        if self.source_native:
+            return (self.aim_matrix, self.corrected_matrix, self.blend_matrix,
+                    self.weight_node, self.delta_matrix, self.receiver_matrix)
         return (self.aim_matrix, self.corrected_matrix,
                 self.blend_matrix, self.weight_node,
                 self.delta_matrix, self.rotation_pick,
@@ -41,11 +46,13 @@ class BodyFitAimAtState:
     target_world: tuple[float, ...]
     receiver_opm_source: str | None
     receiver_opm_value: tuple[float, ...]
+    receiver_inherits_transform: bool = True
 
 
 def plan_body_fit_aim_at(
     metadata: tuple[FitJointMetadata, ...],
-    controls: tuple, body_joints: tuple,
+    controls: tuple, body_joints: tuple, *, instances: tuple = (),
+    source_native: bool = False,
 ) -> tuple[BodyFitAimAtSpec, ...]:
     by_name = {joint.name.rsplit(":", 1)[-1]: joint.path
                for joint in body_joints}
@@ -58,8 +65,10 @@ def plan_body_fit_aim_at(
         if item.aim_at is None:
             continue
         source_name = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if instances:
+            source_name = source_fit_build_name(source_name)
         matches = tuple(control for control in controls
-                        if source_name in control.fit_joint_names)
+                        if source_fit_control_matches(item, control, instances))
         for control in matches:
             side = control.side.value
             source_body = by_name.get(source_name + "_" + side)
@@ -70,7 +79,25 @@ def plan_body_fit_aim_at(
             if not any(path.startswith(source_body + "|")
                        for path in body_paths):
                 continue
-            target_body = (by_name.get(item.aim_at + "_" + side)
+            if source_native:
+                target_name = source_fit_build_name(item.aim_at)
+                # MEL inherits noMirror along the physical Fit ancestry.
+                # Output count cannot distinguish a center joint from noMirror.
+                ancestry = item.joint.split('|')
+                ancestors = {'|'.join(ancestry[:n]) for n in range(1, len(ancestry)+1)}
+                no_mirror = any(row.no_mirror for row in metadata if row.joint in ancestors)
+                target_instances = tuple(i for i in instances
+                    if source_fit_build_name(i.source_joint.rsplit('|', 1)[-1]) == target_name
+                    and not i.source_joint.rsplit('|', 1)[-1].endswith('_NonSymmetry')
+                    and not i.mirrored)
+                if not target_instances:
+                    continue  # MEL skips a missing authored Fit aimAt target.
+                target_side = target_instances[0].side.value if no_mirror else side
+                target_body = by_name.get(target_name + '_' + target_side)
+                if target_body is None:
+                    continue  # Original warning/continue when FK target is absent.
+            else:
+                target_body = (by_name.get(item.aim_at + "_" + side)
                            or by_name.get(item.aim_at + "_M")
                            or (by_name.get(item.aim_at + "_R")
                                if side == "M" else None))
@@ -83,11 +110,14 @@ def plan_body_fit_aim_at(
                                  + target_body)
             target_side = target_body.rsplit("_", 1)[-1]
             target_controls = tuple(candidate for candidate in controls
-                if item.aim_at in candidate.fit_joint_names
+                if any(source_fit_build_name(name) == source_fit_build_name(item.aim_at)
+                       for name in candidate.fit_joint_names)
                 and candidate.side.value == target_side)
             direct = tuple(candidate for candidate in target_controls
                            if candidate.driven_joint == target_body)
             target_controls = direct or target_controls
+            if source_native and not target_controls:
+                continue
             if len(target_controls) != 1:
                 raise ValueError("Fit AimAt 缺少唯一目标 FK 控制："
                                  + item.aim_at + "_" + target_side)
@@ -107,11 +137,20 @@ def plan_body_fit_aim_at(
                 control.offset_path, receiver,
                 target_controls[0].control_path,
                 item.aim_axis, item.aim_up_axis,
-                item.aim_up_object, -1 if side == "L" else 1,
+                item.aim_up_object, source_fit_side_sign(source_name + "_" + side, instances),
                 stem + "AM", stem + "CorrectedMM", stem + "BM",
                 stem + "Weight", stem + "DeltaMM",
-                stem + "RotationPM", stem + "ReceiverMM"))
-        if not matches and any(source_name + "_" + side in by_name
+                stem + "RotationPM", stem + "ReceiverMM", source_native))
+            if source_native:
+                from dataclasses import replace
+                result[-1] = replace(result[-1],
+                    mirror_sign=source_fit_side_sign(source_name + '_' + side, instances),
+                    aim_matrix=namespace + 'FKAimAt' + source_name + '_' + side,
+                    corrected_matrix=namespace + 'AimAt' + source_name + '_' + side,
+                    blend_matrix=namespace + 'Static' + source_name + '_' + side,
+                    weight_node=namespace + 'FK' + source_name + '_' + side + 'AimAtSetRange',
+                    delta_matrix=namespace + 'FKAimAt' + source_name + '_' + side + '_aimConstraint1')
+        if not source_native and not matches and any(source_name + "_" + side in by_name
                                for side in ("M", "R", "L")):
             raise ValueError("Fit AimAt 来源缺少 FK 控制：" + source_name)
     names = tuple(name for spec in result for name in spec.node_names)

@@ -51,13 +51,11 @@ class MayaFaceJawFitHost(MayaFacePreHost):
         c = self._cmds
         shape = self._jaw_curve_shape(curve)
         spans = int(c.getAttr(shape + ".spans"))
-        degree = int(c.getAttr(shape + ".degree"))
-        last = spans + degree - 1
         start = c.xform(curve + ".cv[0]",query=True,worldSpace=True,translation=True)
-        end = c.xform(curve + f".cv[{last}]",query=True,worldSpace=True,translation=True)
+        end = c.xform(curve + '.cv[99]',query=True,worldSpace=True,translation=True)
         self._jaw_rebuild(curve,20)
-        locator = c.spaceLocator(name="constraintLoc#")[0]
-        offset_locator = c.spaceLocator(name="constraintLocOffset#")[0]
+        locator = c.spaceLocator(name="constraintLoc")[0]
+        offset_locator = c.spaceLocator(name="constraintLoc2")[0]
         offset_locator = c.parent(offset_locator,locator,relative=True)[0]
         c.setAttr(offset_locator + ".translateX",offset)
         c.geometryConstraint(mesh,locator,weight=1)
@@ -72,7 +70,7 @@ class MayaFaceJawFitHost(MayaFacePreHost):
         self._jaw_rebuild(curve,spans)
         c.delete(locator)
         c.xform(curve + ".cv[0]",worldSpace=True,translation=start)
-        c.xform(curve + f".cv[{spans+2}]",worldSpace=True,translation=end)
+        c.xform(curve + '.cv[99]',worldSpace=True,translation=end)
 
     def create_jaw_fit_curves(self, source):
         self._require_transaction()
@@ -84,6 +82,8 @@ class MayaFaceJawFitHost(MayaFacePreHost):
         def curve(name,points,color,spans=None):
             node = c.curve(name=name,degree=1,point=points)
             shape = self._jaw_curve_shape(node)
+            c.rename(shape,name+'Shape')
+            shape=self._jaw_curve_shape(node)
             c.setAttr(shape + ".overrideEnabled",True)
             c.setAttr(shape + ".overrideColor",color)
             if spans is not None: self._jaw_rebuild(node,spans)

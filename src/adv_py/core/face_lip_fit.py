@@ -18,6 +18,7 @@ class LipFitInput:
     face_vertices: tuple[tuple[int, ...], ...]
     non_symmetrical: bool = False
     previous_upper_start: int | None = None
+    previous_left_upper_start: int | None = None
 
 @dataclass(frozen=True, slots=True)
 class LipFitSide:
@@ -60,7 +61,9 @@ def _walk(graph,start,end,first_neighbor,limit):
         remaining=[other for _,other in graph[current] if other!=previous]
         if len(remaining)!=1: raise ValueError("Lip 边环连接不唯一")
         previous,current=current,remaining[0]
-    raise ValueError("Lip 遍历超过原版顶点步数上限")
+    # MEL retains the curve accumulated at the loop cap; it does not throw
+    # a new traversal-limit error after 199 / 500 iterations.
+    return tuple(arc)
 
 
 def _adjacency(source):
@@ -70,13 +73,14 @@ def _adjacency(source):
     return result
 
 
-def _upper_detector(source,first,second,max_y_vertex):
+def _upper_detector(source,first,second,max_y_vertex, *,left=False):
     one_is_upper=max_y_vertex in first
     if source.part=="Outer":
         return source.positions[first[0]][1]>source.positions[second[0]][1]
-    if source.previous_upper_start is None: return one_is_upper
+    previous=(source.previous_left_upper_start if left else source.previous_upper_start)
+    if previous is None: return one_is_upper
     adjacency=_adjacency(source)
-    selected={source.previous_upper_start}
+    selected={previous}
     # Main uses Outer and grows 18 times; Inner uses Main and grows 10 times.
     for _ in range(18 if source.part=="Main" else 10):
         selected|={other for vertex in selected for other in adjacency[vertex]}
@@ -90,7 +94,8 @@ def _arcs(source,graph,start,end,lip_starts,left=False,forced_lower=None):
     # xform(edge) returns two endpoints; comparing their X sums is equivalent
     # to comparing the neighbor X at the common start, preserving Maya ties.
     first,second=neighbors
-    condition=source.positions[first][0]>source.positions[second][0]
+    condition=(source.positions[start][0]+source.positions[first][0])>(
+               source.positions[start][0]+source.positions[second][0])
     if left: condition=not condition
     if condition: first,second=second,first
     first_arc=_walk(graph,start,end,first,199)
@@ -125,17 +130,35 @@ def plan_lip_fit(source: LipFitInput) -> LipFitPlan:
         extrema=[v for v in vertices if source.positions[v][1]>average]
     central=[v for v in extrema if source.positions[v][0]<.001]
     if not central: raise ValueError("Lip 边环缺少原版右半边或中心点")
-    start=max(central,key=lambda v:source.positions[v][0])
-    end=min(extrema,key=lambda v:source.positions[v][0])
+    # Native extrema use strict comparisons with +/-999 sentinels. Equal
+    # coordinates retain the first component in Maya's numeric order.
+    start=end=max_y=None
+    max_x=max_height=-999.
+    min_x=999.
+    for vertex in extrema:
+        x,y,_=source.positions[vertex]
+        if x<min_x:
+            min_x,end=x,vertex
+        if x<.001 and x>max_x:
+            max_x,start=x,vertex
+        if x<.001 and y>max_height:
+            max_height,max_y=y,vertex
+    if start is None or end is None or max_y is None:
+        raise ValueError("Lip 无法在原版 +/-999 范围内确定端点")
     if source.corners:
-        candidates=[v for v in source.corners if v!=start]
-        if candidates: end=min(candidates,key=lambda v:source.positions[v][0])
+        corner_min=999.
+        for vertex in source.corners:
+            if vertex!=start and source.positions[vertex][0]<corner_min:
+                corner_min,end=source.positions[vertex][0],vertex
     lip_starts=tuple(v for v in source.corners if v!=end)
     if len(lip_starts)==1: lip_starts=()
-    if len(lip_starts)>1: start=max(lip_starts,key=lambda v:source.positions[v][1])
+    if len(lip_starts)>1:
+        corner_max=-999.
+        for vertex in lip_starts:
+            if source.positions[vertex][1]>corner_max:
+                corner_max,start=source.positions[vertex][1],vertex
     if start==end: raise ValueError("Lip 中心点和嘴角重合")
     first,second,opposite=_arcs(source,graph,start,end,lip_starts)
-    max_y=max(central,key=lambda v:source.positions[v][1])
     one_upper=_upper_detector(source,first,second,max_y)
     upper,lower=(first,second) if one_upper else (second,first)
     right=LipFitSide("",upper,lower)
@@ -153,7 +176,8 @@ def plan_lip_fit(source: LipFitInput) -> LipFitPlan:
         first_l,second_l,_=_arcs(source,graph,upper[0],left_end,(upper[0],lower[0]),
                                 left=True,forced_lower=lower[0])
         max_y_l=max(vertices,key=lambda v:source.positions[v][1])
-        upper_l,lower_l=(first_l,second_l) if _upper_detector(source,first_l,second_l,max_y_l) else (second_l,first_l)
+        upper_l,lower_l=(first_l,second_l) if _upper_detector(
+            source,first_l,second_l,max_y_l,left=True) else (second_l,first_l)
         if len(upper_l)!=len(upper) or len(lower_l)!=len(lower):
             raise ValueError("原版要求左右 Lip 曲线 CV 数一致："
                 f"upper {len(upper)}/{len(upper_l)}, lower {len(lower)}/{len(lower_l)}")

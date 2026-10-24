@@ -1,0 +1,268 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 86968,
+  "cases": [
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "point",
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "point",
+      "weight": 5.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "point",
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "orient",
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "orient",
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "orient",
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "parent",
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "parent",
+      "weight": 5.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "inherits_transform": true,
+      "reflected": false,
+      "mode": "parent",
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "point",
+      "weight": 0.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "point",
+      "weight": 5.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "point",
+      "weight": 10.0,
+      "maximum_error": 1.3322676295501878e-15
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "orient",
+      "weight": 0.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "orient",
+      "weight": 5.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "orient",
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "parent",
+      "weight": 0.0,
+      "maximum_error": 1.7763568394002505e-15
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "parent",
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "inherits_transform": true,
+      "reflected": true,
+      "mode": "parent",
+      "weight": 10.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "point",
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "point",
+      "weight": 5.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "point",
+      "weight": 10.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "orient",
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "orient",
+      "weight": 5.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "orient",
+      "weight": 10.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "parent",
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "parent",
+      "weight": 5.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": false,
+      "mode": "parent",
+      "weight": 10.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "point",
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "point",
+      "weight": 5.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "point",
+      "weight": 10.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "orient",
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "orient",
+      "weight": 5.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "orient",
+      "weight": 10.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "parent",
+      "weight": 0.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "parent",
+      "weight": 5.0,
+      "maximum_error": 0.0
+    },
+    {
+      "inherits_transform": false,
+      "reflected": true,
+      "mode": "parent",
+      "weight": 10.0,
+      "maximum_error": 0.0
+    }
+  ],
+  "maximum_error": 1.7763568394002505e-15,
+  "process_exited": true,
+  "threshold": 1e-05,
+  "scope": "Literal MEL Advanced Attach, point/orient/parent, nonuniform positive/reflection parent scales, inheritsTransform on/off, existing FKOffset OPM, 0/5/10 weights",
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "runtime_report": "validation/results/source-geo-matrix-current/report.json",
+  "remaining": [
+    "Not acceptance of the original OPM full character input failing at MEL 80372",
+    "Full namespaces and old approximate graph migration remain separate"
+  ]
+}

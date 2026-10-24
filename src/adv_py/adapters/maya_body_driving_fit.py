@@ -40,6 +40,18 @@ class DrivingFitPlan:
 
 
 class MayaBodyDrivingFitMixin:
+    def capture_body_game_rebuild(self, registration):
+        from .maya_game_rebuild import capture
+        return capture(self, registration)
+
+    def restore_body_game_rebuild_root(self, state, registration, rig):
+        from .maya_game_rebuild import restore_root
+        return restore_root(self, state, registration, rig)
+
+    def restore_body_game_rebuild_modes(self, state, registration, rig):
+        from .maya_game_rebuild import restore_modes
+        return restore_modes(self, state, registration, rig)
+
     def capture_body_control_orient_rebuild(self, registration):
         from .maya_control_orient_rebuild import capture
         return capture(self, registration)
@@ -55,6 +67,10 @@ class MayaBodyDrivingFitMixin:
     def restore_body_driving_rebuild(self, state, registration, rig, *, fit='FitSkeleton'):
         from .maya_driving_rebuild import restore
         return restore(self, state, registration, rig, fit=fit)
+
+    def restore_body_driving_rebuild_membership(self, state):
+        from .maya_driving_rebuild import restore_membership
+        return restore_membership(self, state)
 
     def restore_body_driving_from_fit(self, registration, rig, *, fit='FitSkeleton',
                                       scene_before=None, populate_all=True):

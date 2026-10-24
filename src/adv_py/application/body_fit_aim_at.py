@@ -34,9 +34,9 @@ class BuildFitAimAt:
     def __init__(self, host: FitAimAtHost) -> None:
         self._host = host
 
-    def apply(self, metadata, controls, body_joints):
+    def apply(self, metadata, controls, body_joints, *, instances=(), source_native=False):
         specs = plan_body_fit_aim_at(
-            tuple(metadata), tuple(controls), tuple(body_joints))
+            tuple(metadata), tuple(controls), tuple(body_joints), instances=instances, source_native=source_native)
         states = tuple(self._host.preflight_body_fit_aim_at(spec)
                        for spec in specs)
         if not specs:

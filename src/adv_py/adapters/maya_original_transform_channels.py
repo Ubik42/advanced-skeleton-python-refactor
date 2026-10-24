@@ -25,7 +25,7 @@ def align_original_transform(commands, node, target, translation=True,
         if generated:
             commands.xform(generated, objectSpace=True, rotation=(0., 0., 0.))
     if joint_orient and rotation:
-        commands.setAttr(node + '.jointOrient', 0., 0., 0., type='double3')
+        commands.setAttr(node + '.jointOrient', 0., 0., 0., type='float3')
     if previous and commands.objExists(previous[0]):
         node = commands.parent(node, previous[0], absolute=True)[0]
     else:
@@ -40,8 +40,8 @@ def align_original_transform(commands, node, target, translation=True,
         constraint = commands.orientConstraint(target, node)
         angles = commands.xform(node, query=True, objectSpace=True, rotation=True)
         commands.delete(constraint[0])
-        commands.setAttr(node + '.jointOrient', *angles, type='double3')
-        commands.setAttr(node + '.rotate', 0., 0., 0., type='double3')
+        commands.setAttr(node + '.jointOrient', *angles, type='float3')
+        commands.setAttr(node + '.rotate', 0., 0., 0., type='float3')
     return (commands.ls(node, long=True) or [node])[0]
 
 
@@ -99,3 +99,22 @@ def original_matrix_transform_values(commands, node, matrix_attribute, transform
     finally:
         commands.delete(temporary)
         commands.select(selected, replace=True) if selected else commands.select(clear=True)
+
+
+def original_transform_values(commands, node, transform_attribute):
+    """asGetTransformValues, MEL 26365–26384, including per-joint OPM override.
+
+    OPM rigs still have conventional lip/lid joint channels. Only decompose
+    the offset matrix when the original Fit switch is on AND this particular
+    node has an OPM connection. A static offset matrix alone is not enough.
+    """
+    if transform_attribute not in ('translate', 'rotate', 'scale'):
+        raise ValueError('原版变换读取需要 translate / rotate / scale')
+    opm = (commands.objExists('FitSkeleton.useOffsetParentMatrix')
+           and commands.getAttr('FitSkeleton.useOffsetParentMatrix'))
+    if opm and commands.listConnections(node + '.offsetParentMatrix'):
+        return original_matrix_transform_values(commands, node, 'offsetParentMatrix', transform_attribute)
+    result = commands.getAttr(node + '.' + transform_attribute)
+    if len(result) == 1 and isinstance(result[0], (list, tuple)):
+        result = result[0]
+    return tuple(result)

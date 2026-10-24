@@ -1,0 +1,52 @@
+{
+  "updated": "2026-10-11",
+  "status": "passed",
+  "pid": 1096,
+  "process_exited": true,
+  "source_lines": [
+    "1709",
+    "31007",
+    "32958"
+  ],
+  "changes": [
+    "Native Face SkinCluster field is editable in actual Python panel",
+    "Controller stores the exact entered SkinCluster name on FaceFitSkeleton",
+    "Production stages use the recorded Skin; invalid and empty recorded names fail without choosing another layer",
+    "Focused user edits survive scene refresh until commit"
+  ],
+  "cases": [
+    {
+      "namespace": "",
+      "recorded_skin": "FaceSkinB",
+      "undo_redo": true,
+      "reopened": true,
+      "invalid_input_rejected": true,
+      "actual_panel_slot": true
+    },
+    {
+      "namespace": "FaceHero",
+      "recorded_skin": "FaceHero:FaceSkinB",
+      "undo_redo": true,
+      "reopened": true,
+      "invalid_input_rejected": true,
+      "actual_panel_slot": false
+    }
+  ],
+  "complete_saved_face_inputs": [
+    {
+      "name": "ordinary",
+      "selected_skin": "HeadSkin",
+      "preflight_passed": true
+    },
+    {
+      "name": "multi",
+      "selected_skin": "HeadSkin",
+      "preflight_passed": true
+    }
+  ],
+  "scope": "Actual root panel slot, root and character namespace, Undo/Redo, save/reopen, valid explicit selection, invalid input, ordinary/multi saved complete-scene preflight",
+  "limits": [
+    "No new complete Face construction or full multilayer weight comparison in this batch",
+    "Existing Face multilayer authored Lip/Tongue and blink failures remain"
+  ]
+}

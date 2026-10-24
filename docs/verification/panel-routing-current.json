@@ -1,0 +1,41 @@
+{
+  "status": "passed",
+  "pid": 83072,
+  "scope": "Actual Maya Qt routes and captures; saved RP inspection not repeated",
+  "label_buttons": "Add/Remove passed on two joints plus a transform",
+  "panel_geometry": {
+    "width": 383,
+    "height": 1350,
+    "minimum_hint_height": 216,
+    "window_height": 1828,
+    "scroll_height": 1246
+  },
+  "native_window_bounds": [
+    -2160,
+    906,
+    0,
+    2790
+  ],
+  "secondary_lower_bounds": [
+    -2160,
+    906,
+    0,
+    2790
+  ],
+  "routes": 391,
+  "sections": 12,
+  "unchanged_scene_nodes": true,
+  "public_launcher": true,
+  "conditional_hidden": [
+    "Normal",
+    "\u5237\u65b0 SkinLayer \u5217\u8868"
+  ],
+  "label_menu_count": 18,
+  "attribute_help_count": 35,
+  "render": "Actual Maya docked business panel on secondary lower area",
+  "process_exited": true,
+  "limitations": [
+    "Navigation, menus/help and Add/Remove label buttons only: not full business acceptance.",
+    "Full original row layout and default-model appearance remain unconfirmed."
+  ]
+}

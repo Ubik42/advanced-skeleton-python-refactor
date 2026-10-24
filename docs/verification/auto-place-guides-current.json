@@ -1,0 +1,144 @@
+{
+  "status": "passed",
+  "scope": "Whole Sam no-detection source parity plus guide restoration; complete successful AutoPlace not accepted",
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "sam": {
+    "pid": 84004,
+    "process_exited": true,
+    "source_returned": true,
+    "python_returned": true,
+    "scan_records": 548,
+    "scan_differences": 0,
+    "maximum_joint_matrix_error": 2.3814729543936153e-07,
+    "maximum_fat_error": 0.0,
+    "guides_active": false,
+    "axes": [
+      "z",
+      "x",
+      "yArmStraight",
+      "yElbowStraight",
+      "y"
+    ],
+    "success_accepted": false
+  },
+  "guides": {
+    "pid": 50648,
+    "process_exited": true,
+    "cases": [
+      {
+        "case": "ordinary",
+        "maximum_error": 0.0,
+        "restored_fingers": [],
+        "restored_arm": false,
+        "removed_softmods": 0,
+        "undo_error": 0.0,
+        "redo_error": 0.0
+      },
+      {
+        "case": "arm",
+        "maximum_error": 8.881784197001252e-16,
+        "restored_fingers": [],
+        "restored_arm": true,
+        "removed_softmods": 0,
+        "undo_error": 3.552713678800501e-15,
+        "redo_error": 0.0
+      },
+      {
+        "case": "softmod",
+        "maximum_error": 0.0,
+        "restored_fingers": [],
+        "restored_arm": false,
+        "removed_softmods": 1,
+        "undo_error": 3.4432012796514755e-11,
+        "redo_error": 0.0
+      },
+      {
+        "case": "fingers",
+        "maximum_error": 1.6653345369377348e-16,
+        "restored_fingers": [
+          "Index",
+          "Middle",
+          "Ring",
+          "Pinky"
+        ],
+        "restored_arm": false,
+        "removed_softmods": 0,
+        "undo_error": 1.7763568394002505e-15,
+        "redo_error": 0.0
+      },
+      {
+        "case": "arm_existing_constraint",
+        "maximum_error": 1.6375789613221059e-15,
+        "restored_fingers": [],
+        "restored_arm": true,
+        "removed_softmods": 0,
+        "undo_error": 5.329070518200751e-15,
+        "redo_error": 0.0
+      },
+      {
+        "case": "fingers_existing_curve",
+        "maximum_error": 8.881784197001252e-16,
+        "restored_fingers": [
+          "Index",
+          "Middle",
+          "Ring",
+          "Pinky"
+        ],
+        "restored_arm": false,
+        "removed_softmods": 0,
+        "undo_error": 3.552713678800501e-15,
+        "redo_error": 0.0
+      }
+    ],
+    "projections": [
+      {
+        "axis": "x",
+        "maximum_error": 0.0,
+        "width_error": 0.0,
+        "reprojected": true
+      },
+      {
+        "axis": "z",
+        "maximum_error": 0.0,
+        "width_error": 0.0,
+        "reprojected": true
+      },
+      {
+        "axis": "y",
+        "maximum_error": 0.0,
+        "width_error": 0.0,
+        "reprojected": true
+      }
+    ],
+    "projection_scene_saved_reopened": true
+  },
+  "source_corrections": [
+    "Interleave finger position sampling and pointConstraint release",
+    "Address requested FingerSimpleCurve name on duplicate creation",
+    "Delete original fixed shoulder/elbow constraint names",
+    "Restore float3 shoulder/elbow rotation writes",
+    "Preserve ten significant digits from native MEL dynamic curve commands"
+  ],
+  "limits": [
+    "Successful complete biped AutoPlace remains unaccepted",
+    "Full namespaced AutoPlace remains unaccepted",
+    "Saved-reopened evidence covers the projection guide scene; not each restoration case",
+    "Rest Sam input native returns without four-finger detection; Python result missing after runner timeout, no parity accepted"
+  ],
+  "sam_rest_input": {
+    "status": "interrupted",
+    "pid": 27932,
+    "process_exited": true,
+    "input_kind": "original_Sam_skin_input",
+    "source_returned": true,
+    "source_guides_active": false,
+    "source_scan_records": 548,
+    "source_failed_growth_records": 72,
+    "python_complete": false,
+    "runner_timeout_seconds": 600,
+    "parity_accepted": false,
+    "coordinates": 54453,
+    "maximum_rest_to_deformed_coordinate_difference": 0.04046631000000023,
+    "topology_identical": true
+  }
+}

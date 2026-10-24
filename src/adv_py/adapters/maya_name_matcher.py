@@ -8,301 +8,40 @@ from adv_py.core.name_matcher_fit import (
 from adv_py.core.name_matcher_mocap import NameMatcherMocapPlan
 from adv_py.core.name_matcher_mocap_session import (
     NameMatcherMocapConstraint, NameMatcherMocapSession)
-from adv_py.core.name_matcher_animation import NameMatcherAnimationBakePlan
 
 from .maya_source_skeleton_fit import MayaSourceSkeletonFitHost
+from .maya_source_name_matcher_controls import MayaSourceNameMatcherControlsMixin
+from .maya_source_name_matcher_context import mapping_action
 
 
-class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
+class MayaNameMatcherHost(MayaSourceNameMatcherControlsMixin, MayaSourceSkeletonFitHost):
     def capture_name_matcher_source_animation(self,
             source_root: str) -> tuple[tuple[str, str], ...]:
         from maya import cmds as c
 
-        source = self.capture_source_skeleton(source_root)
-        root = source[0].path
-        transforms = [root, *(path for path in (c.listRelatives(root,
-            allDescendents=True, fullPath=True) or [])
-            if c.nodeType(path) in ('joint', 'transform'))]
+        roots = c.ls(source_root,long=True) or ()
+        if len(roots)!=1 or c.nodeType(roots[0]) not in ('joint','transform'):
+            raise FitSkeletonValidationError('NameMatcher 动画来源顶层节点不唯一')
+        root = roots[0]
+        transforms = [root, *(c.listRelatives(root,
+            allDescendents=True, fullPath=True) or [])]
         driven = []
         for node in transforms:
-            for kind in ('translate', 'rotate', 'scale'):
-                for axis in 'XYZ':
-                    plug = node + '.' + kind + axis
-                    driver = c.connectionInfo(plug,
-                        sourceFromDestination=True) or ''
-                    if driver:
-                        driven.append((plug, driver))
+            attributes = tuple(dict.fromkeys((
+                *(kind + axis for kind in ('translate', 'rotate', 'scale') for axis in 'XYZ'),
+                *(c.listAttr(node, scalar=True) or ()))))
+            for attribute in attributes:
+                plug = node + '.' + attribute
+                driver = c.connectionInfo(plug,
+                    sourceFromDestination=True) or ''
+                if driver and c.nodeType(driver.split('.', 1)[0]).startswith('animCurve'):
+                    driven.append((plug, driver))
         return tuple(sorted(driven))
 
     def keep_name_matcher_source_animation(self, source_root: str,
             inputs: tuple[tuple[str, str], ...]) -> tuple[str, int]:
-        """MEL's KeepAnimation clone with direct anim curves kept alive."""
-        from maya import cmds as c
-
-        self._require_transaction()
-        if not inputs or self.capture_name_matcher_source_animation(
-                source_root) != inputs:
-            raise FitSkeletonValidationError(
-                'NameMatcher 来源动画在保留前变化或不存在')
-        if c.namespace(exists=':NameMatcherKeepAnimation'):
-            raise FitSkeletonValidationError(
-                'NameMatcherKeepAnimation 命名空间已存在')
-        root_matches = c.ls(source_root, long=True, type='joint') or []
-        if len(root_matches) != 1:
-            raise FitSkeletonValidationError('NameMatcher 动画来源根不唯一')
-        root = root_matches[0]
-        if (c.referenceQuery(root, isNodeReferenced=True)
-                or any(c.lockNode(root, query=True, lock=True) or ())):
-            raise FitSkeletonValidationError(
-                'NameMatcher 动画来源根被引用或锁定')
-        if c.listRelatives(root, allDescendents=True,
-                           fullPath=True, type='mesh'):
-            raise FitSkeletonValidationError(
-                'NameMatcher 动画来源骨架下有模型，不能复制其历史网络')
-        original_ids = c.ls(root, uuid=True) or []
-        if len(original_ids) != 1:
-            raise FitSkeletonValidationError('NameMatcher 动画来源身份不唯一')
-        source_nodes = {root, *(path for path in (c.listRelatives(root,
-            allDescendents=True, fullPath=True) or [])
-            if c.nodeType(path) in ('joint', 'transform'))}
-        for plug, driver in inputs:
-            node = driver.split('.', 1)[0]
-            if (not c.nodeType(node).startswith('animCurve')
-                    or (c.ls(plug.split('.', 1)[0], long=True) or [None])[0]
-                    not in source_nodes):
-                raise FitSkeletonValidationError(
-                    'NameMatcher 目前只可保留来源关节直接动画曲线：'
-                    + plug)
-        values = {plug: c.getAttr(plug) for plug, _ in inputs}
-        selection = c.ls(selection=True, long=True) or []
-        self._transaction_changed = True
-        duplicate = c.duplicate(root, inputConnections=True,
-                                returnRootsOnly=True)[0]
-        duplicates = c.ls(duplicate, long=True, type='joint') or []
-        if len(duplicates) != 1:
-            raise RuntimeError('NameMatcher 动画骨架复制失败')
-        duplicate = duplicates[0]
-        paired = [(root, duplicate)]
-        def transform_children(node):
-            return [path for path in (c.listRelatives(node,
-                children=True, fullPath=True) or [])
-                if c.nodeType(path) in ('joint', 'transform')]
-        for original, copied in paired:
-            left = transform_children(original)
-            right = transform_children(copied)
-            if (len(left) != len(right)
-                    or any(c.nodeType(a) != c.nodeType(b)
-                           for a, b in zip(left, right))):
-                raise RuntimeError('NameMatcher 动画骨架复制层级不一致')
-            paired.extend(zip(left, right))
-        copy_ids = {}
-        for original, copied in paired:
-            ids = c.ls(copied, uuid=True) or []
-            if len(ids) != 1:
-                raise RuntimeError('NameMatcher 复制节点身份不唯一')
-            copy_ids[original] = ids[0]
-        c.namespace(addNamespace=':NameMatcherKeepAnimation')
-        for original, _ in sorted(paired,
-                key=lambda item: item[0].count('|'), reverse=True):
-            copied = c.ls(copy_ids[original], long=True) or []
-            if len(copied) != 1:
-                raise RuntimeError('NameMatcher 复制节点改名前丢失')
-            leaf = original.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
-            c.rename(copied[0], ':NameMatcherKeepAnimation:' + leaf)
-        clone = (c.ls(copy_ids[root], long=True) or [None])[0]
-        if not clone:
-            raise RuntimeError('NameMatcher 动画骨架根改名失败')
-        c.parent(clone, world=True, absolute=True)
-        clone = (c.ls(copy_ids[root], long=True) or [None])[0]
-        for original, _ in paired:
-            copied = (c.ls(copy_ids[original], long=True) or [None])[0]
-            if (not copied or any(abs(float(a)-float(b)) > 1e-4
-                    for a, b in zip(c.xform(original, query=True,
-                        worldSpace=True, matrix=True),
-                        c.xform(copied, query=True,
-                            worldSpace=True, matrix=True)))):
-                raise RuntimeError(
-                    'NameMatcher 动画复制改变了骨架当前姿态：'
-                    + original)
-        c.addAttr(clone, longName='advPyKeepAnimation',
-                  attributeType='bool', defaultValue=True)
-        c.addAttr(clone, longName='advPySourceUUID',
-                  dataType='string')
-        c.setAttr(clone + '.advPySourceUUID', original_ids[0],
-                  type='string')
-        for plug, driver in inputs:
-            copied = (c.ls(copy_ids[plug.split('.', 1)[0]],
-                           long=True) or [None])[0]
-            if not copied:
-                raise RuntimeError('NameMatcher 动画关节复制后丢失')
-            clone_plug = copied + '.' + plug.split('.', 1)[1]
-            clone_driver = c.connectionInfo(clone_plug,
-                sourceFromDestination=True)
-            if not clone_driver or not c.nodeType(
-                    clone_driver.split('.', 1)[0]).startswith('animCurve'):
-                raise RuntimeError('NameMatcher 复制骨架动画曲线未保留')
-            original_times = c.keyframe(driver.split('.', 1)[0],
-                query=True, timeChange=True) or []
-            copied_times = c.keyframe(clone_driver.split('.', 1)[0],
-                query=True, timeChange=True) or []
-            if tuple(original_times) != tuple(copied_times):
-                raise RuntimeError('NameMatcher 复制骨架关键帧范围不一致')
-            c.disconnectAttr(driver, plug)
-            c.setAttr(plug, values[plug])
-            if c.connectionInfo(plug, sourceFromDestination=True):
-                raise RuntimeError('NameMatcher 原骨架动画输入未断开')
-        if selection:
-            c.select([node for node in selection if c.objExists(node)],
-                     replace=True)
-        else:
-            c.select(clear=True)
-        return clone, len(inputs)
-
-    def capture_name_matcher_kept_animation(self) -> tuple:
-        from maya import cmds as c
-
-        candidates = c.ls(':NameMatcherKeepAnimation:*',
-                          long=True, type='joint') or []
-        roots = [joint for joint in candidates
-            if c.attributeQuery('advPyKeepAnimation',
-                node=joint, exists=True)
-            and c.getAttr(joint + '.advPyKeepAnimation')]
-        if len(roots) != 1:
-            raise FitSkeletonValidationError(
-                'NameMatcher 保留动画骨架根不存在或不唯一')
-        root = roots[0]
-        source_uuid = c.getAttr(root + '.advPySourceUUID')
-        source = c.ls(source_uuid, long=True, type='joint') or []
-        if len(source) != 1:
-            raise FitSkeletonValidationError(
-                'NameMatcher 原骨架身份已丢失')
-        joints = tuple(sorted([root, *(c.listRelatives(root,
-            allDescendents=True, fullPath=True, type='joint') or [])]))
-        source_joints = self.capture_source_skeleton(source[0])
-        source_names = sorted(joint.name.rsplit(':', 1)[-1]
-                              for joint in source_joints)
-        clone_names = sorted(path.rsplit('|', 1)[-1].rsplit(':', 1)[-1]
-                             for path in joints)
-        if source_names != clone_names:
-            raise FitSkeletonValidationError(
-                'NameMatcher 保留动画骨架与原来源关节集合不一致')
-        animated_nodes = (root, *(path for path in (c.listRelatives(root,
-            allDescendents=True, fullPath=True) or [])
-            if c.nodeType(path) in ('joint', 'transform')))
-        curves = tuple(sorted(set(curve for node in animated_nodes
-            for curve in (c.listConnections(node, source=True,
-                destination=False, type='animCurve') or []))))
-        times = tuple(sorted(set(float(time) for curve in curves
-            for time in (c.keyframe(curve, query=True,
-                                    timeChange=True) or []))))
-        return root, source[0], source_uuid, joints, curves, times
-
-    def bake_name_matcher_kept_animation(self,
-            plan: NameMatcherAnimationBakePlan,
-            session: tuple) -> tuple[float, float]:
-        from maya import cmds as c
-
-        self._require_transaction()
-        if self.capture_name_matcher_kept_animation() != session:
-            raise FitSkeletonValidationError(
-                'NameMatcher 保留动画骨架在烘焙前变化')
-        root, _, _, _, curves, times = session
-        if not times:
-            raise FitSkeletonValidationError(
-                'NameMatcher 保留动画骨架没有关键帧')
-        first, last = min(-1.0, times[0]), times[-1]
-        if last < first:
-            raise FitSkeletonValidationError(
-                'NameMatcher 来源动画范围无效')
-        controls = tuple(self.scene_address(link.control)
-                         for link in plan.links)
-        for link, control in zip(plan.links, controls):
-            if ((c.ls(link.cloned_joint, long=True,
-                      type='joint') or []) != [link.cloned_joint]
-                    or len(c.ls(control, long=True,
-                                type='transform') or []) != 1):
-                raise FitSkeletonValidationError(
-                    'NameMatcher 动画烘焙来源或 FK 控制缺失')
-            for axis in 'XYZ':
-                plug = control + '.rotate' + axis
-                if (not c.getAttr(plug, settable=True)
-                        or c.connectionInfo(plug,
-                            sourceFromDestination=True)):
-                    raise FitSkeletonValidationError(
-                        'NameMatcher FK 控制旋转不可烘焙：' + plug)
-        for plug in plan.fk_mode_plugs:
-            scene_plug = self.scene_address(plug)
-            if not c.getAttr(scene_plug, settable=True):
-                raise FitSkeletonValidationError(
-                    'NameMatcher IK/FK 模式不可切到 FK：' + scene_plug)
-        auto_key = bool(c.autoKeyframe(query=True, state=True))
-        selection = c.ls(selection=True, long=True) or []
-        previous_time = c.currentTime(query=True)
-        constraints = []
-        try:
-            self._transaction_changed = True
-            c.autoKeyframe(state=False)
-            for plug in plan.fk_mode_plugs:
-                c.setAttr(self.scene_address(plug), 0)
-            for link, control in zip(plan.links, controls):
-                skipped = tuple(axis.lower() for axis in 'XYZ'
-                    if (not c.getAttr(control + '.translate' + axis,
-                                      settable=True)
-                        or c.connectionInfo(control + '.translate' + axis,
-                            sourceFromDestination=True)))
-                constraints.append(c.parentConstraint(
-                    link.cloned_joint, control,
-                    maintainOffset=True,
-                    **({'skipTranslate': skipped} if skipped else {}))[0])
-            c.playbackOptions(minTime=first, animationStartTime=first,
-                              maxTime=last, animationEndTime=last)
-            c.bakeResults(controls, simulation=True,
-                time=(first, last), sampleBy=1,
-                disableImplicitControl=True, preserveOutsideKeys=False,
-                sparseAnimCurveBake=False,
-                removeBakedAttributeFromLayer=False,
-                bakeOnOverrideLayer=False, controlPoints=False,
-                shape=False)
-            if not any((c.keyframe(control, query=True,
-                    keyframeCount=True, time=(first, last)) or 0) > 0
-                    for control in controls):
-                raise RuntimeError(
-                    'NameMatcher 来源动画没有烘焙到 FK 控制器')
-            c.delete(constraints)
-            c.currentTime(-1)
-            c.delete(controls, staticChannels=True,
-                     unitlessAnimationCurves=False,
-                     hierarchy='none', controlPoints=False,
-                     shape=True)
-            c.delete(root)
-            for curve in curves:
-                if (c.objExists(curve)
-                        and not c.referenceQuery(curve,
-                            isNodeReferenced=True)
-                        and not c.listConnections(curve + '.output',
-                            source=False, destination=True)):
-                    c.delete(curve)
-            if c.namespace(exists=':NameMatcherKeepAnimation'):
-                remaining = c.namespaceInfo(':NameMatcherKeepAnimation',
-                    listOnlyDependencyNodes=True, recurse=True) or []
-                if remaining:
-                    raise RuntimeError(
-                        'NameMatcher 保留动画命名空间仍有外部节点')
-                c.namespace(removeNamespace=':NameMatcherKeepAnimation')
-            if c.objExists(root):
-                raise RuntimeError('NameMatcher 保留动画骨架未清理')
-            c.select(clear=True)
-        except Exception:
-            c.currentTime(previous_time)
-            if selection:
-                c.select([node for node in selection if c.objExists(node)],
-                         replace=True)
-            else:
-                c.select(clear=True)
-            raise
-        finally:
-            c.autoKeyframe(state=auto_key)
-        return first, last
+        from .maya_source_name_matcher_animation import keep
+        return keep(self,source_root,inputs)
 
     def preflight_name_matcher_zero_out(
             self, plan: NameMatcherConstraintPlan) -> None:
@@ -345,6 +84,13 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
     def preflight_name_matcher_mocap(self,
             plan: NameMatcherMocapPlan) -> None:
         from maya import cmds as c
+        from .maya_source_native_animation import audit as audit_native_animation, reconnect_records
+        from .maya_source_name_matcher_session import allowed_input
+        native_edges=audit_native_animation(self)
+        reconnect_records(self,plan)
+        def native_input(control,attribute,source):
+            identities=c.ls(control,uuid=True) or ()
+            return len(identities)==1 and allowed_input(self,native_edges,identities[0],attribute,source)
 
         group = self.scene_address('MoCapConstraints')
         if c.objExists(group):
@@ -367,8 +113,8 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
         for link in plan.links:
             control = self.scene_address(link.control)
             if (len(c.ls(control, long=True, type='transform') or ()) != 1
-                    or (c.ls(link.external_joint, long=True,
-                             type='joint') or []) != [link.external_joint]):
+                    or (c.ls(link.external_joint, long=True) or []) != [link.external_joint]
+                    or c.nodeType(link.external_joint) not in ('joint','transform')):
                 raise FitSkeletonValidationError(
                     'NameMatcher 动捕来源或控制器缺失：' + control)
             for channel, enabled in (('translate', link.point),
@@ -377,140 +123,47 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
                     continue
                 for axis in 'XYZ':
                     plug = control + '.' + channel + axis
-                    if (not c.getAttr(plug, settable=True)
-                            or c.connectionInfo(plug,
-                                sourceFromDestination=True)):
+                    source=c.connectionInfo(plug,sourceFromDestination=True)
+                    if (c.getAttr(plug,lock=True)
+                            or source and not c.nodeType(source.split('.',1)[0]).startswith('animCurve')
+                            and not native_input(control,channel+axis,source)):
                         raise FitSkeletonValidationError(
                             'NameMatcher 动捕控制器通道不可接线：' + plug)
-            for channel in ('translate', 'rotate'):
-                source = c.connectionInfo(
-                    link.external_joint + '.' + channel + 'X',
-                    sourceFromDestination=True)
-                if source and c.nodeType(source.split('.', 1)[0]) in (
-                        'pointConstraint', 'orientConstraint',
-                        'parentConstraint'):
-                    raise FitSkeletonValidationError(
-                        'NameMatcher 动捕来源已被约束，可能形成回路：'
-                        + link.external_joint)
         for pole in plan.poles:
             control = self.scene_address(pole.control)
             parents = c.listRelatives(pole.middle_joint, parent=True,
                                       fullPath=True) or []
             children = c.listRelatives(pole.middle_joint, children=True,
-                                       type='joint', fullPath=True) or []
-            if (len(parents) != 1 or len(children) != 1
+                                       fullPath=True) or []
+            if (len(parents) != 1 or not children
                     or not c.objExists(control)):
                 raise FitSkeletonValidationError(
                     'NameMatcher Pole Vector 缺少连续三关节或控制器：'
                     + pole.middle_joint)
             for axis in 'XYZ':
                 plug = control + '.translate' + axis
-                if (not c.getAttr(plug, settable=True)
-                        or c.connectionInfo(plug,
-                            sourceFromDestination=True)):
+                source=c.connectionInfo(plug,sourceFromDestination=True)
+                if (c.getAttr(plug,lock=True)
+                        or source and not c.nodeType(source.split('.',1)[0]).startswith('animCurve')
+                        and not native_input(control,'translate'+axis,source)):
                     raise FitSkeletonValidationError(
                         'NameMatcher Pole Vector 通道不可接线：' + plug)
 
+    @mapping_action
     def apply_name_matcher_mocap(self, plan: NameMatcherMocapPlan
             ) -> tuple[tuple[str, str | None, str | None], ...]:
-        from maya import cmds as c
-
-        self._require_transaction()
-        self.preflight_name_matcher_mocap(plan)
-        group = self.scene_address('MoCapConstraints')
-        controls = tuple(link.control for link in plan.links) + tuple(
-            pole.control for pole in plan.poles)
-        before = tuple(tuple(float(value) for value in c.xform(
-            self.scene_address(control), query=True,
-            worldSpace=True, matrix=True)) for control in controls)
-        self._transaction_changed = True
-        c.createNode('transform', name=group, skipSelect=True)
-        c.addAttr(group, longName='advPyNameMatcher',
-                  attributeType='bool', defaultValue=True)
-        c.setAttr(group + '.advPyNameMatcher', lock=True)
-        c.addAttr(group, longName='disableConstraints',
-                  attributeType='bool', keyable=True)
-        if (plan.spine_control and any(link.control == plan.spine_control
-                for link in plan.links)):
-            spine = self.scene_address(plan.spine_control)
-            for attribute in ('followRoot', 'ikHybridVis'):
-                if c.attributeQuery(attribute, node=spine, exists=True):
-                    c.setAttr(spine + '.' + attribute, 0)
-        created = []
-        for link in plan.links:
-            control = self.scene_address(link.control)
-            point = (c.pointConstraint(link.external_joint, control,
-                maintainOffset=True)[0] if link.point else None)
-            orient = (c.orientConstraint(link.external_joint, control,
-                maintainOffset=True)[0] if link.orient else None)
-            for node in (point, orient):
-                if node:
-                    c.connectAttr(group + '.disableConstraints',
-                                  node + '.nodeState')
-            created.append((control, point, orient))
-        for index, pole in enumerate(plan.poles):
-            parents = c.listRelatives(pole.middle_joint, parent=True,
-                                      fullPath=True) or []
-            children = c.listRelatives(pole.middle_joint, children=True,
-                                       type='joint', fullPath=True) or []
-            hip, ankle = parents[0], children[0]
-            positions = [c.xform(node, query=True, worldSpace=True,
-                                 translation=True)
-                         for node in (hip, pole.middle_joint, ankle)]
-            def distance(a, b):
-                return sum((float(x)-float(y))**2
-                           for x, y in zip(a, b))**0.5
-            dist_a = distance(positions[0], positions[1])
-            dist_b = distance(positions[1], positions[2])
-            if min(dist_a, dist_b) < 1e-6:
-                raise FitSkeletonValidationError(
-                    'NameMatcher Pole Vector 关节段长度为零：'
-                    + pole.middle_joint)
-            a = c.createNode('transform', parent=group,
-                             name='AdvPy_MoCapPoleA_' + str(index))
-            b = c.createNode('transform', parent=a,
-                             name='AdvPy_MoCapPoleB_' + str(index))
-            locator = c.createNode('transform', parent=b,
-                             name='AdvPy_MoCapPole_' + str(index))
-            center_constraint = c.pointConstraint(
-                hip, ankle, a, weight=dist_b)[0]
-            weights = c.pointConstraint(center_constraint, query=True,
-                                        weightAliasList=True) or []
-            if len(weights) == 2:
-                c.setAttr(center_constraint + '.' + weights[1], dist_a)
-            else:
-                raise RuntimeError('NameMatcher Pole Vector 中点权重不完整')
-            c.orientConstraint(self.scene_address(plan.root_control), a)
-            c.setAttr(b + '.translateZ',
-                      (dist_a+dist_b) / (10.0 if pole.limb == 'arm'
-                                          else -10.0))
-            c.aimConstraint(pole.middle_joint, b,
-                            aimVector=(1, 0, 0), upVector=(0, 1, 0),
-                            worldUpType='vector', worldUpVector=(0, 1, 0))
-            c.setAttr(locator + '.translateX', dist_a+dist_b)
-            control = self.scene_address(pole.control)
-            point = c.pointConstraint(locator, control,
-                                      maintainOffset=True)[0]
-            c.connectAttr(group + '.disableConstraints',
-                          point + '.nodeState')
-            created.append((control, point, None))
-        result = tuple(created)
-        self.verify_name_matcher_mocap(plan, result)
-        for control_path, old in zip(controls, before):
-            current = tuple(float(value) for value in c.xform(
-                self.scene_address(control_path), query=True,
-                worldSpace=True, matrix=True))
-            if len(current) != len(old) or any(abs(a-b)>1e-4
-                    for a,b in zip(old,current)):
-                raise RuntimeError('NameMatcher 动捕连接改变控制器当前姿态：'
-                                   +control_path)
-        return result
+        from .maya_source_mocap_connect import connect
+        return connect(self,plan)
 
     def verify_name_matcher_mocap(self, plan: NameMatcherMocapPlan,
             created: tuple[tuple[str, str | None, str | None], ...]) -> None:
         from maya import cmds as c
 
         group = self.scene_address('MoCapConstraints')
+        if not plan.links and not plan.poles:
+            if created or c.objExists(group):
+                raise RuntimeError('NameMatcher 空动捕映射不应生成约束组')
+            return
         if (len(created) != len(plan.links) + len(plan.poles)
                 or not c.objExists(group)):
             raise RuntimeError('NameMatcher 动捕约束节点不完整')
@@ -541,12 +194,18 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
                     != group + '.disableConstraints'):
                 raise RuntimeError('NameMatcher Pole Vector 输出约束不完整')
 
+    def source_name_matcher_mocap_exists(self) -> bool:
+        from .maya_source_name_matcher_session import session_group
+        return session_group(self) is not None
+
     def capture_name_matcher_mocap_session(self) -> NameMatcherMocapSession:
         """Resolve only this tool's output constraints, never arbitrary rig nodes."""
         from maya import cmds as c
+        from .maya_source_name_matcher_session import audit, session_group
+        audit(self)
 
-        group = self.scene_address('MoCapConstraints')
-        if (not c.objExists(group)
+        group = session_group(self)
+        if (group is None or not c.objExists(group)
                 or not c.attributeQuery('advPyNameMatcher',
                                         node=group, exists=True)
                 or not c.getAttr(group + '.advPyNameMatcher')
@@ -561,7 +220,7 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
         nodes = c.listConnections(output, source=False,
                                   destination=True) or []
         constraints = []
-        for name in sorted(set(nodes)):
+        for name in dict.fromkeys(nodes):
             matches = c.ls(name, long=True) or []
             if len(matches) != 1:
                 raise FitSkeletonValidationError(
@@ -602,42 +261,34 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
         if self.capture_name_matcher_mocap_session() != session:
             raise FitSkeletonValidationError(
                 'NameMatcher 动捕约束在烘焙前变化')
-        if c.getAttr(session.group + '.disableConstraints'):
-            raise FitSkeletonValidationError(
-                'NameMatcher 动捕约束已禁用，不能烘焙')
         first = float(c.playbackOptions(query=True, minTime=True))
         last = float(c.playbackOptions(query=True, maxTime=True))
         if first > last:
             raise FitSkeletonValidationError('NameMatcher 播放范围无效')
-        previous_selection = c.ls(selection=True, long=True) or []
-        previous_time = c.currentTime(query=True)
-        previous_auto_key = bool(c.autoKeyframe(query=True, state=True))
-        controls = session.controls
-        try:
-            self._transaction_changed = True
-            c.autoKeyframe(state=False)
-            c.bakeResults(controls, simulation=True,
-                time=(first, last), sampleBy=1,
-                disableImplicitControl=True, preserveOutsideKeys=False,
-                sparseAnimCurveBake=False,
-                removeBakedAttributeFromLayer=False,
-                bakeOnOverrideLayer=False, controlPoints=False,
-                shape=False)
-            if not any((c.keyframe(control, query=True,
-                    keyframeCount=True, time=(first, last)) or 0) > 0
-                    for control in controls):
-                raise RuntimeError('NameMatcher 动捕烘焙未生成控制器关键帧')
-            c.delete(controls, staticChannels=True,
-                     unitlessAnimationCurves=False, hierarchy='none',
-                     controlPoints=False, shape=True)
-        finally:
-            c.currentTime(previous_time)
-            c.autoKeyframe(state=previous_auto_key)
-            if previous_selection:
-                c.select([node for node in previous_selection
-                          if c.objExists(node)], replace=True)
-            else:
-                c.select(clear=True)
+        # MEL uses the native nodeState destination order, retaining duplicate
+        # receivers for point/orient pairs. It selects controls before and
+        # after Bake, then removes static channels; a static clip may correctly
+        # have no keys after that removal and is not a failed bake.
+        controls = tuple(item.control for item in session.constraints)
+        from .maya_native_animation_bake_boundary import capture, finish
+        animation = capture(self, controls)
+        self._transaction_changed = True
+        c.select(controls,replace=True)
+        c.bakeResults(controls, simulation=True,
+            time=(first, last), sampleBy=1,
+            disableImplicitControl=True, preserveOutsideKeys=False,
+            sparseAnimCurveBake=False,
+            removeBakedAttributeFromLayer=False,
+            bakeOnOverrideLayer=False, controlPoints=False,
+            shape=False)
+        finish(self, animation)
+        from .maya_static_animation_boundary import capture as capture_static, finish as finish_static
+        static = capture_static(self)
+        c.select(controls,replace=True)
+        c.delete(controls, staticChannels=True,
+                 unitlessAnimationCurves=False, hierarchy='none',
+                 controlPoints=False, shape=True)
+        finish_static(self, static)
         if self.capture_name_matcher_mocap_session() != session:
             raise RuntimeError('NameMatcher 烘焙改变了动捕约束身份')
         return first, last
@@ -650,13 +301,15 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
         if self.capture_name_matcher_mocap_session() != session:
             raise FitSkeletonValidationError(
                 'NameMatcher 动捕约束在断开前变化')
+        from adv_py.core.source_name_matcher_session import ATTRIBUTE,decode_session
+        saved=decode_session(c.getAttr(session.group+'.'+ATTRIBUTE))
         descendants = c.listRelatives(session.group,
             allDescendents=True, fullPath=True) or []
         if any(c.nodeType(node) not in ('transform', 'pointConstraint',
                                        'orientConstraint', 'aimConstraint')
                or (c.nodeType(node) == 'transform'
-                   and not node.rsplit('|', 1)[-1].startswith(
-                       'AdvPy_MoCapPole'))
+                   and not node.rsplit('|', 1)[-1].rsplit(':',1)[-1].startswith(
+                       ('PoleVectorLocator','AdvPy_MoCapPole')))
                for node in descendants):
             raise FitSkeletonValidationError(
                 'NameMatcher 动捕组包含非本工具节点，拒绝删除')
@@ -666,6 +319,8 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
         if (c.objExists(session.group)
                 or any(c.ls(item.uuid) for item in session.constraints)):
             raise RuntimeError('NameMatcher 动捕约束未全部断开')
+        from .maya_source_native_animation import observe_disconnect
+        observe_disconnect(self,saved)
 
     def capture_name_matcher_skin_links(self,
             plan: NameMatcherConstraintPlan
@@ -1042,7 +697,9 @@ class MayaNameMatcherHost(MayaSourceSkeletonFitHost):
                 'NameMatcher 需要已构建的 DeformationSystem')
         joints = self._cmds.listRelatives(root,
             allDescendents=True, fullPath=True, type='joint') or []
-        return tuple(sorted(set(joints)))
+        # Native mapping walks listRelatives' descendant order. Do not sort
+        # it: command order controls the generated constraint/helper names.
+        return tuple(joints)
 
     def preflight_name_matcher_constraints(
             self, plan: NameMatcherConstraintPlan) -> None:

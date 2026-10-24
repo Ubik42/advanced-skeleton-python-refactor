@@ -20,6 +20,8 @@ class MayaFaceBSConversionMixin(MayaFaceBSEditMixin, MayaFaceBSTargetsMixin, May
         plugin loading there would invalidate that operation's undo boundary.
         This changes host setup only, leaving the source conversion order intact.
         """
+        from .maya_dense_skin import prepare_dense_skin_plugin
+        prepare_dense_skin_plugin(self)
         c = self._cmds
         fit = self._fit(required=True)
         mixed = c.objExists(fit + '.RigType') and int(c.getAttr(fit + '.RigType')) == 2
@@ -75,6 +77,8 @@ class MayaFaceBSConversionMixin(MayaFaceBSEditMixin, MayaFaceBSTargetsMixin, May
         if use_layers:
             from .maya_native_node_cast import prepare_native_node_cast
             prepare_native_node_cast(self)
+            from .maya_dense_skin import prepare_dense_skin_plugin
+            prepare_dense_skin_plugin(self)
         controls = []
         for parent in c.listRelatives("ctrlBox", children=True, type="transform") or []:
             children = c.listRelatives(parent, children=True, type="transform") or []

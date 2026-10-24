@@ -1,0 +1,39 @@
+{
+  "status": "passed",
+  "pid": 79032,
+  "stage": "complete",
+  "systems": [
+    "Spine_M",
+    "SplineSolo_L",
+    "SplineTail_R",
+    "SplineTail_L"
+  ],
+  "frames": {
+    "Spine_M": [
+      "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls|AdvPy_Root_MFKOffset|AdvPy_Root_MFKExtra|AdvPy_Root_MFK|AlignIKToRoot_M",
+      "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls|AdvPy_Root_MFKOffset|AdvPy_Root_MFKExtra|AdvPy_Root_MFK|AdvPy_Spline_Spine_M_BaseFKOffset|AdvPy_Spline_Spine_M_BaseFKExtra|AdvPy_Spline_Spine_M_BaseFK|AdvPy_Spine1_MFKOffset|AdvPy_Spine1_MFKExtra|AdvPy_Spine1_MFK|AdvPy_Chest_MFKOffset|AdvPy_Chest_MFKExtra|AdvPy_Chest_MFK|AdvPy_Chest_MFKX|AlignIKToChest_M"
+    ],
+    "SplineSolo_L": [
+      "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls|AdvPy_GenericFKFollow_Solo0_L|AdvPy_Solo0_LFKOffset|AdvPy_Solo0_LFKExtra|AdvPy_Solo0_LFK|AlignIKToSolo0_L",
+      "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls|AdvPy_GenericFKFollow_Solo0_L|AdvPy_Solo0_LFKOffset|AdvPy_Solo0_LFKExtra|AdvPy_Solo0_LFK|AdvPy_Spline_SplineSolo_L_BaseFKOffset|AdvPy_Spline_SplineSolo_L_BaseFKExtra|AdvPy_Spline_SplineSolo_L_BaseFK|AdvPy_Solo1_LFKOffset|AdvPy_Solo1_LFKExtra|AdvPy_Solo1_LFK|AlignIKToSolo2_L"
+    ],
+    "SplineTail_R": [
+      "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls|AdvPy_GenericFKFollow_Tail0_R|AdvPy_Tail0_RFKOffset|AdvPy_Tail0_RFKExtra|AdvPy_Tail0_RFK|AlignIKToTail0_R",
+      "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls|AdvPy_GenericFKFollow_Tail0_R|AdvPy_Tail0_RFKOffset|AdvPy_Tail0_RFKExtra|AdvPy_Tail0_RFK|AdvPy_Spline_SplineTail_R_BaseFKOffset|AdvPy_Spline_SplineTail_R_BaseFKExtra|AdvPy_Spline_SplineTail_R_BaseFK|AdvPy_Tail1_RFKOffset|AdvPy_Tail1_RFKExtra|AdvPy_Tail1_RFK|AlignIKToTail2_R"
+    ],
+    "SplineTail_L": [
+      "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls|AdvPy_GenericFKFollow_Tail0_L|AdvPy_Tail0_LFKOffset|AdvPy_Tail0_LFKExtra|AdvPy_Tail0_LFK|AlignIKToTail0_L",
+      "|Group|MotionSystem|FKSystem|AdvPy_GenericFKControls|AdvPy_GenericFKFollow_Tail0_L|AdvPy_Tail0_LFKOffset|AdvPy_Tail0_LFKExtra|AdvPy_Tail0_LFK|AdvPy_Spline_SplineTail_L_BaseFKOffset|AdvPy_Spline_SplineTail_L_BaseFKExtra|AdvPy_Spline_SplineTail_L_BaseFK|AdvPy_Tail1_LFKOffset|AdvPy_Tail1_LFKExtra|AdvPy_Tail1_LFK|AlignIKToTail2_L"
+    ]
+  },
+  "maximum_error": 1.6582226425310154e-09,
+  "skin_animation_preserved": true,
+  "undo_redo": true,
+  "reopened": true,
+  "idempotent": true,
+  "source_scene": "validation/results/biped-source-bendy-parent-v7-nonopm/original-biped-current.mb",
+  "runtime_report": "validation/results/spline-alignment-current/report.json",
+  "source_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "process_exited": true,
+  "scope": "Four saved pre-AlignIKTo source Spline systems: explicit reference-frame migration, unchanged retained deformation, Skin and animation, whole rebuild undo/redo, save/reopen, idempotent repeat. Does not certify all ADV or all FK/IK matching inputs."
+}

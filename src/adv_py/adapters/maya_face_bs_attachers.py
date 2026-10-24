@@ -19,6 +19,27 @@ class MayaFaceBSAttachersMixin:
             c.parent(children, (c.listRelatives(node, parent=True) or [])[0])
         c.delete(node)
 
+    def _connect_original_bs_control_channels(self, control, layered):
+        """MEL 43911–43913 connections with reversible native lock ownership.
+
+        SmilePull keeps locked TRS children. A compound connection can be
+        created across those locks, but its native Undo cannot disconnect it.
+        Journal temporary unlocks before the connection and restore each
+        original lock afterwards; both final graph and channel locks match.
+        """
+        c = self._cmds
+        for channel in ("t", "r", "s"):
+            destination = layered + "." + channel
+            plugs = (destination, *(destination + axis for axis in "xyz"))
+            locked = tuple(plug for plug in plugs if c.getAttr(plug, lock=True))
+            for plug in locked:
+                c.setAttr(plug, lock=False)
+            try:
+                c.connectAttr(control + "." + channel, destination)
+            finally:
+                for plug in reversed(locked):
+                    c.setAttr(plug, lock=True)
+
     def create_original_face_bs_attachers(self, source):
         c = self._cmds
         raw = getattr(c, "raw", c)
@@ -90,8 +111,7 @@ class MayaFaceBSAttachersMixin:
             c.sets(layered, remove="FaceControlSet")
             c.createNode("transform", name=control, parent=subtract)
             c.sets(control, add="FaceControlSet")
-            for attr in ("t", "r", "s"):
-                c.connectAttr(control + "." + attr, layered + "." + attr)
+            self._connect_original_bs_control_channels(control, layered)
             shapes = c.listRelatives(layered, shapes=True, fullPath=True) or []
             for shape in shapes:
                 c.parent(shape, control, add=True, shape=True)

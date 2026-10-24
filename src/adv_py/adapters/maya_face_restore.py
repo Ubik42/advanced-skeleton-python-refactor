@@ -3,6 +3,8 @@
 The source BlendShapes branch only compares names; it does not copy targets.
 That behavior is retained explicitly rather than claiming target restoration.
 """
+import json
+
 from adv_py.core.face_original_build import OriginalFaceKeepOptions
 from adv_py.application.face_pre import FacePreRole
 from .maya_face_restore_controls import MayaFaceRestoreControlsMixin
@@ -10,6 +12,52 @@ from .maya_face_restore_drivers import MayaFaceRestoreDriversMixin
 
 
 class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversMixin):
+    def restore_original_face_external_bind_pre(self):
+        """Keep authored bind matrices on surviving Face-part Skin nodes."""
+        c = self._cmds
+        raw = getattr(c, "raw", c)
+        fit = self._fit(required=True)
+        if (c.objExists(fit + ".LegacyFaceJointOrient")
+                and c.getAttr(fit + ".LegacyFaceJointOrient")):
+            # Legacy orientation changes the bind-space basis. MEL rebuilds
+            # its Skin bind-pre matrices instead of carrying the prior basis.
+            return ()
+        plug = "prefix_FaceGroup.advPyExternalBindPre"
+        if not c.objExists(plug):
+            return ()
+        restored = []
+        for identity, joint_name, matrix in json.loads(c.getAttr(plug) or "[]"):
+            if identity == "@primary":
+                fit = self._fit(required=True)
+                skins = [self.scene_address(c.getAttr(fit + ".SkinCluster"))]
+            else:
+                skins = raw.ls(identity, long=True) or []
+            if len(skins) != 1 or raw.nodeType(skins[0]) != "skinCluster":
+                continue
+            skin = skins[0]
+            for index in raw.getAttr(skin + ".matrix", multiIndices=True) or []:
+                source = raw.connectionInfo(
+                    f"{skin}.matrix[{index}]", sourceFromDestination=True)
+                if not source:
+                    continue
+                joints = raw.ls(source.split(".", 1)[0], long=True, type="joint") or []
+                if len(joints) != 1 or joints[0].rsplit("|", 1)[-1] != joint_name:
+                    continue
+                if not any(part.rsplit(":", 1)[-1] == "FaceJoint_M"
+                           for part in joints[0].split("|")[:-1]):
+                    continue
+                target = f"{skin}.bindPreMatrix[{index}]"
+                if raw.connectionInfo(target, sourceFromDestination=True):
+                    break
+                current = raw.getAttr(target)
+                if len(current) == 1 and isinstance(current[0], (tuple, list)):
+                    current = current[0]
+                if any(abs(float(a) - float(b)) > 1e-10 for a, b in zip(current, matrix)):
+                    c.setAttr(target, *matrix, type="matrix")
+                    restored.append((skin, joint_name))
+                break
+        return tuple(restored)
+
     def restore_original_face_skin_weights(self, options):
         c = self._cmds
         raw = getattr(c, "raw", c)
@@ -60,6 +108,7 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
         self._transaction_changed = True
         self.restore_original_face_user_attributes()
         weights = self.restore_original_face_skin_weights(options)
+        retained_bind_pre = self.restore_original_face_external_bind_pre() if options.skin_weights else ()
         drivers = self.restore_original_face_driving_systems() if options.all or options.driving_systems else 0
         squash = False
         if (options.all or options.head_squash) and c.objExists("prefix_SquashSetup"):
@@ -103,6 +152,7 @@ class MayaFaceRestoreMixin(MayaFaceRestoreControlsMixin, MayaFaceRestoreDriversM
             if custom:
                 c.sets(custom, add="FaceControlSet")
             c.delete("prefix_FaceControlSet")
-        return {"skin_weights": weights, "sdk_curves": drivers, "head_squash": squash,
+        return {"skin_weights": weights, "external_bind_pre": retained_bind_pre,
+                "sdk_curves": drivers, "head_squash": squash,
                 "custom_orient": oriented, "compared_blendshape_targets": common_targets,
                 "original_stage": "asFaceRebuildRestore"}

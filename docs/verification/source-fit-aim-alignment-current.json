@@ -1,0 +1,89 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 24108,
+  "scope": "Native asAlign + two-target constraint against source Python AimAt, nonuniform parents and existing receiver OPM",
+  "cases": [
+    {
+      "up": "self",
+      "sign": 1,
+      "weight": 0.0,
+      "maximum_error": 5.551115123125783e-17
+    },
+    {
+      "up": "self",
+      "sign": 1,
+      "weight": 5.0,
+      "maximum_error": 1.1102230246251565e-16
+    },
+    {
+      "up": "self",
+      "sign": 1,
+      "weight": 10.0,
+      "maximum_error": 1.1102230246251565e-16
+    },
+    {
+      "up": "self",
+      "sign": -1,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "up": "self",
+      "sign": -1,
+      "weight": 5.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "up": "self",
+      "sign": -1,
+      "weight": 10.0,
+      "maximum_error": 1.1102230246251565e-16
+    },
+    {
+      "up": "target",
+      "sign": 1,
+      "weight": 0.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "up": "target",
+      "sign": 1,
+      "weight": 5.0,
+      "maximum_error": 8.881784197001252e-16
+    },
+    {
+      "up": "target",
+      "sign": 1,
+      "weight": 10.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "up": "target",
+      "sign": -1,
+      "weight": 0.0,
+      "maximum_error": 4.440892098500626e-16
+    },
+    {
+      "up": "target",
+      "sign": -1,
+      "weight": 5.0,
+      "maximum_error": 2.220446049250313e-16
+    },
+    {
+      "up": "target",
+      "sign": -1,
+      "weight": 10.0,
+      "maximum_error": 1.1102230246251565e-16
+    }
+  ],
+  "process_exited": true,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "threshold": 1e-05,
+  "runtime_report": "validation/results/source-fit-aim-alignment-current/report.json",
+  "maximum_error": 8.881784197001252e-16,
+  "final_refinement": "Literal asAlign parent/zero-local-T-R/restore, original absolute receiver reparent retained via relative return and parent-local OPM bridge.",
+  "remaining": [
+    "This is a native/Python matrix composition test, not an additional full character lifecycle",
+    "Namespaced and plain authored-left noMirror full rigs not covered"
+  ]
+}

@@ -1,3 +1,4 @@
+from adv_py.core.body_fit_aim import capture_body_fit_aim_layouts
 from dataclasses import replace
 import re
 
@@ -10,6 +11,18 @@ from adv_py.core.body_skeleton import audit_body_provenance, oriented_body_prove
 
 
 class MayaCharacterRegistryMixin:
+    def capture_name_matcher_blend_rebuild(self,registration):
+        from .maya_name_matcher_blend_rebuild import capture
+        return capture(self,registration)
+
+    def restore_name_matcher_blend_rebuild(self,rows,registration):
+        from .maya_name_matcher_blend_rebuild import restore
+        return restore(self,rows,registration)
+
+    def restore_body_retirement_rebuild(self, original, preservation=None):
+        from .maya_body_retirement_rebuild import restore
+        return restore(self,original,preservation=preservation)
+
     def capture_body_generic_fk_feature_policy(self, registration):
         """Keep a rebuild's generic FK graph aligned with the saved rig."""
         from adv_py.core.body_generic_fk import GenericFkFeaturePolicy
@@ -340,24 +353,23 @@ class MayaCharacterRegistryMixin:
             if fkx and c.nodeType(fkx[0]) == 'joint':
                 fkx_joints.add(control.rsplit('|', 1)[-1]
                                .rsplit(':', 1)[-1])
-            sources = tuple(c.connectionInfo(
-                body + '.scale' + axis, sourceFromDestination=True)
-                for axis in 'XYZ')
+            from .maya_game_scaling_state import original_scale_source, original_compound_scale_source
+            sources = tuple(original_scale_source(self, body, axis) for axis in 'XYZ')
             expected = tuple(control + '.scale' + axis for axis in 'XYZ')
+            from .maya_game_scaling_state import original_scale_connection
             body_leaf = body.rsplit('|', 1)[-1]
             body_namespace = (body_leaf.rsplit(':', 1)[0] + ':'
                               if ':' in body_leaf else '')
             bendy_scale = (body_namespace + 'AdvPy_'
                            + body_leaf.rsplit(':', 1)[-1]
                            + 'BendyFKScale')
-            if sources == expected:
+            if sources == expected or all(original_scale_connection(self, source, body + '.scale' + axis)
+                for source, axis in zip(expected, 'XYZ')):
                 scale.add(control)
             elif c.objExists(bendy_scale):
                 if (c.nodeType(bendy_scale) != 'multiplyDivide'
                         or int(c.getAttr(bendy_scale + '.operation')) != 1
-                        or c.connectionInfo(body + '.scale',
-                                            sourceFromDestination=True)
-                        != bendy_scale + '.output'
+                        or not original_scale_connection(self, bendy_scale + '.output', body + '.scale')
                         or c.connectionInfo(bendy_scale + '.input2',
                                             sourceFromDestination=True)
                         != control + '.scale'
@@ -368,8 +380,7 @@ class MayaCharacterRegistryMixin:
                         '旧通用 Bendy FK 缩放图无效：' + stem)
                 bendy_scales.add(control)
             elif any(sources):
-                bendy_source = c.connectionInfo(
-                    body + '.scale', sourceFromDestination=True)
+                bendy_source = original_compound_scale_source(self, body)
                 bendy_node = (bendy_source.split('.', 1)[0]
                               if bendy_source else '')
                 if (not bendy_source.endswith('.output')
@@ -792,6 +803,7 @@ class MayaCharacterRegistryMixin:
             compensated_controls=frozenset(compensated),
             global_controls=frozenset(globally_driven),
             aim_sources=aim_sources,
+            source_aim_layouts=capture_body_fit_aim_layouts(registration.channels),
             follower_sources=follower_sources,
             independent_controls=frozenset(independent),
             twist_rewired_sources=frozenset(twist_rewired),
@@ -861,6 +873,8 @@ class MayaCharacterRegistryMixin:
     def preserve_character_rebuild_binding(self,stage,original,replacement,*,spline_change=None):
         from adv_py.core.character_preservation import validate_rebuild_layout
         generated = replacement
+        from .maya_driving_registration import preserve_driver_channel_contract
+        replacement = preserve_driver_channel_contract(self,stage,original,replacement)
         by_key = {channel.key:channel for channel in replacement.channels}
         old_keys = {channel.key for channel in original.channels}
         follow_key = 'head.aim.target.follow'
@@ -924,7 +938,10 @@ class MayaCharacterRegistryMixin:
         # Same-layout rebuilding keeps the original binding definition exactly.
         # Re-evaluating matrices after Fit import can add sub-ulp noise, which
         # must not invalidate the character's previously saved animation files.
-        retained=replace(replacement,body=original.body,
+        old_retired = {row.path:row for row in original.retired_body}
+        retired = tuple(replace(row,matrix=old_retired[row.path].matrix)
+                        for row in replacement.retired_body)
+        retained=replace(replacement,body=original.body,retired_body=retired,
                          spine=(replace(replacement.spine,lengths=original.spine.lengths)
                                 if original.spine is not None else None))
         with stage.transaction('Preserve original binding identity'):
@@ -1075,7 +1092,11 @@ class MayaCharacterRegistryMixin:
                 if c.attributeQuery(attr,node=node.path,exists=True))
             rows.append((node.short_name.rsplit(':',1)[-1],parent,node.sibling_index,
                 int(c.getAttr(node.path+'.rotateOrder')),
-                bool(c.getAttr(node.path+'.segmentScaleCompensate')),channels,volumes))
+                bool(c.getAttr(node.path+'.segmentScaleCompensate')),channels,volumes,
+                tuple((attr,float(c.getAttr(node.path+'.'+attr)),
+                       bool(c.getAttr(node.path+'.'+attr,lock=True)))
+                      for kind in ('translate','rotate','scale','jointOrient','rotateAxis')
+                      for attr in (kind+axis for axis in 'XYZ'))))
         return tuple(rows)
 
     def restore_character_rebuild_fit_channels(self,rows,container='FitSkeleton'):
@@ -1085,7 +1106,9 @@ class MayaCharacterRegistryMixin:
                for node in self.capture_fit_hierarchy(container).joints}
         if len(nodes)!=len(rows) or set(nodes)!={row[0] for row in rows}:
             raise CharacterRegistryError('重建 Fit 通道来源拓扑不一致')
-        for name,parent,index,rotate_order,compensate,channels,volumes in sorted(rows,key=lambda row:row[2],reverse=True):
+        for row in sorted(rows,key=lambda row:row[2],reverse=True):
+            name,parent,index,rotate_order,compensate,channels,volumes=row[:7]
+            local_channels=row[7] if len(row)>7 else ()
             node=nodes[name]
             if node.dag_parent.rsplit('|',1)[-1].rsplit(':',1)[-1]!=parent:
                 raise CharacterRegistryError('重建 Fit 通道来源父级不一致：'+name)
@@ -1093,6 +1116,15 @@ class MayaCharacterRegistryMixin:
             c.reorder(node.path,front=True)
             c.setAttr(node.path+'.rotateOrder',rotate_order)
             c.setAttr(node.path+'.segmentScaleCompensate',compensate)
+            # Portable Fit import reconstructs local axes from world frames.
+            # Internal rebuild has the original native channels available:
+            # restore them exactly rather than accumulating decomposition
+            # error (including independently authored NonSymmetry branches).
+            for attr,value,locked in local_channels:
+                plug=node.path+'.'+attr
+                c.setAttr(plug,lock=False)
+                c.setAttr(plug,value)
+                c.setAttr(plug,lock=locked)
             for attr,datatype,value in volumes:
                 if datatype not in ('double','float'):
                     raise CharacterRegistryError('重建 Fit 体积属性类型无效：'+name+'.'+attr)
@@ -1103,7 +1135,8 @@ class MayaCharacterRegistryMixin:
             for attr,locked,keyable,channel_box in channels:
                 c.setAttr(node.path+'.'+attr,lock=locked,keyable=keyable,
                           channelBox=channel_box)
-        if self.capture_character_rebuild_fit_channels(container)!=rows:
+        actual=self.capture_character_rebuild_fit_channels(container)
+        if tuple(value[:len(expected)] for value,expected in zip(actual,rows))!=rows:
             raise CharacterRegistryError('重建 Fit 通道或兄弟顺序未完整恢复')
 
     def create_character_rebuild_host(self,namespace):
@@ -1436,6 +1469,9 @@ class MayaCharacterRegistryMixin:
                     paths.update(tuple(self._cmds.ls(part.name,long=True) or ())+
                                  tuple(self._cmds.ls(part.aligned_name,long=True) or ()))
         for spline in p.all_splines:
+            if spline.source_alignment_frames:
+                from .maya_source_spline_alignment import read as read_spline_alignment
+                paths.update(frame.target for frame in read_spline_alignment(self,spline))
             if spline.source_mode is not None:
                 paths.update((spline.source_mode.control,spline.source_mode.frame,
                               spline.source_mode.parent_source))
@@ -1568,12 +1604,20 @@ class MayaCharacterRegistryMixin:
         previous=getattr(self,'_allow_authored_control_state',False)
         self._allow_authored_control_state=True
         try:
-            return self._validate_character_registration_graph(plan)
+            from .maya_game_scaling_state import validation
+            from .maya_character_body_retirement import validation as retirement_validation
+            with retirement_validation(self,plan), validation(self):
+                return self._validate_character_registration_graph(plan)
         finally:
             self._allow_authored_control_state=previous
 
     def _validate_character_registration_graph(self, plan):
         c = self._cmds
+        if plan.retired_body:
+            from .maya_character_body_retirement import audit as audit_retired_body
+            audit_retired_body(self,plan)
+        from .maya_unreal_twist import audit_registered as audit_unreal_twist
+        audit_unreal_twist(self, plan)
         from .maya_control_orient_registration import audit as audit_control_orient
         audit_control_orient(self, plan)
         from .maya_driving_registration import audit_registered_sdks
@@ -1606,6 +1650,12 @@ class MayaCharacterRegistryMixin:
         from .maya_source_spline_start import audit as audit_spline_start
         for spline in (plan.spine,*plan.additional_spines):
             if isinstance(spline,BodySplinePlan) and spline.source_curve_points:
+                if spline.source_alignment_frames:
+                    from .maya_source_spline_alignment import read as read_spline_alignment
+                    frames=read_spline_alignment(self,spline,retired_body=plan.retired_body)
+                    owned={node.path for node in plan.nodes}
+                    if not all(frame.target in owned and frame.parent in owned for frame in frames):
+                        raise CharacterRegistryError('来源 Spline AlignIKTo 没有完整登记')
                 audit_spline_start(self,spline)
         from .maya_source_limb_aim import audit as audit_source_aim
         audit_source_aim(self,plan)
@@ -1616,11 +1666,20 @@ class MayaCharacterRegistryMixin:
         from .maya_spline_matching import audit as audit_spline_matching
         audit_spline_matching(self,plan)
         user_plugs={channel.node+"."+channel.attribute for channel in plan.channels}
+        from .maya_source_name_matcher_session import audit as audit_mocap, allowed_input as mocap_input
+        mocap_edges = audit_mocap(self)
+        from .maya_source_native_animation import audit as audit_native_animation
+        mocap_edges |= audit_native_animation(self)
+        from .maya_original_quick_ik_state import audit as audit_quick_ik
+        mocap_edges |= audit_quick_ik(self)
         for node in plan.nodes:
             current=self._registry_node(node.path)
             retained=[]
             for attribute,source in current.inputs:
                 if node.path+"."+attribute in user_plugs and self._character_direct_animation(source):
+                    continue
+                if (node.path+"."+attribute in user_plugs
+                        and mocap_input(self,mocap_edges,node.uuid,attribute,source)):
                     continue
                 retained.append((attribute,source))
             if replace(current,inputs=tuple(retained)) != node:
@@ -1635,7 +1694,9 @@ class MayaCharacterRegistryMixin:
             if not c.objExists(channel.node+"."+channel.attribute):
                 raise CharacterRegistryError("登记控制通道缺失")
             source=c.connectionInfo(channel.node+"."+channel.attribute,sourceFromDestination=True)
-            if source and not self._character_direct_animation(source):
+            node_id = next(node.uuid for node in plan.nodes if node.path == channel.node)
+            if (source and not self._character_direct_animation(source)
+                    and not mocap_input(self,mocap_edges,node_id,channel.attribute,source)):
                 raise CharacterRegistryError("登记控制通道有非动画外部输入")
         from .maya_limb_orientation import audit_orientation
         audit_orientation(self,plan)
@@ -1673,6 +1734,8 @@ class MayaCharacterRegistryMixin:
 
     def read_character_registration(self, name=REGISTRY_NAME):
         c = self._cmds
+        if c.objExists(REGISTRY_NAME + '.advPySourceUnrealRename'):
+            raise CharacterRegistryError('角色处于原版 Unreal 重命名导出状态，请先恢复 ADV 名称')
         if name != REGISTRY_NAME or (c.ls(name,long=True) or []) != [name] or c.nodeType(name)!="network":
             raise CharacterRegistryError("当前仅支持明确的标准单角色登记节点")
         if c.referenceQuery(name,isNodeReferenced=True) or self.discover_character_registrations() != (name,):

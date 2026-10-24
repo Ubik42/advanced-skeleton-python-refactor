@@ -41,7 +41,7 @@ def source_fk_body_controls(body, fk, limbs, spline):
     return tuple(controls)
 
 
-def build_source_body_follow(host, metadata, body, fk, limbs, spline, global_control,*,root_control_path=None):
+def build_source_body_follow(host, metadata, body, fk, limbs, spline, global_control,*,root_control_path=None, instances=(), use_offset_parent_matrix=True):
     controls = source_fk_body_controls(body, fk, limbs, spline)
     root = next((control for control in controls if control.driven_joint==body.root),None)
     root_path=root_control_path or (root.control_path if root else None)
@@ -50,35 +50,37 @@ def build_source_body_follow(host, metadata, body, fk, limbs, spline, global_con
     driver_sources = tuple((joint.path,joint.source_joint) for limb in limbs
         for joint in limb.mechanisms.joints if joint.role is BodyLimbMechanismRole.IK)
     ik_controls = tuple(spec for limb in limbs for spec in limb.ik.limbs)
-    named_plan = plan_body_fit_named_follow(metadata, controls, body.joints)
+    named_plan = plan_body_fit_named_follow(metadata, controls, body.joints, instances=instances)
     spaces_plan = plan_body_fit_follow_spaces(metadata, controls, body.joints,
         main_path=global_control.control_path, root_path=root_path,
-        main_extra_paths=global_control.extra_control_paths)
+        main_extra_paths=global_control.extra_control_paths, instances=instances,
+        source_native=True, use_offset_parent_matrix=use_offset_parent_matrix)
     body_by_control = {path:control.driven_joint for control in controls
                        for path in (control.control_path,control.source_override_path)
                        if path is not None}
     body_by_control[root_path]=body.root
-    aim_plan = plan_body_fit_aim_at(metadata, controls, body.joints)
+    aim_plan = plan_body_fit_aim_at(metadata, controls, body.joints, instances=instances, source_native=True)
     validate_fit_control_dependencies(
-        plan_body_fit_advanced_constraints(metadata, controls, body.joints),
-        plan_body_fit_follow(metadata, controls, body.joints) +
+        plan_body_fit_advanced_constraints(metadata, controls, body.joints, instances=instances, source_native=True, use_offset_parent_matrix=use_offset_parent_matrix),
+        plan_body_fit_follow(metadata, controls, body.joints, instances=instances) +
         plan_body_fit_ik_follow(metadata, ik_controls, (), body.joints,
-            spline=spline, driver_body_sources=driver_sources),
+            spline=spline, driver_body_sources=driver_sources, instances=instances),
         tuple((spec.source_body, host.resolve_body_fit_named_follow_targets(spec))
               for spec in named_plan) + tuple((spec.source_body,
               tuple(body_by_control.get(target.source,target.source) for target in spec.targets))
               for spec in spaces_plan) + tuple((spec.source_body,(spec.target_body,))
               for spec in aim_plan))
-    constraints = BuildFitAdvancedConstraints(host).apply(metadata, controls, body.joints)
-    follows = BuildFitFollow(host).apply(metadata, controls, body.joints)
-    named = BuildFitNamedFollow(host).apply(metadata, controls, body.joints)
+    constraints = BuildFitAdvancedConstraints(host).apply(metadata, controls, body.joints, instances=instances, source_native=True, use_offset_parent_matrix=use_offset_parent_matrix)
+    follows = BuildFitFollow(host).apply(metadata, controls, body.joints, instances=instances)
+    named = BuildFitNamedFollow(host).apply(metadata, controls, body.joints, instances=instances)
     spaces = BuildFitFollowSpaces(host).apply(metadata, controls, body.joints,
         main_path=global_control.control_path, root_path=root_path,
-        main_extra_paths=global_control.extra_control_paths)
+        main_extra_paths=global_control.extra_control_paths, instances=instances,
+        source_native=True, use_offset_parent_matrix=use_offset_parent_matrix)
     ik = BuildFitIkFollow(host).apply(metadata,
         ik_controls, (), body.joints,
-        spline=spline, driver_body_sources=driver_sources)
-    aim = BuildFitAimAt(host).apply(metadata, controls, body.joints)
-    geometry = BuildFitGeoAttach(host).apply(metadata, controls, body.joints)
-    proximity = BuildFitProximityPin(host).apply(metadata, controls, body.joints)
+        spline=spline, driver_body_sources=driver_sources, instances=instances)
+    geometry = BuildFitGeoAttach(host).apply(metadata, controls, body.joints, instances=instances, source_native=True)
+    proximity = BuildFitProximityPin(host).apply(metadata, controls, body.joints, instances=instances, source_native=True)
+    aim = BuildFitAimAt(host).apply(metadata, controls, body.joints, instances=instances, source_native=True)
     return follows, named, spaces, ik, constraints, aim, geometry, proximity

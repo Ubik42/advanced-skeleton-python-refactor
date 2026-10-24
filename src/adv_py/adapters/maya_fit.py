@@ -43,30 +43,7 @@ from adv_py.core.fit_settings import (
 from adv_py.core.fit_skeleton_io import FitSkeletonSettingChannelState
 from adv_py.core.fit_template import FitJointSpec
 from adv_py.core.joint_labels import JointLabel
-
-
-_MAYA_LABEL_NAMES = {
-    0: "None",
-    1: "Root",
-    2: "Hip",
-    3: "Knee",
-    4: "Foot",
-    5: "Toe",
-    6: "Spine",
-    7: "Neck",
-    8: "Head",
-    9: "Collar",
-    10: "Shoulder",
-    11: "Elbow",
-    12: "Hand",
-    13: "Finger",
-    14: "Thumb",
-    15: "PropA",
-    16: "PropB",
-    17: "PropC",
-    18: "Other",
-}
-_MAYA_LABEL_TYPES = {name.casefold(): code for code, name in _MAYA_LABEL_NAMES.items()}
+from adv_py.core.source_fit_labels import source_fit_label_code, source_fit_label_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,7 +196,27 @@ _FIT_AXIS_ENUM_INDEX = {
 }
 
 
-class MayaFitJointHost:
+from .maya_source_fit_unique_names import MayaSourceFitUniqueNamesMixin
+from .maya_source_fit_manual_update import MayaSourceFitManualUpdateMixin
+from .maya_source_fit_pole_vectors import MayaSourceFitPoleVectorsMixin
+from .maya_source_fit_finger_up import MayaSourceFitFingerUpMixin
+from .maya_source_fit_sdk import MayaSourceFitSDKMixin
+from .maya_source_fit_import import MayaSourceFitImportMixin
+from .maya_source_fit_placement import MayaSourceFitPlacementMixin
+from .maya_source_fit_export import MayaSourceFitExportMixin
+from .maya_source_name_matcher import MayaSourceNameMatcherMixin
+from .maya_source_import_matcher import MayaSourceImportMatcherMixin
+
+
+class MayaFitJointHost(MayaSourceFitUniqueNamesMixin, MayaSourceFitManualUpdateMixin,
+                       MayaSourceFitPoleVectorsMixin, MayaSourceFitFingerUpMixin,
+                       MayaSourceFitSDKMixin, MayaSourceFitImportMixin,
+                       MayaSourceFitPlacementMixin, MayaSourceFitExportMixin,
+                       MayaSourceNameMatcherMixin, MayaSourceImportMatcherMixin):
+    def flip_character_scene_up_axis(self, transform: str, axis: str) -> None:
+        from .maya_source_scene_axis import flip
+        flip(self,transform,axis)
+
     """Maya adapter for FitSkeleton and explicit Fit joint operations."""
 
     def __init__(self, *, namespace: str | None = None) -> None:
@@ -612,72 +609,12 @@ class MayaFitJointHost:
         joints = self._cmds.listRelatives(
             container, allDescendents=True, type="joint", fullPath=True
         ) or []
-        labels = {joint: self.read_joint_label(joint) for joint in joints}
-        counts: dict[str, int] = {}
-        used: set[str] = set()
-        for label in labels.values():
-            if label is not None:
-                counts[label.text] = counts.get(label.text, 0) + 1
-                used.add(label.text)
-        for joint in joints:
-            label = labels[joint]
-            if label is None or not (
-                    "Shoulder" in label.text or "Hip" in label.text
-                    or "Root" in label.text or label.text.startswith("0")):
-                continue
-            if counts[label.text] <= 1:
-                continue
-            candidate = None
-            for index in range(1, 99):
-                suffix = (chr(ord("A") + index - 1)
-                          if label.text.startswith("0") and index <= 26
-                          else str(index) if not label.text.startswith("0")
-                          else "")
-                if not suffix:
-                    break
-                proposed = label.text + suffix
-                if proposed not in used:
-                    candidate = proposed
-                    break
-            if candidate is None:
-                raise FitSkeletonValidationError(
-                    "无法给重复的 Fit IK 标签分配唯一名称：" + label.text
-                )
-            self.set_joint_label(joint, JointLabel.parse(candidate))
-            used.add(candidate)
-
-    def normalize_fit_joint_names(self, container_name: str) -> None:
-        """Give Fit joints unique short names before name-based rig generation."""
-        self._require_transaction()
-        container = self._resolve_transform(
-            container_name, FitHierarchyValidationError
-        )
-        joints = self._cmds.listRelatives(
-            container, allDescendents=True, type="joint", fullPath=True
-        ) or []
-        # Maya returns descendants before their parents. Renaming in this
-        # order keeps the remaining full paths valid throughout the pass.
-        for joint in joints:
-            short = joint.rsplit("|", 1)[-1]
-            if len(self._cmds.ls(short, long=True) or []) <= 1:
-                continue
-            for index in range(1, 99):
-                candidate = short + str(index)
-                if not self._cmds.objExists(candidate):
-                    self._transaction_changed = True
-                    renamed = self._cmds.rename(joint, candidate)
-                    resolved = self._cmds.ls(
-                        renamed, long=True, type="joint"
-                    ) or []
-                    if len(resolved) != 1 or resolved[0].rsplit("|", 1)[-1] != candidate:
-                        raise RuntimeError(
-                            "Fit 重名关节重命名后路径不唯一：" + joint
-                        )
-                    break
-            else:
-                raise FitSkeletonValidationError(
-                    "Fit 重名关节没有可用的数字后缀：" + short
-                )
+        from adv_py.core.source_fit_unique_names import source_fit_unique_labels
+        labels = tuple((joint, label.text if label is not None else '')
+                       for joint in joints
+                       for label in (self.read_joint_label(joint),))
+        for joint, candidate in source_fit_unique_labels(labels):
+            self.set_joint_label(joint, JointLabel(text=candidate))
 
     def _fit_node_uuid(self, path: str) -> str:
         values = self._cmds.ls(path, uuid=True) or []
@@ -736,6 +673,13 @@ class MayaFitJointHost:
                     c.setAttr(plug, lock=locked)
 
     def bake_fit_container_scale(self, container_name: str) -> None:
+        return self._bake_fit_container_scale(container_name, force_from_build=False)
+
+    def bake_fit_container_scale_for_build(self, container_name: str) -> None:
+        """Source build marker forces the scale pass even for unit Fit TRS."""
+        return self._bake_fit_container_scale(container_name, force_from_build=True)
+
+    def _bake_fit_container_scale(self, container_name: str, *, force_from_build: bool) -> None:
         """Port asFitModeUpdateScale's detach/reset/reparent build pass."""
         self._require_transaction()
         container = self._resolve_transform(
@@ -745,6 +689,17 @@ class MayaFitJointHost:
             container + ".scale"
         )[0])
         c = self._cmds
+        # asFitModeUpdateScale exits for unit Fit scale unless an intermediate
+        # transform was generated or the Body build supplied its force marker.
+        # Manual NonSymmetry/AutoPlace updates must not reset authored joint
+        # scales merely because they share the build's orientation pass.
+        transforms = c.listRelatives(container, allDescendents=True,
+                                     type='transform', fullPath=True) or []
+        generated = any(c.nodeType(node) == 'transform'
+                        and node.rsplit('|', 1)[-1].rsplit(':', 1)[-1].startswith('transform')
+                        for node in transforms)
+        if scale == (1.0, 1.0, 1.0) and not generated and not force_from_build:
+            return
         joints = c.listRelatives(
             container, allDescendents=True, type="joint", fullPath=True
         ) or []
@@ -851,8 +806,8 @@ class MayaFitJointHost:
                                translation=True)
             if abs(float(start[0])) < tolerance and abs(float(position[0])) >= tolerance:
                 self._transaction_changed = True
-                c.xform(node.path, worldSpace=True,
-                        translation=(0.0, float(position[1]), float(position[2])))
+                c.move(0.0, float(position[1]), float(position[2]), node.path,
+                       absolute=True, worldSpace=True, preserveChildPosition=True)
 
     def set_fit_joint_local_position(
         self,
@@ -1330,13 +1285,6 @@ class MayaFitJointHost:
             present.add(FitJointField.FOLLOW_BY_NAME)
         twist_joints = self._optional_number(joint, "twistJoints", int)
         bendy_controls = self._optional_number(joint, "bendyCtrls", int)
-        if (bendy_controls is None
-                and twist_joints is not None and twist_joints > 0
-                and self._optional_bool(joint, "bendyJoints")):
-            # ADV 6.925 maps the old boolean to one controller when no
-            # bendyCtrls attribute overrides it and a Twist chain exists.
-            bendy_controls = 1
-            present.add(FitJointField.BENDY_CONTROLS)
         inherited_no_flip, no_flip = self._inherited_fit_bool(joint, "noFlip")
         return FitJointMetadata(
             joint=joint,
@@ -1400,10 +1348,8 @@ class MayaFitJointHost:
                 self._optional_bool(joint, "centerBetweenFeet")
                 if self._attribute_exists(joint, "centerBetweenFeet")
                 else None),
-            num_main_extras=(
-                self._optional_number(joint, "numMainExtras", int)
-                if self._attribute_exists(joint, "numMainExtras")
-                else None),
+            num_main_extras=(self._optional_number(joint,'numMainExtras',int)
+                if self._attribute_exists(joint,'numMainExtras') else None),
             geo_attach_mode=self._optional_enum(
                 joint, "geoAttachMode") or "parent",
             world_orient_up=self._optional_enum(joint,
@@ -1412,6 +1358,29 @@ class MayaFitJointHost:
             ik_local_mode=self._optional_enum(joint, "ikLocal"),
             present_fields=frozenset(present),
         )
+
+    def upgrade_legacy_fit_bendy(self, container='FitSkeleton', *, answer=None):
+        from .maya_source_fit_bendy_upgrade import upgrade
+        return upgrade(self,container,answer=answer)
+
+    def add_source_fit_attributes(self, attribute, *, selection=None, use_opm=None):
+        from .maya_source_fit_attributes import add
+        return add(self, attribute, selection=selection, use_opm=use_opm)
+
+    def remove_source_fit_attributes(self, attribute, *, selection=None):
+        from .maya_source_fit_attributes import remove
+        return remove(self, attribute, selection=selection)
+
+    def read_source_main_extras(self, container, root):
+        """MEL 78772: pre-5.732 Fit value, then the actual Root override.
+
+        This effective build option does not invent a Root attribute: metadata
+        editing and removal must still report the real attribute presence.
+        """
+        count=self._optional_number(container,'numMainExtras',int)
+        if self._attribute_exists(root,'numMainExtras'):
+            count=self._optional_number(root,'numMainExtras',int)
+        return count or 0
 
     def apply_fit_joint_edit(self, joint: str, edit: FitJointFieldEdit) -> None:
         self._require_transaction()
@@ -1482,7 +1451,15 @@ class MayaFitJointHost:
                 "keyable": True,
             }
             if spec.kind == "string":
-                options["dataType"] = "string"
+                # MEL 4148–4177 stores selected targets as enum labels.
+                # Portable metadata carries the label, not a string plug.
+                target = str(edit.value)
+                if edit.field in (FitJointField.GEO_ATTACH,
+                                  FitJointField.PROXIMITY_PIN,
+                                  FitJointField.CURVE_GUIDE):
+                    target = target.replace(":", "__")
+                options.update(attributeType="enum", enumName=target,
+                               defaultValue=0)
             else:
                 options["attributeType"] = spec.kind
             if spec.minimum is not None:
@@ -1518,6 +1495,15 @@ class MayaFitJointHost:
                 self._cmds.setAttr(plug, value, type="string")
         else:
             self._cmds.setAttr(f"{joint}.{spec.name}", value)
+        if edit.field is FitJointField.FOLLOW:
+            for companion in ("followLeftRight", "followWorld"):
+                if not self._attribute_exists(joint, companion):
+                    self._cmds.addAttr(joint, longName=companion,
+                        attributeType="bool", defaultValue=False, keyable=True)
+        if (edit.field is FitJointField.ORIENT_CONSTRAINT
+                and not self._attribute_exists(joint, "orientConstraintMaintainOffset")):
+            self._cmds.addAttr(joint, longName="orientConstraintMaintainOffset",
+                attributeType="bool", defaultValue=False, keyable=True)
         if edit.field is FitJointField.AIM_AT:
             for field, default in (
                     (FitJointField.AIM_AXIS, 0),
@@ -1609,10 +1595,6 @@ class MayaFitJointHost:
             if locked:
                 c.setAttr(plug, lock=True)
 
-    def capture_fit_auto_scale(self,container,skin,all_objects,right_eye):
-        from .maya_fit_auto_scale import capture
-        return capture(self,container,skin,all_objects,right_eye)
-
     def finish_fit_auto_place(self,container,skin,all_objects):
         from .maya_fit_auto_place_guides import finish
         return finish(self,container,skin,all_objects)
@@ -1621,9 +1603,17 @@ class MayaFitJointHost:
         from .maya_fit_auto_place import run
         return run(self,container,skin,all_objects,right_eye)
 
-    def apply_fit_auto_scale(self,plan,right_eye,skin,all_objects):
-        from .maya_fit_auto_scale import apply
-        return apply(self,plan,right_eye,skin,all_objects)
+    def auto_scale_fit(self,container,skin,all_objects,right_eye):
+        from .maya_fit_auto_place import run
+        self._require_transaction()
+        c=self._cmds
+        if c.objExists('AutoPlacing'):
+            return self.finish_fit_auto_place(container,skin,all_objects)
+        selected=c.ls(selection=True,long=True) or []
+        self._transaction_changed=True
+        c.createNode('transform',name='asFitAutoScale')
+        c.select(selected,replace=True) if selected else c.select(clear=True)
+        return run(self,container,skin,all_objects,right_eye,return_scale=True)
 
     @contextmanager
     def transaction(self, label: str) -> Iterator[None]:
@@ -1650,7 +1640,7 @@ class MayaFitJointHost:
 
     def set_joint_label(self, joint: str, label: JointLabel) -> None:
         self._require_transaction()
-        code = _MAYA_LABEL_TYPES.get(label.text.casefold(), 18)
+        code = source_fit_label_code(label.text)
         self._transaction_changed = True
         self._cmds.setAttr(f"{joint}.drawLabel", True)
         self._cmds.setAttr(f"{joint}.type", code)
@@ -1663,16 +1653,31 @@ class MayaFitJointHost:
         self._cmds.setAttr(f"{joint}.drawLabel", False)
 
     def read_joint_label(self, joint: str) -> JointLabel | None:
+        # Scene reading is separate from the source selection-based label UI.
         if not self._cmds.getAttr(f"{joint}.drawLabel"):
             return None
         code = int(self._cmds.getAttr(f"{joint}.type"))
-        if code == 18:
-            text = self._cmds.getAttr(f"{joint}.otherType") or "Other"
+        text = source_fit_label_text(code, visible=True,
+            other_type=(self._cmds.getAttr(f"{joint}.otherType") or '') if code == 18 else '')
+        return JointLabel(text=text) if text else None
+
+    def edit_source_fit_labels(self, label: str, *, remove=False, selection=None):
+        """asAdd/RemoveFitJointLabel, MEL 3983–4005, selected joints only."""
+        from adv_py.core.source_fit_labels import SOURCE_FIT_LABEL_CODES
+
+        if not remove and label not in SOURCE_FIT_LABEL_CODES:
+            raise FitSkeletonValidationError('原版 Fit 标签不存在：' + label)
+        if selection is None:
+            joints = self._cmds.ls(selection=True, type='joint', long=True) or []
         else:
-            text = _MAYA_LABEL_NAMES.get(code)
-            if text is None:
-                raise RuntimeError(f"不支持的 Maya joint label type：{code}")
-        return JointLabel.parse(text)
+            joints = self._cmds.ls(selection, type='joint', long=True) or []
+        with self.transaction('Remove source Fit labels' if remove else 'Add source Fit labels'):
+            for joint in joints:
+                if remove:
+                    self.clear_joint_label(joint)
+                else:
+                    self.set_joint_label(joint, JointLabel(text=label))
+        return tuple(joints)
 
     def _attribute_exists(self, joint: str, attribute: str) -> bool:
         return bool(self._cmds.attributeQuery(attribute, node=joint, exists=True))
@@ -1743,7 +1748,12 @@ class MayaFitJointHost:
         value = self._optional_constraint_target(joint, attribute)
         if value is None:
             return None
-        decoded = value.replace("__", ":")
+        # asBuild's attachment analyser first keeps a real literal name;
+        # only an absent encoded name receives one `substitute "__" ... ":"`.
+        # Do not prefer a namespaced namesake or decode every separator.
+        if self._cmds.objExists(value):
+            return value
+        decoded = value.replace("__", ":", 1)
         return decoded if decoded != value and self._cmds.objExists(decoded) else value
 
     def _read_fit_skeleton_value(

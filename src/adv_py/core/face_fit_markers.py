@@ -2,10 +2,11 @@
 MARKER_SHADERS = {
     "EyeBrowInner":"asGreenSG", "EyeBrowOuter":"asRedSG",
     "EyeBrowCenter":"asBlueSG", "EyeBrowMid1":"asRedSG", "EyeBrowMid2":"asRedSG",
+    "EyeBrowMid3":"asRedSG",
     "JawPivot":"asBlue2SG", "JawCorner":"asBlue2SG", "JawLine":"asBlue2SG",
-    "Jaw":"asBlue2SG", "Nose":"asBlueSG", "ChinCrease":"asBlueSG",
+    "Jaw":"asBlue2SG", "Nose":"asGreenSG", "ChinCrease":"asBlueSG",
     "Throat":"asBlue2SG", "NoseUnder":"asBlueSG", "NoseBridge":"asBlueSG",
-    "Cheek":"asBlue2SG", "CheekBone":"asBlue2SG", "SmileBulge":"asBlueSG",
+    "Cheek":"asGreenSG", "CheekBone":"asBlue2SG", "SmileBulge":"asBlueSG",
     "FrownBulge":"asBlueSG", "NoseCorner":"asRedSG", "NoseSide":"asBlueSG",
     "Nostril":"asBlueSG",
 }

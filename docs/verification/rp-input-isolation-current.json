@@ -1,0 +1,42 @@
+{
+  "status": "diagnostic_completed",
+  "pid": 60908,
+  "process_exited": true,
+  "scope": "Eight disposable native-input isolation cases observed in the owned Maya run; no production fix or parity acceptance",
+  "rows": [
+    {
+      "case": "baseline",
+      "maximum_error": 0.0001422600032230381
+    },
+    {
+      "case": "jointOrient",
+      "maximum_error": 0.0001422600031948662
+    },
+    {
+      "case": "jointTranslations",
+      "maximum_error": 0.00014226000314843112
+    },
+    {
+      "case": "rootOffset",
+      "maximum_error": 0.00014226000306782893
+    },
+    {
+      "case": "rootFrame",
+      "maximum_error": 0.00014226333471739627
+    },
+    {
+      "case": "target",
+      "maximum_error": 0.00014225650081792218
+    },
+    {
+      "case": "poleVector",
+      "maximum_error": 0.00014226000322287158
+    },
+    {
+      "case": "combined",
+      "maximum_error": 0.00014225983212448612
+    }
+  ],
+  "conclusion": "Copying these saved native input values did not eliminate the discrepancy. They do not explain its dominant cause.",
+  "source_note": "Condensed from the completed PID 60908 report observed before the scalar-only diagnostic replaced the default runtime report. Reusable script now supports distinct output folders."
+}

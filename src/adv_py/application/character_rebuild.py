@@ -1,5 +1,6 @@
 """Build and verify a replacement rig before transferring any original data."""
 from dataclasses import dataclass, replace
+from contextlib import nullcontext
 from pathlib import Path
 import pickle
 from tempfile import TemporaryDirectory, TemporaryFile
@@ -41,6 +42,7 @@ class StagedCharacterRebuild:
     deformer_animation_state: tuple = ()
     segment_influences: tuple[str, ...] = ()
     spline_change: object | None = None
+    spline_alignment_systems: tuple[str, ...] = ()
 
 
 def _rebuild_axial_description(
@@ -51,8 +53,13 @@ def _rebuild_axial_description(
     def leaf(path: str) -> str:
         return path.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
 
-    by_path = {joint.path: joint for joint in registration.body}
-    heads = [joint for joint in registration.body
+    # Optional export cleanup removes scene joints, not their authored Fit
+    # correspondence. Recover the complete neck chain before building and
+    # reapplying that same native deletion to the replacement.
+    from adv_py.core.character_body_retirement import complete_body_bindings
+    complete_body=complete_body_bindings(registration)
+    by_path = {joint.path: joint for joint in complete_body}
+    heads = [joint for joint in complete_body
              if leaf(joint.path) == "Head_M"]
     if len(heads) != 1:
         raise CharacterRegistryError(
@@ -86,6 +93,8 @@ def _transfer_sample_frames(
     extra_frames: tuple[float, ...] = (),
 ) -> tuple[float, ...]:
     keys = sorted({original.current_time,
+                   *original.mocap_sample_frames,
+                   *original.quick_ik_sample_frames,
                    *(time for curve in original.curves for time in curve.times),
                    *extra_frames})
     frames = tuple(sorted({*keys, *((a + b) / 2
@@ -111,22 +120,61 @@ def _write_transfer_samples(host, staged, frames, stream, *, target):
     stream.seek(0)
 
 
-def _compare_transfer_samples(host, staged, frames, stream, *, target):
+def _compare_transfer_samples(host, staged, frames, stream, *, target,
+                              exclude_unattached_face=False):
     stream.seek(0)
     greatest = 0.0
+    face_meshes = frozenset(
+        uuid for skin in staged.original.skins
+        if any(source == 'FaceJoint_M' or '|FaceJoint_M' in source
+               for _, source, _, _ in skin.influences)
+        for _, uuid, _ in skin.meshes) if exclude_unattached_face else frozenset()
+    def staged_body_samples(samples):
+        if not face_meshes:
+            return samples
+        return tuple((frame, body, spaces,
+            tuple((uuid, points) for uuid, points in meshes
+                  if uuid not in face_meshes), attachments)
+            for frame, body, spaces, meshes, attachments in samples)
     for offset in range(0, len(frames), _TRANSFER_SAMPLE_BATCH_SIZE):
         batch = frames[offset:offset + _TRANSFER_SAMPLE_BATCH_SIZE]
-        before = pickle.load(stream)
-        after = host.sample_character_transfer(staged, batch,
-                                               target=target)
+        before = staged_body_samples(pickle.load(stream))
+        after = staged_body_samples(host.sample_character_transfer(
+            staged, batch, target=target))
         greatest = max(greatest, character_transfer_error(before, after))
     return greatest
+
+
+def _transfer_sample_differences(host, staged, frames, stream):
+    """Name the largest remaining full-character errors after promotion."""
+    from adv_py.core.body_control_spaces import control_space_pose_error
+    stream.seek(0)
+    rows=[]
+    for offset in range(0,len(frames),_TRANSFER_SAMPLE_BATCH_SIZE):
+        before=pickle.load(stream)
+        after=host.sample_character_transfer(
+            staged,frames[offset:offset+_TRANSFER_SAMPLE_BATCH_SIZE],target=True)
+        for left,right in zip(before,after):
+            frame=left[0]
+            for label,index in (('body',1),('spaces',2)):
+                if left[index] or right[index]:
+                    rows.append((control_space_pose_error(
+                        tuple(left[index]),tuple(right[index])),frame,label))
+            for label,index in (('mesh',3),('attachment',4)):
+                for (key,a),(_,b) in zip(left[index],right[index]):
+                    if len(a)==len(b):
+                        delta=max((range(len(a))),
+                                  key=lambda i:abs(a[i]-b[i]),default=None)
+                        if delta is not None:
+                            rows.append((abs(a[delta]-b[delta]),frame,
+                                         label+':'+key,delta,a[delta],b[delta]))
+    return tuple(sorted(rows,reverse=True)[:12])
 
 
 class StageBodyCharacterRebuild:
     def __init__(self,host):self._host=host
 
-    def apply(self,namespace,*,extensions=(),spline_counts=()):
+    def apply(self,namespace,*,extensions=(),spline_counts=(),spline_alignment_systems=()):
         host=self._host
         host.preflight_character_rebuild_namespace(namespace)
         original=CaptureBodyCharacterPreservation(host).execute(extensions=extensions)
@@ -154,7 +202,19 @@ class StageBodyCharacterRebuild:
         selection_members=host.capture_body_rebuild_selection_members()
         generic_fk_policy = host.capture_body_generic_fk_feature_policy(
             original.registration)
-        if is_source_body_registration(original.registration) and not spline_counts:
+        explicit_alignment_upgrade = bool(spline_alignment_systems)
+        if spline_alignment_systems:
+            from adv_py.core.source_spline_alignment_upgrade import (
+                source_spline_alignment_upgrade_systems, upgrade_source_spline_alignment_layouts)
+            spline_alignment_systems = source_spline_alignment_upgrade_systems(
+                original.registration, spline_alignment_systems)
+            if spline_counts:
+                raise CharacterRegistryError('AlignIKTo 参考节点升级与控制数量修改需要分别执行')
+            generic_fk_policy = replace(generic_fk_policy,
+                source_spline_layouts=upgrade_source_spline_alignment_layouts(
+                    generic_fk_policy.source_spline_layouts, spline_alignment_systems))
+        if (is_source_body_registration(original.registration) and not spline_counts
+                and not explicit_alignment_upgrade):
             from adv_py.adapters.maya_spline_control_rebuild import authored_fit_count_changes
             spline_counts=authored_fit_count_changes(host,original.registration)
         if spline_counts:
@@ -173,10 +233,17 @@ class StageBodyCharacterRebuild:
         fit_channels=host.capture_character_rebuild_fit_channels(original.registration.container)
         fit_values=host.read_fit_skeleton_settings(original.registration.container)
         fit_curve=host.capture_control_curves((original.registration.container,),strict=True)[0]
+        capture_terminal=getattr(host,'capture_source_fit_terminal_state',None)
+        terminal_state=(capture_terminal(original.registration.container)
+                        if capture_terminal is not None else None)
         capture_driving = getattr(host, 'capture_body_driving_rebuild', None)
         driving_state = capture_driving(original.registration) if capture_driving else None
         capture_orient = getattr(host, 'capture_body_control_orient_rebuild', None)
         orient_state = capture_orient(original.registration) if capture_orient else ()
+        capture_game = getattr(host, 'capture_body_game_rebuild', None)
+        game_state = capture_game(original.registration) if capture_game else None
+        capture_matcher_blends=getattr(host,'capture_name_matcher_blend_rebuild',None)
+        matcher_blends=capture_matcher_blends(original.registration) if capture_matcher_blends else ()
         with TemporaryDirectory(prefix='adv-py-rebuild-') as directory:
             fit=Path(directory)/'source.fit.json'
             # Built ADV keeps Fit beneath Group. Export its authored data
@@ -215,10 +282,17 @@ class StageBodyCharacterRebuild:
                             original.deformers,original.skins)
                             != deformer_animation_state):
                     raise RuntimeError('重建暂存前原角色系统层级、分段或选择集发生变化')
+                if (capture_terminal is not None and
+                        capture_terminal(original.registration.container)!=terminal_state):
+                    raise CharacterRegistryError('重建暂存前非对称 previousParent 末端判定发生变化')
+                if capture_matcher_blends and capture_matcher_blends(original.registration)!=matcher_blends:
+                    raise CharacterRegistryError('重建暂存前 NameMatcher BlendShape 控制器状态变化')
                 stage=host.create_character_rebuild_host(namespace)
                 CreateAndImportFitSkeleton(stage).apply(fit)
                 with stage.transaction('Restore original Fit channel state'):
                     stage.restore_character_rebuild_fit_channels(fit_channels)
+                    if terminal_state is not None:
+                        stage.install_source_fit_terminal_state(terminal_state)
                     for setting in fit_values.settings:
                         if setting.field in FIT_SKELETON_NONPORTABLE_SETTING_FIELDS:
                             stage.set_fit_skeleton_setting('FitSkeleton',setting)
@@ -262,22 +336,27 @@ class StageBodyCharacterRebuild:
                 if any(key.startswith('spine.fkMatch.') for key in keys):
                     from .character_spline_animation import EnableBodyCharacterSplineAnimation
                     registration=EnableBodyCharacterSplineAnimation(stage).apply()
-                if any(key.startswith('game.rootMotion.') for key in keys):
-                    from .body_game_root_motion import SwitchGameRootMotion
-                    SwitchGameRootMotion(stage).apply(create=True)
-                    registration=stage.read_character_registration()
                 host.match_character_rebuild_solver(stage,registration)
                 driving_sets_created = False
-                if driving_state is not None or orient_state:
+                root_motion_saved = any(key.startswith('game.rootMotion.') for key in keys)
+                if driving_state is not None or orient_state or game_state or root_motion_saved:
                     if selection_mode == 'none':
-                        raise CharacterRegistryError('原版朝向和 SDK 重建需要 ControlSet 和构建姿态')
+                        raise CharacterRegistryError('原版朝向、SDK 和 Game Engine 重建需要 ControlSet 和构建姿态')
                     # SDK construction uses the native source sets/pose. Create
                     # them now, then populate the complete AllSet after SDK
                     # restoration has added the final graph nodes.
-                    finalize_body_character_sets(stage, registration, built.rig.plan,
+                    registration = finalize_body_character_sets(stage, registration, built.rig.plan,
                         segments=built.segment_influences, extras=built.selection_extras,
                         scene_before=scene_before, fit_container=fit_path, populate_all=False)
                     driving_sets_created = True
+                if game_state:
+                    registration, rig = stage.restore_body_game_rebuild_root(
+                        game_state, registration, built.rig)
+                    built = replace(built, registration=registration, rig=rig)
+                elif root_motion_saved:
+                    from .body_game_root_motion import SwitchGameRootMotion
+                    SwitchGameRootMotion(stage).apply(create=True)
+                    registration=stage.read_character_registration()
                 if orient_state:
                     with stage.transaction('Restore original controller orientations'):
                         registration, rig = stage.restore_body_control_orient_rebuild(
@@ -288,6 +367,33 @@ class StageBodyCharacterRebuild:
                         registration, rig = stage.restore_body_driving_rebuild(
                             driving_state, registration, built.rig, fit=fit_path)
                     built = replace(built, registration=registration, rig=rig)
+                if game_state:
+                    registration, rig = stage.restore_body_game_rebuild_modes(
+                        game_state, registration, built.rig)
+                    built = replace(built, registration=registration, rig=rig)
+                if matcher_blends:
+                    with stage.transaction('Restore original NameMatcher BlendShape controls'):
+                        registration=stage.restore_name_matcher_blend_rebuild(matcher_blends,registration)
+                    built=replace(built,registration=registration)
+                if original.registration.retired_body:
+                    # Native export deletion happens after ADV has enrolled
+                    # its constructed graph in AllSet. Deferring ownership
+                    # until after deletion lets Maya also delete now-orphaned
+                    # Spline scale utilities which the original rig retains.
+                    if selection_mode != 'none':
+                        registration = finalize_body_character_sets(
+                            stage, registration, built.rig.plan,
+                            segments=built.segment_influences,
+                            extras=built.selection_extras,
+                            scene_before=scene_before, fit_container=fit_path,
+                            create_sets=not driving_sets_created,
+                            populate_all=selection_mode == 'populated')
+                        driving_sets_created = True
+                        built = replace(built,registration=registration)
+                    with stage.transaction('Restore original export end-joint deletion'):
+                        registration = stage.restore_body_retirement_rebuild(
+                            original.registration, preservation=original)
+                    built = replace(built,registration=registration)
                 spline_change=None
                 if spline_counts:
                     from adv_py.core.spline_control_rebuild import plan_spline_control_rebuild
@@ -296,14 +402,21 @@ class StageBodyCharacterRebuild:
                         registration,spline_change=spline_change)
                 else:
                     registration=host.preserve_character_rebuild_binding(stage,original.registration,registration)
+                if spline_alignment_systems:
+                    from adv_py.core.source_spline_alignment_upgrade import audit_source_spline_alignment_upgrade
+                    audit_source_spline_alignment_upgrade(original.registration, registration,
+                                                         spline_alignment_systems)
                 if selection_mode != "none":
-                    finalize_body_character_sets(
+                    registration = finalize_body_character_sets(
                         stage, registration, built.rig.plan,
                         segments=built.segment_influences,
                         extras=built.selection_extras,
                         scene_before=scene_before, fit_container=fit_path,
                         create_sets=not driving_sets_created,
                         populate_all=selection_mode == "populated")
+                    if driving_state is not None:
+                        with stage.transaction('Restore original SDK AllSet membership'):
+                            stage.restore_body_driving_rebuild_membership(driving_state)
                     if spline_change is None or not spline_change.systems:
                         with stage.transaction('Preserve original selection membership'):
                             stage.restore_body_rebuild_selection_members(selection_members)
@@ -384,6 +497,9 @@ class StageBodyCharacterRebuild:
                     {row[0] for row in preserved_geometry})
                 from adv_py.adapters.maya_driving_rebuild import derived_property_plugs
                 derived_plugs = derived_property_plugs(driving_state, original.registration)
+                if source_build:
+                    from adv_py.adapters.maya_source_body_rebuild import derived_properties
+                    derived_plugs |= derived_properties(stage,registration)
                 property_options = {'derived_plugs': derived_plugs} if derived_plugs else {}
                 if spline_change is not None and spline_change.systems:
                     from adv_py.adapters.maya_spline_control_rebuild import plan_properties
@@ -403,7 +519,8 @@ class StageBodyCharacterRebuild:
                                               deformer_sample_frames=deformer_sample_frames,
                                               deformer_animation_state=deformer_animation_state,
                                               segment_influences=built.segment_influences,
-                                              spline_change=spline_change)
+                                              spline_change=spline_change,
+                                              spline_alignment_systems=spline_alignment_systems)
                 staged=replace(staged,ownership=host.audit_character_rebuild_ownership(staged))
         return staged
 
@@ -411,7 +528,7 @@ class StageBodyCharacterRebuild:
 class TransferStagedBodyCharacterData:
     def __init__(self,host):self._host=host
 
-    def apply(self,staged):
+    def apply(self,staged,*,baseline=None):
         host=self._host
         original=staged.original
         extensions=tuple(row.path for row in original.extensions)
@@ -444,9 +561,11 @@ class TransferStagedBodyCharacterData:
         if staged.ownership is not None and host.audit_character_rebuild_ownership(staged)!=staged.ownership:
             raise CharacterRegistryError('暂存后的 Rig 归属或连接已变化，请重新暂存')
         frames=_transfer_sample_frames(original,staged.deformer_sample_frames)
-        with TemporaryFile(mode='w+b') as baseline:
+        with (nullcontext(baseline) if baseline is not None
+              else TemporaryFile(mode='w+b')) as transfer_baseline:
             if staged.spline_change is None or not staged.spline_change.systems:
-                _write_transfer_samples(host,staged,frames,baseline,target=False)
+                _write_transfer_samples(host,staged,frames,transfer_baseline,
+                                        target=False)
             with host.character_rebuild_transaction('Transfer preserved data to replacement rig'):
                 host.transfer_character_data(staged)
                 host.verify_character_retained_data(staged)
@@ -457,8 +576,9 @@ class TransferStagedBodyCharacterData:
                 if target.capture_body_geometry_container_state() != staged.geometry_container_state:
                     raise RuntimeError('交接改变了 Geometry 容器状态')
                 if staged.spline_change is None or not staged.spline_change.systems:
-                    error=_compare_transfer_samples(host,staged,frames,baseline,
-                                                    target=True)
+                    error=_compare_transfer_samples(host,staged,frames,transfer_baseline,
+                                                    target=True,
+                                                    exclude_unattached_face=True)
                     if error>1e-4:
                         raise RuntimeError('交接改变身体、控制空间、蒙皮或用户附件；最大误差：'+str(error))
         return staged
@@ -468,19 +588,31 @@ class RebuildBodyCharacter:
     """Original rebuild, including explicit/label-derived Spline count edits."""
     def __init__(self,host):self._host=host
 
-    def apply(self,namespace,*,extensions=(),spline_counts=()):
+    def apply(self,namespace,*,extensions=(),spline_counts=(),spline_alignment_systems=()):
         host=self._host
         with host.transaction('Rebuild character preserving user data'):
             from adv_py.adapters.maya_source_parent_inverse import repair
             repair(host, host.read_character_registration())
             staged=StageBodyCharacterRebuild(host).apply(namespace,extensions=extensions,
-                spline_counts=spline_counts)
-            TransferStagedBodyCharacterData(host).apply(staged)
+                spline_counts=spline_counts,spline_alignment_systems=spline_alignment_systems)
             frames=_transfer_sample_frames(staged.original,
                 staged.deformer_sample_frames)
+            from adv_py.adapters.maya_body_face_rebuild import retained_roots
+            preserve_face=bool(retained_roots(host,staged.original.registration))
+            use_source_baseline=(preserve_face and
+                (staged.spline_change is None or not staged.spline_change.systems))
             with TemporaryFile(mode='w+b') as baseline:
-                _write_transfer_samples(host,staged,frames,baseline,target=True)
+                # The Face stays attached to the old Head until promotion.
+                # Its mesh at the transfer midpoint is not a valid final
+                # baseline once animation has moved to the staged Body.
+                TransferStagedBodyCharacterData(host).apply(
+                    staged,baseline=baseline if use_source_baseline else None)
+                if not use_source_baseline:
+                    _write_transfer_samples(host,staged,frames,baseline,target=True)
                 promoted=host.promote_character_rebuild(staged)
+                # Match MEL's final `dgdirty -a` after the handoff (78540).
+                from maya import cmds as cmds
+                cmds.dgdirty(allPlugs=True)
                 geometry_roots = {row[0] for row in staged.authored_geometry or ()}
                 if host.capture_body_geometry_contents(geometry_roots) != staged.authored_geometry:
                     raise RuntimeError('重建后 Geometry 模型层级身份或姿态变化')
@@ -494,7 +626,11 @@ class RebuildBodyCharacter:
                     raise RuntimeError('重建后 Geometry 输出连接变化')
                 if host.capture_body_geometry_output_conversions() != staged.geometry_output_conversions:
                     raise RuntimeError('重建后 Geometry 输出单位转换变化')
-                if _compare_transfer_samples(host,promoted,frames,baseline,
-                                             target=True)>1e-4:
-                    raise RuntimeError('原位替换改变身体、蒙皮或用户数据')
+                final_error=_compare_transfer_samples(host,promoted,frames,baseline,
+                                                     target=True)
+                if final_error>1e-4:
+                    details=_transfer_sample_differences(
+                        host,promoted,frames,baseline)
+                    raise RuntimeError('原位替换改变身体、蒙皮或用户数据：'
+                                       +repr(details))
         return promoted

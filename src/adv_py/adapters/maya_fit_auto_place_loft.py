@@ -1,5 +1,6 @@
 """MEL asFitAutoPlaceLoft: smooth contours and replace editable projections."""
 from .maya_fit_auto_place_projection import save_projection
+from .maya_original_transform_channels import align_original_transform
 
 
 def build_loft(host,axis):
@@ -44,7 +45,7 @@ def build_loft(host,axis):
         if not c.objExists('asFitProjection'+name):continue
         skin=mesh+'_R' if name in ('Hip','Knee','Ankle','Toes') else mesh
         scan='asFitScanCurve'+name;handle='asFitHandle'+name;projection='asFitProjection'+name
-        constraint=c.parentConstraint(scan,'asFitScanCurve')[0];c.delete(constraint)
+        align_original_transform(c,'asFitScanCurve',scan,True,True,False,False)
         offsets=tuple(c.getAttr(handle+'.offset'+coord) for coord in 'XYZ') if c.objExists(handle+'.offsetX') else (0,0,0)
         rotation=c.getAttr('asFitPivotOrient'+name+'.rotate')[0]
         c.delete(handle,'asFitPivot'+name)

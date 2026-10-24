@@ -115,6 +115,7 @@ def build_source_body_part_drivers(host, build, part_result, fk, limbs, spline, 
                             if source.up_twist_plug})
         BuildFitBendyGuides(host).apply(bendy_chains, follows=follows)
         BuildFitBendyDeform(host).apply(bendy_chains)
-    if not use_offset_parent_matrix:
-        host.create_source_twist_part_positions(ordinary_parts,steps,blended,independent)
+    # MEL 83466–83483 applies the same live interval to both output modes:
+    # OPM receives it on twistCM.inputTranslate, traditional on Body.translate.
+    host.create_source_twist_part_positions(ordinary_parts,steps,blended,independent)
     return steps, scale_plan, bendy_chains

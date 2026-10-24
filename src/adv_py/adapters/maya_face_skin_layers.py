@@ -25,13 +25,14 @@ class MayaFaceSkinLayersHost(MayaFacePreHost):
                                          type="transform", fullPath=True) or ())
         return group, children
 
-    def _mode_allows_layers(self) -> bool:
+    def face_skin_layers_visible(self) -> bool:
+        """Frame eligibility from asUpdateButtonEnables, independent of children."""
         c = self._maya
         fit = self._name("FaceFitSkeleton")
         if not c.objExists(fit):
             return False
-        if (c.attributeQuery("RigType", node=fit, exists=True)
-                and int(c.getAttr(fit + ".RigType")) != 2):
+        if (not c.attributeQuery("RigType", node=fit, exists=True)
+                or int(c.getAttr(fit + ".RigType")) != 2):
             return False
         if (c.attributeQuery("GameEngine", node=fit, exists=True)
                 and bool(c.getAttr(fit + ".GameEngine"))):
@@ -56,7 +57,7 @@ class MayaFaceSkinLayersHost(MayaFacePreHost):
     def available_face_skin_layers(self) -> tuple[str, ...]:
         """Reproduce the dynamic buttons populated by asUpdateButtonEnables."""
         c = self._maya
-        if (not self._mode_allows_layers()
+        if (not self.face_skin_layers_visible()
                 or not c.objExists(self._name("DeformationLayers"))):
             return ()
         _, children = self._group_and_children()

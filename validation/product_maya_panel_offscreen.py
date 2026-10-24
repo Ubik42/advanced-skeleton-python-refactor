@@ -23,6 +23,55 @@ class FakeController:
         self.calls = []
         self.include = "Complete"
 
+    def hide_help_buttons(self):
+        return False
+
+    def fit_joint_display_scale(self, value=None):
+        return 1. if value is None else float(value)
+
+    def panel_palette(self):
+        from adv_py.core.panel_preferences import PanelPalette, PANEL_COLOR_DEFAULTS
+        return PanelPalette(False, PANEL_COLOR_DEFAULTS)
+
+    def shapers_plugin_status(self):
+        return SimpleNamespace(root=None, mode='automatic', autoload=False,
+                               loaded_file=None)
+
+    def preparation_source_name_matcher_catalog(self):
+        return ()
+
+    def fit_source_asset_catalog(self, *, limbs=False):
+        return ()
+
+    def control_curve_palette_colors(self):
+        return ((1., 0., 0.), (0., 0., 1.))
+
+    def face_multi_skin_clusters_supported(self):
+        return False
+
+    def original_publish_entries(self, namespace):
+        return ()
+
+    def face_skin_layers_visible(self, namespace):
+        return True
+
+    def face_skin_layers_available(self, namespace):
+        return ()
+
+    def face_read_original_options(self, namespace):
+        return None
+
+    def face_pre_input_fields(self, namespace):
+        return dict.fromkeys(('Mask','Face','AllHead','HeadJoint','SkinCluster',
+                              'RightEye','LeftEye'), '')
+
+    def face_fit_states(self, namespace, keys):
+        return dict.fromkeys(keys, False)
+
+    def body_build_options(self, namespace, fit_container=''):
+        from adv_py.core.body_build_options import BodyBuildOptions
+        return BodyBuildOptions()
+
     def face_fit_current_side(self, namespace):
         return "Right"
 

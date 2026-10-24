@@ -37,6 +37,34 @@ def lock_trs(c,node,translate=True,rotate=True,scale=True,visibility=False):
     lock_original_transform_channels(c,node,translate,rotate,scale,visibility)
 
 
+def auto_orbit(host,step):
+    """asFitAutoOrbit: Ctrl alone transfers world translation and Euler rotation.
+
+    Copying the complete matrix also transfers the orbit parent's scale/shear;
+    the MEL explicitly leaves the camera's other transform channels intact.
+    """
+    c=host._cmds;raw=getattr(c,'raw',c)
+    if raw.getModifiers()!=4:return
+    c.rotate(0,step,0,'asFitOrbitA',relative=True)
+    position=c.xform('asFitOrbitB',query=True,worldSpace=True,translation=True)
+    rotation=c.xform('asFitOrbitB',query=True,worldSpace=True,rotation=True)
+    raw.xform('persp',worldSpace=True,translation=position,rotation=rotation)
+
+
+def defer_camera_restore(host):
+    """Source 51866–51869 saves T/R and queues its MEL float-string command."""
+    c=host._cmds;raw=getattr(c,'raw',c)
+    position=raw.xform('persp',query=True,worldSpace=True,translation=True)
+    rotation=raw.xform('persp',query=True,worldSpace=True,rotation=True)
+    c.xform('asFitOrbitB',worldSpace=True,translation=position)
+    values=lambda row:' '.join(format(value,'.10g') for value in row)
+    command='xform -ws -t '+values(position)+' -ro '+values(rotation)+' persp'
+    # cmds.evalDeferred interprets a string as Python; this source command is
+    # MEL. Queue it through Maya's MEL scheduler, as the original does.
+    from maya import mel
+    mel.eval('evalDeferred "'+command+'";')
+
+
 def save_projection(host,name,axis,skin,find,keep_history):
     host._require_transaction();host._transaction_changed=True;c=host._cmds
     direction=(0,0,1) if axis.startswith('z') else (1,0,0) if axis=='x' else (0,1,0)
@@ -46,7 +74,7 @@ def save_projection(host,name,axis,skin,find,keep_history):
         direction=(1,0,0)
         position=c.xform('asFitScanCurve',query=True,worldSpace=True,translation=True)
         c.setAttr(scan+'.translate',c.getAttr('AutoPlacing.bbMinX'),position[1],
-                  (c.getAttr('AutoPlacing.bbMinZ')+c.getAttr('AutoPlacing.bbMaxZ'))/2.,type='double3')
+                  (c.getAttr('AutoPlacing.bbMinZ')+c.getAttr('AutoPlacing.bbMaxZ'))/2.,type='float3')
         c.setAttr(scan+'.rotateY',-90.)
         axis='x'
     c.setAttr(scan+'.visibility',False)
@@ -103,13 +131,13 @@ def update_projection(host,name,axis,skin,find,keep_history):
     c=host._cmds
     position=c.getAttr('asFitScanCurve.translate')[0];rotation=c.getAttr('asFitScanCurve.rotate')[0]
     try:
-        c.setAttr('asFitScanCurve.translate',*c.getAttr('asFitScanCurve'+name+'.translate')[0],type='double3')
-        c.setAttr('asFitScanCurve.rotate',*c.getAttr('asFitScanCurve'+name+'.rotate')[0],type='double3')
+        c.setAttr('asFitScanCurve.translate',*c.getAttr('asFitScanCurve'+name+'.translate')[0],type='float3')
+        c.setAttr('asFitScanCurve.rotate',*c.getAttr('asFitScanCurve'+name+'.rotate')[0],type='float3')
         c.delete('asFitScanCurve'+name,'asFitHandle'+name,'asFitProjection'+name,'asFitPivot'+name)
         return save_projection(host,name,axis,skin,find,keep_history)
     finally:
-        c.setAttr('asFitScanCurve.translate',*position,type='double3')
-        c.setAttr('asFitScanCurve.rotate',*rotation,type='double3')
+        c.setAttr('asFitScanCurve.translate',*position,type='float3')
+        c.setAttr('asFitScanCurve.rotate',*rotation,type='float3')
 
 
 def anchor(host,joint):
@@ -126,6 +154,8 @@ def straight_pole(host,limb):
     c=host._cmds
     start,middle,end=('Shoulder','Elbow','Wrist') if limb=='Arm' else ('Hip','Knee','Ankle')
     if any(not c.objExists(node) for node in (start,middle,end)):return False
+    selected=tuple(c.ls(selection=True,long=True) or ())
+    host._transaction_changed=True
     handles=c.objExists('asFitHandleHip')
     if handles:
         for coord in 'XYZ':c.setAttr('asFitHandle'+middle+'.offset'+coord,0.)
@@ -144,5 +174,7 @@ def straight_pole(host,limb):
         if handles:
             for coord,a,b in zip('XYZ',target,middle_position):c.setAttr('asFitHandle'+middle+'.offset'+coord,a-b)
         else:c.move(*target,middle,absolute=True,preserveChildPosition=True)
-    finally:c.delete(root)
+    finally:
+        c.delete(root)
+        c.select(selected,replace=True) if selected else c.select(clear=True)
     return True

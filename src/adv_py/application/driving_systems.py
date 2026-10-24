@@ -50,13 +50,16 @@ class EditOriginalDrivingSystems:
 class EditOriginalPoseFunctions:
     def __init__(self,host):self.host=host
     def catalog(self):return self.host.original_stored_pose_names()
-    def apply(self,action,*,name="",overwrite=False,objects=(),attributes=()):
-        if action not in ("store","apply","delete","add_build_pose","disable_orients","enable_orients","neutral"):
+    def apply(self,action,*,name="",overwrite=False,objects=(),attributes=(),ui_name='',ui_state=None):
+        if action not in ("store","apply","delete","add_build_pose","disable_orients","enable_orients","neutral","t_pose","clean_animation","mirror"):
             raise ValueError("原版 Pose Functions 操作无效")
         with self.host.transaction("原版 Pose Functions："+action):
             if action=="store":return self.host.store_original_named_pose(name,overwrite=overwrite)
             if action=="apply":return self.host.apply_original_named_pose(name)
             if action=="delete":return self.host.delete_original_named_pose(name)
             if action=="add_build_pose":return self.host.add_original_build_pose_channels(objects,attributes)
-            if action=="neutral":return self.host.go_to_original_corrective_build_pose()
+            if action in ("neutral","t_pose"):
+                return self.host.go_to_original_control_build_pose(ui_name,t_pose=action=="t_pose",**(ui_state or {}))
+            if action=="clean_animation":return self.host.clean_original_control_animation(ui_name,**(ui_state or {}))
+            if action=="mirror":return self.host.mirror_original_control_pose(ui_name,**(ui_state or {}))
             return self.host.toggle_original_custom_orients(action=="enable_orients")

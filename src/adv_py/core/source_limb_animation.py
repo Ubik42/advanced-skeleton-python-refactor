@@ -3,7 +3,7 @@
 The binding is graph identity, not a new rig plan: source names, Part receivers,
 extra controls and Foot branches remain those created by the source builder.
 """
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from math import sqrt
 
 
@@ -59,6 +59,7 @@ class SourceLimbAnimationBinding:
     leg_aim_control: str | None = None
     ik_scale_axes: tuple[str,str,str] | None = None
     pole_offsets: tuple[str,str] | None = None
+    primary_align: str | None = None
 
     @property
     def paths(self):
@@ -67,6 +68,7 @@ class SourceLimbAnimationBinding:
             (row.body, row.fk_driver, row.ik_driver, row.control, row.receiver)),
             *((self.toe_control,) if self.toe_control else ()),
             *((self.toe_align,) if self.toe_align else ()),
+            *((self.primary_align,) if self.primary_align else ()),
             *((self.toe_source,) if self.toe_source else ()),
             *(p for row in self.hybrid_controls for p in (row.control,row.fk_driver)),
             *(p for row in self.lengths for p in (row.start_fk,row.end_fk)),
@@ -83,6 +85,27 @@ class SourceLimbAnimationBinding:
         if self.leg_aim_control:controls.add(self.leg_aim_control)
         return frozenset(channel.key for channel in registration.channels
                          if channel.node in controls or channel.key==self.blend_key)
+
+
+def retain_source_limb_body_rows(bindings, body_paths, *, retired_body_paths=()):
+    """Refresh correspondence after native deletion of unused Body tips.
+
+    The FK/IK mechanisms and controls survive asDeleteUnusedJoints. Only the
+    optional correspondence to a deleted deform joint disappears. Do not
+    reinterpret a missing primary anchor as a shorter, different RP system.
+    """
+    from .character_registry import CharacterRegistryError
+    live = frozenset(body_paths) | frozenset(retired_body_paths)
+    result = []
+    for binding in bindings:
+        primary = binding.joints[:binding.primary_count]
+        if any(row.body not in live for row in primary):
+            raise CharacterRegistryError(
+                '导出末端清理删除了 RP 主链锚点：' + binding.label + '_' + binding.side)
+        joints = primary + tuple(row for row in binding.joints[binding.primary_count:]
+                                 if row.body in live)
+        result.append(replace(binding, joints=joints))
+    return tuple(result)
 
 
 def describe_source_limb_bindings(plan, body):
@@ -209,11 +232,12 @@ def describe_source_limb_bindings(plan, body):
                 reverse_roll,reverse_handle,tuple(lengths),dynamics.ratio if dynamics else None,
                 dynamics.start_anchor if dynamics else None,
                 plan.global_control.control_path,float(height),leg_aim.fk_control if leg_aim else None,
-                _source_scale_axes(plan,limb,ik),_source_pole_offsets(plan,joints,primary,ik)))
+                _source_scale_axes(plan,limb,ik),_source_pole_offsets(plan,joints,primary,ik),ik.wrist_align_path))
     return tuple(rows)
 
 
-def decode_source_limb_bindings(raw, channels, body, nodes, *, legacy=False):
+def decode_source_limb_bindings(raw, channels, body, nodes, *, legacy=False,
+                                retired_body_paths=frozenset()):
     from .character_registry import exact, path, identifier, finite, CharacterRegistryError
     channel_map = {channel.key: channel for channel in channels}
     channel_pairs={(channel.node,channel.attribute) for channel in channels}
@@ -223,6 +247,8 @@ def decode_source_limb_bindings(raw, channels, body, nodes, *, legacy=False):
         raise CharacterRegistryError('来源 RP 动画系统数量无效')
     result = []
     for row in raw:
+        if isinstance(row,dict) and 'primary_align' not in row:
+            row = {**row, 'primary_align': None}
         if legacy:
             row = {**exact(row,(field.name for field in fields(SourceLimbAnimationBinding)
                                if field.name not in ('leg_aim_control','ik_scale_axes','pole_offsets'))),
@@ -274,8 +300,11 @@ def decode_source_limb_bindings(raw, channels, body, nodes, *, legacy=False):
             path(row['global_control']),
             finite(row['height']),path(row['leg_aim_control']) if row['leg_aim_control'] else None,
             tuple(row['ik_scale_axes']) if row['ik_scale_axes'] is not None else None,
-            tuple(path(value) for value in row['pole_offsets']) if row['pole_offsets'] is not None else None)
-        if (binding.height <= 0 or not binding.paths.issubset(node_paths)
+            tuple(path(value) for value in row['pole_offsets']) if row['pole_offsets'] is not None else None,
+            path(row['primary_align']) if row['primary_align'] else None)
+        required_live = binding.paths - {item.body for item in binding.joints
+                                        if item.body in retired_body_paths}
+        if (binding.height <= 0 or not required_live.issubset(node_paths)
                 or binding.blend_key not in channel_map
                 or len(set(binding.reset_controls)) != len(binding.reset_controls)
                 or len({key for key, _ in attributes}) != len(attributes)

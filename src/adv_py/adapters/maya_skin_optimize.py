@@ -38,7 +38,8 @@ class MayaSkinOptimizeHost:
             for mesh, skin in self._mesh_skin_history():
                 c.select(c.listRelatives(mesh, parent=True) or [], replace=True)
                 before = len(c.listConnections(skin + ".matrix") or [])
-                self.mel.eval("removeUnusedInfluences;")
+                from .maya_original_skin_history import remove_unused_selected_skin_influences
+                remove_unused_selected_skin_influences(c)
                 after = len(c.listConnections(skin + ".matrix") or [])
                 removed += before - after
                 skins.add(skin)

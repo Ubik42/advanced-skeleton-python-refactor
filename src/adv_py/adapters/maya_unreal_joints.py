@@ -3,6 +3,15 @@ from __future__ import annotations
 
 from adv_py.core.unreal_joints import UnrealJointPlan, UnrealJointSpec
 from .maya_custom_controller import MayaCustomControllerHost
+from .maya_original_control_identity import source_main, leaf
+from .maya_original_control_orient import _by_uuid
+from .maya_original_transform_channels import align_original_transform
+from .maya_game_registration import (
+    source_registration, refresh_hierarchy, scene_ids, remember_generated_nodes,
+)
+
+NAMES = ('UnrealRoot', 'ik_foot_root', 'ik_foot_l', 'ik_foot_r',
+         'ik_hand_root', 'ik_hand_gun', 'ik_hand_l', 'ik_hand_r')
 
 
 class MayaUnrealJointsHost(MayaCustomControllerHost):
@@ -31,17 +40,11 @@ class MayaUnrealJointsHost(MayaCustomControllerHost):
         deformation = self._unique("DeformationSystem", "transform")
         root = self._unique("Root_M", "joint")
         if plan.create_root:
-            parent = (c.listRelatives(root, parent=True,
-                                      fullPath=True) or [None])[0]
             unreal = self._node("UnrealRoot")
             if c.objExists(unreal):
-                unreal = self._unique(unreal, "joint")
-                if parent != unreal:
-                    raise ValueError("UnrealRoot 已存在但不拥有 Root_M")
-            elif parent != deformation:
-                raise ValueError("Root_M 不在 DeformationSystem 直属层级")
+                self._unique(unreal, "joint")
             if not plan.opm:
-                self._unique("Main", "transform")
+                self._unique(source_main(self), "transform")
                 self._unique("ConstraintSystem", "transform")
                 self._unique("MainScaleMultiplyDivide", "multiplyDivide")
         else:
@@ -62,12 +65,12 @@ class MayaUnrealJointsHost(MayaCustomControllerHost):
         c = self._cmds
         deformation = self._unique("DeformationSystem", "transform")
         root = self._unique("Root_M", "joint")
-        unreal = c.createNode("joint", name=self._node("UnrealRoot"),
-                              parent=deformation, skipSelect=True)
+        c.select(deformation, replace=True)
+        unreal = c.joint(name='UnrealRoot')
         c.parent(root, unreal)
         if not opm:
             constraint = c.parentConstraint(
-                self._unique("Main", "transform"), unreal,
+                self._unique(source_main(self), "transform"), unreal,
                 maintainOffset=False,
                 name=self._node("UnrealRoot_parentConstraint1"))[0]
             c.parent(constraint, self._unique("ConstraintSystem", "transform"))
@@ -79,43 +82,59 @@ class MayaUnrealJointsHost(MayaCustomControllerHost):
         self._transaction_changed = True
         c = self._cmds
         parent = self._unique(spec.parent, "joint")
-        marker = c.createNode("joint", name=self._node(spec.name),
-                              parent=parent, skipSelect=True)
-        if spec.align_to:
-            landmark = self._unique(spec.align_to, "joint")
-            position = c.xform(landmark, query=True, worldSpace=True,
-                               translation=True)
-            c.xform(marker, worldSpace=True, translation=position)
+        c.select(parent, replace=True)
+        c.joint(name=spec.name)
+
+    def begin_unreal_joints(self):
+        self._require_transaction()
+        self._unreal_registration_before = source_registration(self)
+        self._unreal_scene_before = scene_ids(self)
+        before = self._unreal_registration_before
+        self._unreal_removable_ids = frozenset(node.uuid for node in before.nodes
+            if leaf(node.path) in NAMES) if before else frozenset()
+
+    def finish_unreal_joints(self, plan):
+        self._require_transaction()
+        c = self._cmds
+        if plan is not None:
+            # Source creates the complete native hierarchy first, then aligns
+            # gun, left hand, right foot and left foot in that exact order.
+            by_name = {row.name: row for row in plan.joints}
+            for name in ('ik_hand_gun', 'ik_hand_l', 'ik_foot_r', 'ik_foot_l'):
+                spec = by_name[name]
+                if spec.align_to:
+                    align_original_transform(c, self._unique(name, 'joint'),
+                        self._unique(spec.align_to, 'joint'), True, False, False, False)
+        before = self._unreal_registration_before
+        removed = set()
+        if before is not None:
+            for identity in self._unreal_removable_ids:
+                try:
+                    _by_uuid(self, identity)
+                except ValueError:
+                    removed.add(identity)
+        added = tuple(self._unique(name, 'joint') for name in NAMES if c.objExists(name))
+        refresh_hierarchy(self, before, removed_ids=frozenset(removed), added_paths=added)
+        remember_generated_nodes(self, self._unreal_scene_before)
+        c.select(clear=True)
 
     def delete_unreal_joints(self) -> None:
         self._require_transaction()
         c = self._cmds
-        for name in ("ik_foot_root", "ik_hand_root"):
-            address = self._node(name)
-            if c.objExists(address):
-                marker = self._unique(address, "joint")
-                parent = (c.listRelatives(marker, parent=True,
-                                          fullPath=True) or [None])[0]
-                if parent is None or self._leaf(parent) not in ("root", "UnrealRoot"):
-                    raise ValueError("Unreal 标记关节不属于当前角色：" + name)
+        # Source moves all direct children out before deleting UnrealRoot,
+        # including the marker branches and any native additional children.
+        if c.objExists('UnrealRoot'):
+            joint = self._unique('UnrealRoot', 'joint')
+            children = c.listRelatives(joint, children=True, fullPath=True) or []
+            if children:
                 self._transaction_changed = True
-                c.delete(marker)
-        unreal = self._node("UnrealRoot")
-        if c.objExists(unreal):
-            joint = self._unique(unreal, "joint")
-            if (c.listRelatives(self._unique("Root_M", "joint"),
-                                parent=True, fullPath=True) or [None])[0] != joint:
-                raise ValueError("UnrealRoot 不拥有 Root_M，拒绝删除")
-            deformation = self._unique("DeformationSystem", "transform")
-            for child in c.listRelatives(joint, children=True,
-                                         fullPath=True) or []:
-                c.parent(child, deformation)
-            self._transaction_changed = True
-            c.delete(joint)
-        constraint = self._node("UnrealRoot_parentConstraint1")
-        if c.objExists(constraint):
-            self._transaction_changed = True
-            c.delete(constraint)
+                c.parent(children, self._unique('DeformationSystem', 'transform'))
+        for name in ('UnrealRoot', 'UnrealRoot_parentConstraint1',
+                     'ik_foot_root', 'ik_hand_root'):
+            if c.objExists(name):
+                self._transaction_changed = True
+                c.delete(name)
+        c.select(clear=True)
 
     def capture_unreal_hierarchy(self) -> dict[str, str]:
         c = self._cmds

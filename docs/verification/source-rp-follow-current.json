@@ -1,0 +1,339 @@
+{
+  "updated": "2026-10-11",
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "process_exited": true,
+  "export_tested": false,
+  "full_reconstruction_complete": false,
+  "legacy": {
+    "status": "failed",
+    "pid": 24640,
+    "stage": "rebuild bind matrix preservation",
+    "tolerance": 1e-06,
+    "errors": [
+      2.608396838608279e-06,
+      2.5964570628345646e-06,
+      2.632624801949201e-06
+    ],
+    "cause": "unresolved",
+    "full_report": "validation/results/source-rp-follow-lifecycle-current/report.json"
+  },
+  "diagnostic": {
+    "pid": 22244,
+    "scope": "Pre Main-root correction, collection completed; numerical pass not implied",
+    "opm_arm_stretch_prior_saved_python_error": 0.9826051093715402,
+    "opm_arm_stretch_current_error": 0.9826051093715402,
+    "conclusion": "OPM arm stretch mismatch is also present in the prior saved Python scene",
+    "report": "validation/results/source-rp-follow-scale-current/report.json"
+  },
+  "status": "failed",
+  "source_lines": [
+    "74359-74541",
+    "81764-81772",
+    "78883-78902",
+    "83466-83483"
+  ],
+  "scope": "RP/Part complete lifecycle: native Aim side-channel traditional 34/34 before/after rebuild; OPM prior full batch 27/31, four failures retained",
+  "configurations": [
+    {
+      "name": "traditional",
+      "lifecycle": {
+        "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-spline-part-lifecycle-current\\traditional\\input.ma",
+        "reused_saved_build": false,
+        "body_joints": 81,
+        "opm": false,
+        "bendy": false,
+        "bendy_count": 0,
+        "bendy_joints": [],
+        "part_joints": 27,
+        "channels": 2540,
+        "skins": [
+          "AdvPy_BodySkin"
+        ],
+        "additional_animated_channels": [],
+        "restricted_skin": false,
+        "portable_pose_roundtrip": true,
+        "portable_animation_roundtrip": true,
+        "native_global_deformation": true,
+        "registry_reopened": true,
+        "fbx_bytes": null,
+        "export_tested": false,
+        "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-native-controls-lifecycle-current\\traditional\\original-biped-current.mb",
+        "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-native-controls-lifecycle-current\\traditional\\original-biped-rebuilt.mb",
+        "rebuilt_scene_reopened": true,
+        "native_skin_curve_identity_preserved": true,
+        "single_undo_redo_preserved": true,
+        "native_rebuild_retained_skin_animation": true,
+        "skin_weights_membership_preserved": true,
+        "all_vertex_frames": [
+          1,
+          3,
+          5
+        ],
+        "all_vertex_rebuild_maximum_error": 0.0,
+        "status": "passed"
+      },
+      "native_rp_marker_and_output_mode_verified": true,
+      "follow_declared_defaults_and_initial_values_match_native": true,
+      "poses": [
+        {
+          "scene": "original-biped-current.mb",
+          "status": "passed",
+          "passed": 34,
+          "total": 34,
+          "tolerance": 0.0001,
+          "maximum_error": 3.1161475173032658e-06,
+          "failures": []
+        },
+        {
+          "scene": "original-biped-rebuilt.mb",
+          "status": "passed",
+          "passed": 34,
+          "total": 34,
+          "tolerance": 0.0001,
+          "maximum_error": 3.1161475200940885e-06,
+          "failures": []
+        }
+      ],
+      "pid": 18656,
+      "full_report": "validation/results/source-fit-aim-controls-current/report.json"
+    },
+    {
+      "name": "opm",
+      "lifecycle": {
+        "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-spline-part-lifecycle-current\\opm\\input.ma",
+        "reused_saved_build": false,
+        "body_joints": 81,
+        "opm": true,
+        "bendy": false,
+        "bendy_count": 0,
+        "bendy_joints": [],
+        "part_joints": 27,
+        "channels": 2552,
+        "skins": [
+          "AdvPy_BodySkin"
+        ],
+        "additional_animated_channels": [],
+        "restricted_skin": false,
+        "portable_pose_roundtrip": true,
+        "portable_animation_roundtrip": true,
+        "native_global_deformation": true,
+        "registry_reopened": true,
+        "fbx_bytes": null,
+        "export_tested": false,
+        "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-rp-part-position-final-current\\opm\\original-biped-current.mb",
+        "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-rp-part-position-final-current\\opm\\original-biped-rebuilt.mb",
+        "rebuilt_scene_reopened": true,
+        "native_skin_curve_identity_preserved": true,
+        "single_undo_redo_preserved": true,
+        "native_rebuild_retained_skin_animation": true,
+        "skin_weights_membership_preserved": true,
+        "all_vertex_frames": [
+          1,
+          3,
+          5
+        ],
+        "all_vertex_rebuild_maximum_error": 0.0,
+        "status": "passed"
+      },
+      "native_rp_marker_and_output_mode_verified": true,
+      "follow_declared_defaults_and_initial_values_match_native": true,
+      "poses": [
+        {
+          "scene": "original-biped-current.mb",
+          "status": "failed",
+          "tolerance": 0.0001,
+          "passed": 27,
+          "total": 31,
+          "failures": [
+            {
+              "case": "arm_ik_move",
+              "maximum_error": 0.00014294594512362369
+            },
+            {
+              "case": "left_arm_ik",
+              "maximum_error": 0.0001422625743330852
+            },
+            {
+              "case": "pole_follow_arm",
+              "maximum_error": 0.00014423956893738765
+            },
+            {
+              "case": "arm_ik_main_nonuniform",
+              "maximum_error": 0.00015846215189863067
+            }
+          ],
+          "fixed_part_cases": [
+            {
+              "case": "arm_stretch",
+              "maximum_error": 2.6331482962054374e-06
+            },
+            {
+              "case": "arm_anti_pop",
+              "maximum_error": 2.6331482962054374e-06
+            },
+            {
+              "case": "arm_length",
+              "maximum_error": 2.6331482962054374e-06
+            },
+            {
+              "case": "arm_pole_lock",
+              "maximum_error": 2.6331482962054374e-06
+            },
+            {
+              "case": "arm_half_blend",
+              "maximum_error": 7.20891849484151e-05
+            }
+          ]
+        },
+        {
+          "scene": "original-biped-rebuilt.mb",
+          "status": "failed",
+          "tolerance": 0.0001,
+          "passed": 27,
+          "total": 31,
+          "failures": [
+            {
+              "case": "arm_ik_move",
+              "maximum_error": 0.00014223865674334313
+            },
+            {
+              "case": "left_arm_ik",
+              "maximum_error": 0.00014226257415075882
+            },
+            {
+              "case": "pole_follow_arm",
+              "maximum_error": 0.00014352588023852642
+            },
+            {
+              "case": "arm_ik_main_nonuniform",
+              "maximum_error": 0.00015767809391792342
+            }
+          ],
+          "fixed_part_cases": [
+            {
+              "case": "arm_stretch",
+              "maximum_error": 2.6331723792297987e-06
+            },
+            {
+              "case": "arm_anti_pop",
+              "maximum_error": 2.6331723792297987e-06
+            },
+            {
+              "case": "arm_length",
+              "maximum_error": 2.6331723792297987e-06
+            },
+            {
+              "case": "arm_pole_lock",
+              "maximum_error": 2.6331723792297987e-06
+            },
+            {
+              "case": "arm_half_blend",
+              "maximum_error": 7.173246032732283e-05
+            }
+          ]
+        }
+      ],
+      "pid": 14360,
+      "evidence_precedes_latest_aim_follow_fix": true
+    }
+  ],
+  "part_position_fix": {
+    "source": "MEL 83466-83483",
+    "change": "Apply existing native Body-to-child BM interval to OPM twistCM.inputTranslate as well as traditional Body.translate; Bendy remains excluded",
+    "prior_pid": 14268,
+    "prior_opm_passed": 22,
+    "current_opm_passed": 27,
+    "total_per_saved_scene": 31,
+    "source_tolerance": 0.0001
+  },
+  "traditional_lifecycle_precedes_aim_decompose_fix": false,
+  "latest_aim_component_proof": "docs/verification/source-fit-aim-decompose-current.json",
+  "pids": {
+    "traditional": 18656,
+    "opm": 14360
+  },
+  "part_fix_pid": 14360,
+  "latest_aim_follow_proof": "docs/verification/source-fit-aim-follow-current.json",
+  "latest_aim_controls_proof": "docs/verification/source-fit-aim-controls-current.json",
+  "retained_aim_layout": {
+    "lifecycle": {
+      "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-follow-lifecycle-final-current\\traditional\\original-biped-current.mb",
+      "reused_saved_build": true,
+      "body_joints": 81,
+      "opm": false,
+      "bendy": false,
+      "bendy_count": 0,
+      "bendy_joints": [],
+      "part_joints": 27,
+      "channels": 2552,
+      "skins": [
+        "AdvPy_BodySkin"
+      ],
+      "additional_animated_channels": [
+        [
+          "AdvPy_AimEye_R",
+          "rotateZ",
+          17.0
+        ],
+        [
+          "AdvPy_AimEye_L",
+          "rotateY",
+          -11.0
+        ]
+      ],
+      "restricted_skin": false,
+      "portable_pose_roundtrip": true,
+      "portable_animation_roundtrip": true,
+      "native_global_deformation": true,
+      "registry_reopened": true,
+      "fbx_bytes": null,
+      "export_tested": false,
+      "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-controls-current\\legacy\\original-biped-current.mb",
+      "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-controls-current\\legacy\\original-biped-rebuilt.mb",
+      "rebuilt_scene_reopened": true,
+      "native_skin_curve_identity_preserved": true,
+      "single_undo_redo_preserved": true,
+      "native_rebuild_retained_skin_animation": true,
+      "skin_weights_membership_preserved": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "all_vertex_rebuild_maximum_error": 0.0,
+      "status": "passed"
+    },
+    "poses": [
+      {
+        "scene": "original-biped-current.mb",
+        "status": "passed",
+        "passed": 34,
+        "total": 34,
+        "tolerance": 0.0001,
+        "maximum_error": 3.1161475173032658e-06,
+        "failures": []
+      },
+      {
+        "scene": "original-biped-rebuilt.mb",
+        "status": "passed",
+        "passed": 34,
+        "total": 34,
+        "tolerance": 0.0001,
+        "maximum_error": 3.1161475200940885e-06,
+        "failures": []
+      }
+    ],
+    "retained_layout": "(BodyFitAimLayout(stem='Eye', center_attributes=('translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ', 'scaleX', 'scaleY', 'scaleZ', 'follow'), side_channels=(('L', ('translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ', 'scaleX', 'scaleY', 'scaleZ')), ('R', ('translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ', 'scaleX', 'scaleY', 'scaleZ')))),)",
+    "authored_body_frames": [
+      1,
+      3,
+      5
+    ],
+    "maximum_authored_body_matrix_error": 3.3128818577310426e-09,
+    "authored_channels": {
+      "AdvPy_AimEye_R.rotateZ": 17.0,
+      "AdvPy_AimEye_L.rotateY": -11.0,
+      "AdvPy_AimEye_R.scaleY": 1.15
+    }
+  }
+}

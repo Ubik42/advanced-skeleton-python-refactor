@@ -142,6 +142,7 @@ def main(output,initialize=True):
         fixture()
         scene=output/'input.mb'
         c.file(rename=str(scene));c.file(save=True,type='mayaBinary',force=True)
+        c.file(str(scene),open=True,force=True,executeScriptNodes=False)
         detected=bool(mel.eval('advPyReferenceDetectFingers;'))
         native=snapshot()
         assert len(native['curves'])==4,'reference detection did not sample all four fingers'
@@ -164,6 +165,7 @@ def main(output,initialize=True):
         fixture()
         scene=output/'pipeline-input.mb'
         c.file(rename=str(scene));c.file(save=True,type='mayaBinary',force=True)
+        c.file(str(scene),open=True,force=True,executeScriptNodes=False)
         detected=bool(mel.eval('advPyReferenceFingerPipeline;'))
         native=snapshot()
         c.file(str(scene),open=True,force=True,executeScriptNodes=False)

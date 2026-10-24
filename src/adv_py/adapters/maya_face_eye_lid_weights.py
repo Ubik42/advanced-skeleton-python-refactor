@@ -20,7 +20,11 @@ class MayaFaceEyeLidWeightsMixin:
         c = self._cmds
         raw = getattr(c, "raw", c)
         values = self._original_lid_fit_vertices("FaceFitEyeLid" + layer + "Curve" + suffix, source["geometry"])
-        return tuple(raw.ls(values, long=True, flatten=True) or [])
+        # MEL evaluates `select <sampled vertices>` before `ls -sl -fl`.
+        # Maya's selected-component order determines which overlapping lid
+        # row writes its weight last (not the curve's authored CV order).
+        raw.select(values, replace=True) if values else raw.select(clear=True)
+        return tuple(raw.ls(selection=True, long=True, flatten=True) or [])
 
     def assign_original_eye_lid_weights(self, source):
         self._require_transaction()

@@ -112,12 +112,12 @@ def create(host,plan):
         create_adv_icon(c,name=f'AdvPy_SplineIK{i}',parent=extra or offset,
                         template='IK_icon',radius=1.5,
                         fallback_normal=(1.,0.,0.))
-        if extra and plan.extra_curve:
-            host._add_body_extra_curve(extra, target)
         if plan.sub_targets:
             sub = plan.sub_targets[i]
             host._create_body_sub_control(
                 target, sub.rsplit('|', 1)[-1], sub)
+        if extra and plan.extra_curve:
+            host._add_body_extra_curve(extra, target)
         if plan.source_control_axes and not plan.source_ik_local:
             frame = host._spine_frame(f'AdvPy_SplineIK{i}ShapeOrient',plan.root_path,
                                        (0.,0.,0.),control_axes)
@@ -377,6 +377,8 @@ def audit(host,plan,*,source_visibility_ready=True):
         with spline_scope(host,plan) as local:
             return audit(host,local,source_visibility_ready=source_visibility_ready)
     c=host._cmds;n=len(plan.body_joints)
+    from .maya_character_body_retirement import (
+        retired_joint,removed_graph_node,is_connected_or_retired)
     ownership=plan.root_path+'.advPySplineModeReverse'
     if c.objExists(ownership) and (not c.getAttr(ownership,lock=True)
             or not c.isConnected('AdvPy_SplineReverse.message',ownership)):
@@ -422,7 +424,8 @@ def audit(host,plan,*,source_visibility_ready=True):
                   and not (terminal_without_volume and name in (
                       f'AdvPy_SplineIKScaleWeight{n-1}',
                       f'AdvPy_SplineIKScaleAdd{n-1}'))
-                  and len(c.ls(name,long=True) or [])!=1)
+                  and len(c.ls(name,long=True) or [])!=1
+                  and removed_graph_node(host,name) is None)
     if missing:raise FitSkeletonValidationError('Spline 节点缺失或名称不唯一：'+repr(missing))
     for index, target in enumerate(plan.targets):
         extra = plan.extra_targets[index] if plan.extra_targets else None
@@ -631,7 +634,8 @@ def audit(host,plan,*,source_visibility_ready=True):
         if not original_volume_graph:
             edges.append(('AdvPy_SplineVolume.outputX',
                           'AdvPy_SplineVolumeDelta.input1'))
-    bad=[(a,b) for a,b in edges if not c.isConnected(a,b)]
+    from .maya_game_scaling_state import original_scale_connection
+    bad=[(a,b) for a,b in edges if not original_scale_connection(host,a,b)]
     if bad:raise FitSkeletonValidationError('Spline 曲线或伸展连接被替换：'+repr(bad[:2]))
     if new_scaling and not getattr(host,'_allow_authored_control_state',False) and any(
             c.getAttr(target+'.scale'+axis,lock=True)
@@ -732,25 +736,41 @@ def audit(host,plan,*,source_visibility_ready=True):
             if i in plan.source_body_matrix_indices or i in plan.source_local_scale_indices:
                 continue
             node=f'AdvPy_SplineScale{i}'
+            retired = retired_joint(host,plan.body_joints[i]) if not c.objExists(plan.body_joints[i]) else None
+            removed = removed_graph_node(host,node,'scaleConstraint') if retired else None
             plug=node+'.constraintParentInverseMatrix'
-            if (not c.isConnected(plan.body_joints[i-1]+'.scale',plan.body_joints[i]+'.inverseScale')
-                    or c.listConnections(plug,s=True,d=False) or tuple(c.getAttr(plug))!=identity
-                    or c.getAttr(node+'.constraintScaleCompensate')):
+            if (not is_connected_or_retired(host,plan.body_joints[i-1]+'.scale',plan.body_joints[i]+'.inverseScale')
+                    or removed is None and (c.listConnections(plug,s=True,d=False)
+                        or tuple(c.getAttr(plug))!=identity or c.getAttr(node+'.constraintScaleCompensate'))):
                 raise FitSkeletonValidationError('Spline 世界缩放补偿连接或常量被修改')
             for target_index,source_joint in enumerate((plan.joints[i].path,plan.ik_outputs[i])):
                 world=f'AdvPy_Spline{("FK" if target_index==0 else "IK")}WorldScale{i}'
                 target_parent=node+f'.target[{target_index}].targetParentMatrix'
-                if (not c.isConnected(source_joint+'.worldMatrix[0]',world+'.inputMatrix')
-                        or not c.isConnected(world+'.outputScale',node+f'.target[{target_index}].targetScale')
-                        or c.listConnections(target_parent,s=True,d=False) or tuple(c.getAttr(target_parent))!=identity):
+                if (not is_connected_or_retired(host,source_joint+'.worldMatrix[0]',world+'.inputMatrix')
+                        or not is_connected_or_retired(host,world+'.outputScale',node+f'.target[{target_index}].targetScale')
+                        or removed is None and (c.listConnections(target_parent,s=True,d=False)
+                            or tuple(c.getAttr(target_parent))!=identity)):
                     raise FitSkeletonValidationError('Spline 世界缩放读取网络被修改')
     for i in range(1,n):
         if i in plan.source_body_matrix_indices or i in plan.source_bendy_matrix_indices:
             continue
-        bendy_handoff = host.validate_body_bendy_handoff(plan.body_joints[i])
+        retired = retired_joint(host,plan.body_joints[i]) if not c.objExists(plan.body_joints[i]) else None
+        bendy_handoff = False if retired else host.validate_body_bendy_handoff(plan.body_joints[i])
         for label,command,kind in (('Point',c.pointConstraint,'translate'),('Orient',c.orientConstraint,'rotate'),('Scale',c.scaleConstraint,'scale')):
             if label=='Scale' and i in plan.source_local_scale_indices:continue
             node=f'AdvPy_Spline{label}{i}'
+            removed = removed_graph_node(host,node,label.lower()+'Constraint') if retired else None
+            if removed is not None:
+                for source in ('AdvPy_SplineReverse.outputX',plan.mode_weight):
+                    if not any(is_connected_or_retired(host,source,destination)
+                        for _,destination in removed.inputs):
+                        raise FitSkeletonValidationError('已清理 Spline 接收器没有原始混合权重记录')
+                for axis in 'XYZ':
+                    if not is_connected_or_retired(host,
+                            node+'.constraint'+kind.title()+axis,
+                            plan.body_joints[i]+'.'+kind+axis):
+                        raise FitSkeletonValidationError('已清理 Spline 接收器没有原始 Body 输出记录')
+                continue
             if label!='Scale' or version==1:
                 sources=tuple(host._resolve_connected_node(p) for p in command(node,q=True,targetList=True))
                 if sources!=(plan.joints[i].path,plan.ik_outputs[i]):raise FitSkeletonValidationError('Spline FK/IK 输出目标被替换')
@@ -760,7 +780,7 @@ def audit(host,plan,*,source_visibility_ready=True):
             for axis in 'XYZ':
                 source = node + '.constraint' + kind.title() + axis
                 destination = plan.body_joints[i] + '.' + kind + axis
-                if c.isConnected(source, destination):
+                if original_scale_connection(host,source,destination):
                     continue
                 if bendy_handoff:
                     if label != 'Scale':

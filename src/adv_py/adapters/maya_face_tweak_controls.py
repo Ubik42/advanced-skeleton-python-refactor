@@ -1,5 +1,6 @@
 """Original Face/Tweaks control-shape and detach/attach scene operations."""
 from __future__ import annotations
+from .maya_face_body_roles import face_body_main
 
 from math import dist
 import re
@@ -217,7 +218,7 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
         # Face controls use copied local channels. All pose writes are deferred
         # until the temporary reflection graph has been removed.
         flip_group = c.createNode("transform", name=self._name("flipGroup"))
-        main = self._name("Main")
+        main = self.scene_address(face_body_main(self))
         if c.objExists(main):
             flip_group = c.parent(flip_group, main)[0]
         c.xform(flip_group, objectSpace=True, translation=(0, 0, 0), rotation=(0, 0, 0))
@@ -394,7 +395,7 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                     if self._attach_orient_control(leaf):
                         changed.append(leaf)
                 for skin in skins:
-                    freeze_native_skin_cluster(skin)
+                    freeze_native_skin_cluster(skin, cmds=c)
                     c.setAttr(skin + ".envelope", 1)
                 face_layer = self._name("FaceJointsLayer")
                 face_bs = self._name("asFaceBS")
@@ -404,7 +405,7 @@ class MayaFaceTweakControlsHost(MayaFacePreHost):
                         from .maya_original_skin_history import original_skin_cluster
                         skin = original_skin_cluster(c, child)
                         if skin:
-                            freeze_native_skin_cluster(skin)
+                            freeze_native_skin_cluster(skin, cmds=c)
                 c.dgdirty(allPlugs=True)
             finally:
                 remaining = tuple(item for item in selection if c.objExists(item))

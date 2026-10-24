@@ -13,7 +13,7 @@
 - Custom Orient Joints（62359–62519）：创建、删除、局部轴显示、连接、断开、Skin 转移，接入 Game Engine 面板；六组 XYZ 旋转分支按源码保留，Z/X 保留两次旋转顺序。
 - 重建先恢复原 Control Orient，再恢复 SDK；旧 rotateAxis 直接覆盖、校准 multiplyDivide 补偿与代理预览运行模块已删除。
 
-离线对照以提交 755b794411d3c7377b64b0769f6301bcc97ba74e 为基线：916 个 Python 文件语法检查通过，核心模块导入通过。完整离线检查由基线 472 项变为 528 项，新增 56 项；两边均有 10 个失败、125 个错误，新增失败／错误集合为空。全套并非全绿，不能把这些结果当作 Maya 通过证据。完整数据见 [离线对照 JSON](offline-source-port-baseline-2026-10-02.json)。
+离线对照以提交 755b794411d3c7377b64b0769f6301bcc97ba74e 为基线：916 个 Python 文件语法检查通过，核心模块导入通过。完整离线检查由基线 472 项变为 528 项，新增 56 项；两边均有 10 个失败、125 个错误，新增失败／错误集合为空。全套并非全绿，不能把这些结果当作 Maya 通过证据。完整数据见 [离线对照 JSON](offline-source-game-engine-2026-10-02.json)。
 
 尚未验收：真实原生约束、OPM／非 OPM、复杂 SDK 与 Spline 组合、旧 rotateAxis 场景迁移、保存重开、Skin 与动画保留重建、撤销重做。GameSkeleton 导出和 Skin 转移对 CharacterRegistry 的完整交接仍须核对。不能宣布整个 Python 复刻完成，也不能提前宣布优化或 Blender 迁移完成。
 

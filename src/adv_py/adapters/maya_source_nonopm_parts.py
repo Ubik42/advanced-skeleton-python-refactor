@@ -300,33 +300,50 @@ def configure(host,body,segments,fk,metadata,instances):
 
 
 def audit_record(host,target,marker):
-    c=host._cmds;plug=target+'.'+marker
-    if not c.getAttr(plug,lock=True):raise CharacterRegistryError('来源 Part 接收登记已解锁')
-    saved=decode_source_body_matrix(c.getAttr(plug))
+    from .maya_character_body_retirement import (
+        source_record,removed_graph_node,is_connected_or_retired,retired_joint)
+    c=host._cmds
+    saved=decode_source_body_matrix(source_record(host,target,marker))
     kind='translate' if marker in (POINT,TWIST_POSITION) else 'scale'
     expected={target+'.'+kind+axis for axis in 'XYZ'}
     if marker==TWIST_POSITION and len(saved.outputs)==1:expected={target+'.offsetParentMatrix'}
     if saved.body!=target or {destination for _,destination in saved.outputs}!=expected:
         raise CharacterRegistryError('来源 Part 接收登记身份变化')
     for node in saved.nodes:
-        if not c.objExists(node.name) or c.nodeType(node.name)!=node.kind:raise CharacterRegistryError('来源 Part 接收节点缺失')
+        removed=removed_graph_node(host,node.name,node.kind)
+        if removed is not None:
+            if not all(is_connected_or_retired(host,source,node.name+'.'+attr)
+                       for source,attr in node.connections):
+                raise CharacterRegistryError('来源 Part 已清理接收器的原输入变化')
+            # Native export deletes a Body's child constraints as well. Their
+            # constants were checked by the full character read before capture;
+            # do not query a replacement node or fabricate live constraints.
+            continue
+        if not c.objExists(node.name) or c.nodeType(node.name)!=node.kind:
+            raise CharacterRegistryError('来源 Part 接收节点缺失：'+node.name+'；目标：'+target)
         if marker==POINT and node.kind=='pointConstraint':
-            targets=tuple(host._resolve_connected_node(name) for name in c.pointConstraint(node.name,q=True,targetList=True))
-            expected=tuple(source.rsplit('.',1)[0] for source,attr in node.connections if attr.endswith('.targetTranslate'))
+            targets=tuple(host._resolve_connected_node(name) for name in (c.pointConstraint(node.name,q=True,targetList=True) or ()))
+            expected=tuple(source.split('.',1)[0] for source,attr in node.connections
+                if attr.endswith('.targetTranslate') and retired_joint(host,source.split('.',1)[0]) is None)
             if targets!=expected:raise CharacterRegistryError('来源 Part 位置接收目标变化')
         if marker==SCALE and node.kind=='scaleConstraint':
-            targets=tuple(host._resolve_connected_node(name) for name in c.scaleConstraint(node.name,q=True,targetList=True))
-            expected=tuple(source.rsplit('.',1)[0] for source,attr in node.connections if attr.endswith('.targetScale'))
+            targets=tuple(host._resolve_connected_node(name) for name in (c.scaleConstraint(node.name,q=True,targetList=True) or ()))
+            expected=tuple(source.split('.',1)[0] for source,attr in node.connections
+                if attr.endswith('.targetScale') and retired_joint(host,source.split('.',1)[0]) is None)
             if targets!=expected:raise CharacterRegistryError('来源 FKPS 缩放接收目标变化')
         for attr,value in node.values:
             if abs(float(c.getAttr(node.name+'.'+attr))-value)>1e-8:raise CharacterRegistryError('来源 Part 接收常量变化')
         for source,attr in node.connections:
-            if not c.isConnected(source,node.name+'.'+attr):raise CharacterRegistryError('来源 Part 接收输入变化')
+            if not is_connected_or_retired(host,source,node.name+'.'+attr):raise CharacterRegistryError('来源 Part 接收输入变化')
     for source,destination in saved.outputs:
-        if not c.isConnected(source,destination):raise CharacterRegistryError('来源 Part 接收输出变化')
+        from .maya_game_scaling_state import original_scale_connection
+        if not original_scale_connection(host,source,destination):raise CharacterRegistryError('来源 Part 接收输出变化')
 
 
 def audit_registered(host,registration):
     for joint in registration.nodes:
         for marker in (POINT,SCALE,TWIST_POSITION):
             if host._cmds.objExists(joint.path+'.'+marker):audit_record(host,joint.path,marker)
+    for joint in registration.retired_body:
+        for marker in (POINT,SCALE,TWIST_POSITION):
+            if marker in dict(joint.records):audit_record(host,joint.path,marker)

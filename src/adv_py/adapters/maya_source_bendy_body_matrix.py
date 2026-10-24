@@ -123,24 +123,26 @@ def create(host,spec):
 
 def audit_joint(host,joint):
     c=host._cmds
+    from .maya_character_body_retirement import retired_joint,source_record,is_connected_or_retired
+    retired=retired_joint(host,joint) if not c.objExists(joint) else None
     plug=joint+'.advPySourceBendyMatrix'
     marker='AdvPy_MicroSystem.advPyBendyGuideOwner'
-    if (not c.objExists(plug) or not c.getAttr(plug,lock=True)
+    if (retired is None and (not c.objExists(plug) or not c.getAttr(plug,lock=True))
             or not c.objExists(marker) or not c.getAttr(marker,lock=True)
             or c.getAttr(marker)!='adv_py.fit_bendy_guides.v1'):
         raise CharacterRegistryError('来源 Bendy 变形矩阵归属无效：'+joint)
-    plan=decode_source_body_matrix(c.getAttr(plug))
+    plan=decode_source_body_matrix(source_record(host,joint,'advPySourceBendyMatrix'))
     if plan.body!=joint:
         raise CharacterRegistryError('来源 Bendy 变形矩阵登记身份变化')
     leaf=joint.rsplit('|',1)[-1].rsplit(':',1)[-1]
     matrix='AdvPy_BendyDeform'+leaf+'MM'
     source=(c.ls('MicroX'+leaf,long=True,type='transform') or [])
-    parent=(c.listRelatives(joint,parent=True,fullPath=True) or [])
+    parent=[retired.parent] if retired else c.listRelatives(joint,parent=True,fullPath=True) or []
     if (len(source)!=1 or len(parent)!=1
             or not c.isConnected(source[0]+'.worldMatrix[0]',matrix+'.matrixIn[0]')
-            or not c.isConnected(parent[0]+'.worldInverseMatrix[0]',matrix+'.matrixIn[1]')
-            or not c.isConnected(matrix+'.matrixSum',joint+'.offsetParentMatrix')
-            or c.getAttr(joint+'.segmentScaleCompensate')):
+            or not is_connected_or_retired(host,parent[0]+'.worldInverseMatrix[0]',matrix+'.matrixIn[1]')
+            or not is_connected_or_retired(host,matrix+'.matrixSum',joint+'.offsetParentMatrix')
+            or retired is None and c.getAttr(joint+'.segmentScaleCompensate')):
         raise CharacterRegistryError('来源 Bendy MicroX 完整矩阵输出变化：'+joint)
     for node in plan.nodes:
         if not c.objExists(node.name) or c.nodeType(node.name)!=node.kind:
@@ -149,12 +151,13 @@ def audit_joint(host,joint):
             if abs(float(c.getAttr(node.name+'.'+attr))-value)>1e-8:
                 raise CharacterRegistryError('来源 Bendy 变形矩阵常量变化')
         for incoming,attr in node.connections:
-            if not c.isConnected(incoming,node.name+'.'+attr):
+            if not is_connected_or_retired(host,incoming,node.name+'.'+attr):
                 raise CharacterRegistryError('来源 Bendy 变形矩阵连接变化')
     for source,target in plan.local_scale:
-        if not c.isConnected(source,target):
+        from .maya_game_scaling_state import original_scale_connection
+        if not original_scale_connection(host,source,target):
             raise CharacterRegistryError('来源 Bendy Part 本地 ScaleBlend 连接变化')
-    for attr,expected in (('translate',0.),('rotate',0.),('jointOrient',0.),*((('scale',1.),) if not plan.local_scale else ())):
+    for attr,expected in (() if retired else (('translate',0.),('rotate',0.),('jointOrient',0.),*((('scale',1.),) if not plan.local_scale else ()))):
         if (c.listConnections(joint+'.'+attr,source=True,destination=False)
                 or any(abs(float(value)-expected)>1e-8 for value in c.getAttr(joint+'.'+attr)[0])):
             raise CharacterRegistryError('来源 Bendy OPM 本地变换变化：'+joint)
@@ -168,8 +171,14 @@ def audit(host,spec):
     c=host._cmds
     for name,scale,guide in zip(spec.deform_names,spec.deform_scale_mult_names,spec.motion_transform_names):
         joints=c.ls(name,long=True,type='joint') or []
+        if len(joints)>1:return False
         if len(joints)!=1:
-            return False
+            from .maya_character_body_retirement import _registration
+            saved=_registration(host)
+            retired=tuple(row.path for row in saved.retired_body
+                if row.path.rsplit('|',1)[-1].rsplit(':',1)[-1]==name.rsplit('|',1)[-1].rsplit(':',1)[-1]) if saved else ()
+            if len(retired)!=1:return False
+            joints=retired
         audit_joint(host,joints[0])
         if (c.connectionInfo(scale+'.input2X',isDestination=True)
                 or abs(float(c.getAttr(scale+'.input2X'))-1.)>1e-8
@@ -184,9 +193,12 @@ def audit_registered(host,registration):
             raise CharacterRegistryError('来源 Bendy MicroOffset 原生矩阵变化')
         if node.node_type=='joint' and host._cmds.objExists(node.path+'.advPySourceBendyMatrix'):
             audit_joint(host,node.path)
+    for node in registration.retired_body:
+        if 'advPySourceBendyMatrix' in dict(node.records):audit_joint(host,node.path)
 
 
 def audit_micro(host,offset):
+    from .maya_character_body_retirement import is_connected_or_retired
     c=host._cmds;plug=offset+'.advPySourceBendyMicroMatrix'
     if not c.objExists(plug) or not c.getAttr(plug,lock=True):
         return False
@@ -197,5 +209,5 @@ def audit_micro(host,offset):
         for attr,value in node.values:
             if abs(float(c.getAttr(node.name+'.'+attr))-value)>1e-8:return False
         for incoming,attr in node.connections:
-            if not c.isConnected(incoming,node.name+'.'+attr):return False
-    return all(c.isConnected(incoming,target) for incoming,target in plan.outputs)
+            if not is_connected_or_retired(host,incoming,node.name+'.'+attr):return False
+    return all(is_connected_or_retired(host,incoming,target) for incoming,target in plan.outputs)

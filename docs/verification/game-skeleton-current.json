@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-04",
+  "status": "passed",
+  "scope": "Original Custom Orient Joints GameSkeleton creation, connect, Skin transfer/return and lifecycle",
+  "source": "local/adv_6_925/AdvancedSkeleton.mel",
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "script": "validation/maya_game_skeleton_parity.py",
+  "local_report": "validation/results/game-skeleton-current/report.json",
+  "maya_version": "2024",
+  "poses_per_case": 7,
+  "total_poses": 49,
+  "maximum_absolute_error": 2.0691004465334117e-11,
+  "cases": {
+    "XY": 0.0,
+    "XZ": 0.0,
+    "YX": 0.0,
+    "YZ": 2.0691004465334117e-11,
+    "ZX": 2.862499213317163e-14,
+    "ZY": 3.367972567502875e-12,
+    "XZ-legacyRoot": 0.0
+  },
+  "checks": [
+    "world matrices, translate, rotate, jointOrient, scale and all mesh vertices",
+    "native Skin transfer and return",
+    "save and reopen",
+    "disconnect and undo",
+    "delete, undo and redo"
+  ],
+  "limitations": "This is the Custom Orient Joints branch on the declared five-joint fixture; it does not prove every Game Engine branch or full Body numerical parity."
+}

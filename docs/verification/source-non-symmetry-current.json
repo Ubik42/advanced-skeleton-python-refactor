@@ -1,0 +1,294 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 64916,
+  "process_exited": true,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "scope": "Unedited asCreateNonSymmetryJoints creation/removal with original biped Fit, authored flags and namespace; asymmetrically edited left Wrist/Hip Body source poses, Skin/animation/save/reopen/preserving rebuild and Undo/Redo; proxy mesh, no FBX.",
+  "fit_reference_pid": 70152,
+  "fit_cases": [
+    {
+      "namespace": "",
+      "authored_flags": false,
+      "create_error": 1.7763568394002505e-15,
+      "remove_error": 0.0,
+      "lifecycle": {
+        "native": {
+          "creation_undo_error": 2.5965465935151235e-06
+        },
+        "python": {
+          "creation_undo_error": 2.5965465935151235e-06
+        }
+      },
+      "creation_undo_precision_passed": false,
+      "redo_remove_undo_and_reopen_passed": true,
+      "status": "passed"
+    },
+    {
+      "namespace": "OtherRig",
+      "authored_flags": false,
+      "create_error": 1.7763568394002505e-15,
+      "remove_error": 0.0,
+      "lifecycle": {
+        "native": {
+          "creation_undo_error": 2.5965465935151235e-06
+        },
+        "python": {
+          "creation_undo_error": 2.5965465935151235e-06
+        }
+      },
+      "creation_undo_precision_passed": false,
+      "redo_remove_undo_and_reopen_passed": true,
+      "status": "passed"
+    },
+    {
+      "namespace": "",
+      "authored_flags": true,
+      "create_error": 1.7763568394002505e-15,
+      "remove_error": 0.0,
+      "lifecycle": {
+        "native": {
+          "creation_undo_error": 2.5965465935151235e-06
+        },
+        "python": {
+          "creation_undo_error": 2.5965465935151235e-06
+        }
+      },
+      "creation_undo_precision_passed": false,
+      "redo_remove_undo_and_reopen_passed": true,
+      "status": "passed"
+    }
+  ],
+  "lifecycle": {
+    "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-current\\asymmetric-input.ma",
+    "reused_saved_build": false,
+    "body_joints": 72,
+    "opm": false,
+    "bendy": true,
+    "bendy_count": 3,
+    "bendy_joints": [
+      "Shoulder",
+      "Elbow"
+    ],
+    "part_joints": 18,
+    "channels": 2297,
+    "skins": [
+      "AdvPy_BodySkin"
+    ],
+    "additional_animated_channels": [],
+    "restricted_skin": false,
+    "portable_pose_roundtrip": true,
+    "portable_animation_roundtrip": true,
+    "native_global_deformation": true,
+    "registry_reopened": true,
+    "fbx_bytes": null,
+    "export_tested": false,
+    "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-current\\python\\original-biped-current.mb",
+    "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-current\\python\\original-biped-rebuilt.mb",
+    "rebuilt_scene_reopened": true,
+    "native_skin_curve_identity_preserved": true,
+    "single_undo_redo_preserved": true,
+    "native_rebuild_retained_skin_animation": true,
+    "skin_weights_membership_preserved": true,
+    "all_vertex_frames": [
+      1,
+      3,
+      5
+    ],
+    "all_vertex_rebuild_maximum_error": 2.842170943040401e-14,
+    "status": "passed"
+  },
+  "neutral_errors": {
+    "original-biped-current.mb": 2.6332151703646767e-06,
+    "original-biped-rebuilt.mb": 2.633215170111359e-06
+  },
+  "poses": [
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_fk",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_ik",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "right_fk",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_leg",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_stretch",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_anti_pop",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "left_pole_lock",
+      "maximum_error": 2.6332151703646767e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_fk",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_ik",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "right_fk",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_leg",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_stretch",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_anti_pop",
+      "maximum_error": 2.633215170111359e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "left_pole_lock",
+      "maximum_error": 2.633215170111359e-06
+    }
+  ],
+  "fit_native_local_restoration": {
+    "pid": 74508,
+    "saved_height": 17.17116388219043,
+    "restored_height": 17.17116388219043,
+    "maximum_position_error": 8.881784197001252e-16
+  },
+  "source_height_recalculation": {
+    "original": [
+      "height",
+      "double",
+      17.17116388219043,
+      true,
+      false,
+      [
+        [
+          "default",
+          [
+            0.0
+          ]
+        ],
+        [
+          "parent",
+          []
+        ],
+        [
+          "niceName",
+          "Height"
+        ],
+        [
+          "channelBox",
+          false
+        ]
+      ]
+    ],
+    "replacement": [
+      "height",
+      "double",
+      17.171163882190424,
+      true,
+      false,
+      [
+        [
+          "default",
+          [
+            0.0
+          ]
+        ],
+        [
+          "parent",
+          []
+        ],
+        [
+          "niceName",
+          "Height"
+        ],
+        [
+          "channelBox",
+          false
+        ]
+      ]
+    ],
+    "live_fit_height": 17.171163882190424,
+    "extrema": [
+      [
+        "Heel_NonSymmetry",
+        [
+          1.0975677186517772,
+          0.004956583661223535,
+          0.12170079864715655
+        ]
+      ],
+      [
+        "FootSideOuter",
+        [
+          -1.470448061520495,
+          0.009372344332059523,
+          1.2679817266039184
+        ]
+      ],
+      [
+        "Eye",
+        [
+          -0.3423012020333408,
+          15.897349463743657,
+          0.9500522768354841
+        ]
+      ],
+      [
+        "HeadEnd",
+        [
+          3.633236027558672e-15,
+          17.176120465851646,
+          -0.10108640909430788
+        ]
+      ]
+    ],
+    "diagnostic_pid": 61600
+  },
+  "runtime_report": "validation/results/source-non-symmetry-current/report.json",
+  "remaining": [
+    "Lateral NonSymmetry Spline and independent left/right topology not accepted.",
+    "Differentiated left Fit Global/lock settings and non-symmetric Follow/attachment branches not yet separately accepted.",
+    "No FBX or original model appearance validation in this batch.",
+    "Independent Follow/named/spaces/IK/parent constraint accepted separately in source-non-symmetry-follow-current.json; AimAt/mesh attachments, OPM FK spaces and older approximate space migration remain pending."
+  ],
+  "lifecycle_pid": 68856,
+  "canonical_ik_length": {
+    "source_lines": [
+      "79456–79472",
+      "80854",
+      "82932 onward"
+    ],
+    "behavior": "Use unsuffixed asAdvJointIKInfo Fit start/end parent distances for Pole, stretch ratio and AntiPop; preserve independent left solver segments.",
+    "prior_left_ik_error": 0.007025538936913378,
+    "current_pose_maximum_error": 2.6332151703646767e-06,
+    "pose_cases": 14,
+    "tolerance": 0.0001
+  }
+}

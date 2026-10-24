@@ -34,7 +34,9 @@ class MayaOriginalPoseFunctionsMixin:
         self._require_transaction();c=self._cmds
         if name not in self.original_stored_pose_names():raise ValueError("原版保存姿态不存在："+name)
         self._transaction_changed=True
-        self.go_to_original_corrective_build_pose()
+        # asPoseAttributeCommand (10376) executes only the stored statements.
+        # Resetting every other controller first changes the original pose
+        # semantics and erases channels not present in this named pose.
         self._original_apply_pose_commands(c.getAttr("FitSkeleton."+name))
         return name
 
@@ -48,6 +50,9 @@ class MayaOriginalPoseFunctionsMixin:
         self._require_transaction();c=self._cmds
         if not objects:raise ValueError("请先选择需要加入构建姿态的对象")
         if not c.objExists("FitSkeleton"):raise ValueError("当前角色没有 FitSkeleton")
+        selected=tuple(node+'.'+attr for node in objects for attr in attributes) if attributes else tuple(objects)
+        if c.confirmDialog(title='Add ?',message='Add the following to the "Build Pose" ?\n\n'+'\n'.join(selected),
+                           button=('OK','Cancel'),defaultButton='Cancel',dismissString='Cancel')!='OK':return 0
         rows=[]
         for node in objects:
             if "." in node:plugs=[node]
@@ -78,9 +83,10 @@ class MayaOriginalPoseFunctionsMixin:
         exists=c.objExists("CustomOrientsDisabled")
         if enabled and not exists:raise ValueError("自定义朝向已经启用")
         if not enabled and exists:raise ValueError("自定义朝向已经禁用")
-        nonneutral=[plug for plug,neutral in self.original_driving_build_pose_rows()
-                    if c.objExists(plug) and abs(c.getAttr(plug)-neutral)>.001]
-        if nonneutral:raise ValueError("请先返回构建姿态，再切换自定义朝向："+nonneutral[0])
+        # MEL uses the same original build-pose confirmation as Set Axis.
+        # Cancellation returns before touching the holder; an explicit native
+        # "continue" choice must not be replaced by an invented .001 gate.
+        if not self.confirm_original_control_build_pose():return 0
         self._transaction_changed=True;count=0
         selection=c.ls(selection=True) or []
         if enabled:
@@ -90,7 +96,7 @@ class MayaOriginalPoseFunctionsMixin:
                 c.setAttr(node+"."+channel,c.getAttr("CustomOrientsDisabled."+attr));count+=1
             c.delete("CustomOrientsDisabled")
         else:
-            nodes=c.ls("CustomOrient*",type="transform") or []
+            nodes=c.ls("CustomOrient*") or []
             c.createNode("transform",name="CustomOrientsDisabled")
             for channel in "trs":
                 for axis in "xyz":c.setAttr("CustomOrientsDisabled."+channel+axis,lock=True,keyable=False)

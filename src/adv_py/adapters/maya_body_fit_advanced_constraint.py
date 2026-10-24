@@ -76,7 +76,7 @@ class MayaBodyFitAdvancedConstraintMixin:
                                  fullPath=True) or []
         if len(parent) != 1:
             raise ValueError("FK Offset 缺少唯一父级：" + spec.fk_offset)
-        if spec.align_target:
+        if spec.align_target or spec.source_native:
             root = spec.fk_root
             opm = root + ".offsetParentMatrix"
             upstream = c.connectionInfo(opm, sourceFromDestination=True)
@@ -85,10 +85,12 @@ class MayaBodyFitAdvancedConstraintMixin:
             if ((c.ls(root, long=True, type="transform") or []) != [root]
                     or (c.listRelatives(root, parent=True,
                                         fullPath=True) or []) != [spec.fk_offset]
-                    or children != [root]
+                    or (not spec.source_native and children != [root])
                     or c.getAttr(opm, lock=True)
                     or (not upstream and not c.getAttr(opm, settable=True))):
                 raise ValueError("FK 控制根层矩阵不可补偿：" + root)
+        if spec.source_native:
+            return
         for channel in _AFFECTED[spec.kind]:
             for axis in "XYZ":
                 plug = spec.fk_offset + "." + channel + axis
@@ -100,6 +102,9 @@ class MayaBodyFitAdvancedConstraintMixin:
     ) -> None:
         self._require_transaction()
         self.preflight_body_fit_advanced_constraint(spec)
+        if spec.source_native:
+            from .maya_source_fit_advanced_constraint import create
+            return create(self,spec)
         c = self._cmds
         offset_parent = c.listRelatives(
             spec.fk_offset, parent=True, fullPath=True)[0]
@@ -193,6 +198,9 @@ class MayaBodyFitAdvancedConstraintMixin:
     def capture_body_fit_advanced_constraint(
         self, spec: BodyFitAdvancedConstraintSpec,
     ) -> bool:
+        if spec.source_native:
+            from .maya_source_fit_advanced_constraint import capture
+            return capture(self,spec)
         c = self._cmds
         if any(not c.objExists(name) for name in spec.node_names):
             return False
@@ -257,8 +265,7 @@ class MayaBodyFitAdvancedConstraintMixin:
                     or incoming != original
                     or len(_matrix(c.getAttr(reoffset + ".matrixIn[1]"))) != 16):
                 return False
-        return (all(c.connectionInfo(destination,
-                                     sourceFromDestination=True) == source
+        return (all(c.isConnected(source, destination, ignoreUnitConversion=True)
                     for source, destination in links)
                 and abs(float(c.getAttr(spec.weight_name + ".input2"))
                         - 0.1) <= 1e-8

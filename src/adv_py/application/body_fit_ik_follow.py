@@ -16,11 +16,11 @@ class BuildFitIkFollow:
         self._host = host
 
     def apply(self, metadata, arm_ik, leg_ik, body_joints, *,
-              spine=None, spline=None, driver_body_sources=()):
+              spine=None, spline=None, driver_body_sources=(), instances=()):
         specs = plan_body_fit_ik_follow(
             tuple(metadata), tuple(arm_ik), tuple(leg_ik),
             tuple(body_joints), spine=spine, spline=spline,
-            driver_body_sources=tuple(driver_body_sources))
+            driver_body_sources=tuple(driver_body_sources), instances=instances)
         states = tuple(self._host.preflight_body_fit_follow(spec)
                        for spec in specs)
         if not specs:

@@ -147,8 +147,15 @@ def attach_original_controls(host, *, mirror=True):
     host._transaction_changed = True
     try:
         if mirror:
-            from .maya_original_control_mirror import mirror_original_controls
-            mirror_original_controls(host, side='R2L', space='Main', axis='X')
+            # asControlOrientAttach selects the Body ControlSet explicitly,
+            # persists its source defaults, then runs the ordinary mirror
+            # command (whose open Options window may override those values).
+            raw=getattr(c,'raw',c)
+            for name,value in (('asMOSide','asMOSideR2L'),('asMOSpace','asMOSpaceMain'),
+                               ('asMOAxis','asMOAxisX'),('asMOSelOnly','asMOSelOnlyAll')):
+                raw.optionVar(stringValue=(name,value))
+            from .maya_original_control_sets import MayaOriginalControlSetsMixin
+            MayaOriginalControlSetsMixin.mirror_original_control_pose(host,'bodySetup')
         for item in rows:
             member = _by_uuid(host, item['member'])
             control = _by_uuid(host, item['control'])
@@ -185,7 +192,8 @@ def attach_original_controls(host, *, mirror=True):
             # all paths first so buildPose commands still address real objects.
             interim, _ = refresh(host, before, removed=tuple(removed),
                                  added=tuple('CustomOrient' + item['role'] for item in modified))
-        host.apply_body_build_pose(host.read_body_build_pose())
+        from .maya_original_build_pose_confirm import restore_original_body_build_pose
+        restore_original_body_build_pose(host)
         changed_roles = {item['role'] for item in modified}
         for item in rows:
             if not item['reverse']:

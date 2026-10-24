@@ -1,0 +1,31 @@
+{
+  "timestamp_utc": "2026-10-04T20:31:05.317618+00:00",
+  "baseline_revision": "2c379ba313782ed7f49432077c12fe7fade8624e",
+  "syntax_files": 1137,
+  "syntax_errors": [],
+  "maya_launched": false,
+  "changes": {
+    "failures": {
+      "added": [],
+      "removed": []
+    },
+    "errors": {
+      "added": [],
+      "removed": []
+    }
+  },
+  "baseline": {
+    "tests": 528,
+    "skipped": 0,
+    "failure_count": 10,
+    "error_count": 125
+  },
+  "current": {
+    "tests": 989,
+    "skipped": 0,
+    "failure_count": 10,
+    "error_count": 125
+  },
+  "full_report": "validation/results/offline-source-game-engine-full.json",
+  "scope": "Current consolidated offline comparison; native Maya results are recorded separately."
+}

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import Enum
-from math import isfinite
+from math import isfinite, dist, trunc
 import re
 
 
@@ -38,6 +38,14 @@ class DeformJointCandidate:
     center: tuple[float, float, float]
 
 
+def original_parent_distance_key(joint: DeformJointCandidate, center):
+    """asGetDeformJointsByDistance sorts padded, three-decimal strings."""
+    rounded = trunc(dist(joint.center, center) * 1000.0 + .5) / 1000.0
+    # Source uses the scene name after a distance delimiter. Full DAG paths
+    # are kept for addressing here; only its source name participates in sort.
+    return (f"{rounded:09.3f}", joint.path.rsplit("|", 1)[-1])
+
+
 @dataclass(frozen=True, slots=True)
 class CustomControllerPlan:
     kind: CustomControlKind
@@ -58,6 +66,9 @@ class CustomControllerPlan:
     def auxiliary_name(self, role: str) -> str:
         stem = self.name
         side = self.side
+        if role == "attach" and self.kind is CustomControlKind.SKIN:
+            parent = self.parent_joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+            return "ParentConstraintTo" + parent
         names = {
             "attach": ("Attach" + stem if self.kind is CustomControlKind.CLUSTER
                        else stem + "Attach") + side,
@@ -77,6 +88,7 @@ class CustomControllerPlan:
             "edge_curve": "Curve" + stem + side,
             "edge_source": "CurveFromMeshEdge" + stem + side,
             "curve_point": "PointOnCurveInfo" + stem + side,
+            "skin_driver": "X" + stem + side,
         }
         return names[role]
 
@@ -84,6 +96,8 @@ class CustomControllerPlan:
     def created_names(self) -> tuple[str, ...]:
         names = [self.offset_name, self.control_name]
         names.append(self.auxiliary_name("attach"))
+        if self.kind is CustomControlKind.SKIN:
+            names.append(self.auxiliary_name("skin_driver"))
         if self.base_control_name is not None:
             names.append(self.base_control_name)
             names.extend(self.auxiliary_name(role) for role in
@@ -102,7 +116,7 @@ class CustomControllerPlan:
         if (self.deformer_name is not None
                 and self.deformer_name != self.region.deformer):
             names.append(self.deformer_name)
-        return tuple(names)
+        return tuple(dict.fromkeys(names))
 
 
 def _position(value: tuple[float, float, float], label: str) -> None:
@@ -164,7 +178,7 @@ def plan_custom_controller(
                 or not 0 <= item.index < region.vertex_count
                 or item.index in seen or isinstance(item.weight, bool)
                 or not isinstance(item.weight, (int, float))
-                or not isfinite(item.weight) or not 0.0 <= item.weight <= 1.0):
+                   or not isfinite(item.weight)):
             raise ValueError("SoftMod 顶点索引或权重无效")
         seen.add(item.index)
         active |= item.weight > 0.0
@@ -181,9 +195,8 @@ def plan_custom_controller(
             raise ValueError("指定父关节不属于 DeformationSystem")
         parent = parent_joint
     else:
-        parent = min(deform_joints, key=lambda joint: (
-            sum((a - b) ** 2 for a, b in zip(joint.center, region.center)),
-            joint.path)).path
+        parent = min(deform_joints,
+                     key=lambda joint: original_parent_distance_key(joint, region.center)).path
     side = "_M" if middle else "_L" if region.center[0] > 0 else "_R"
     if middle:
         region = replace(region, center=(0.0, region.center[1],
@@ -195,7 +208,9 @@ def plan_custom_controller(
                      if kind is CustomControlKind.CLUSTER else None)
     return CustomControllerPlan(kind, region, parent, base_name, side,
                                 middle, local, partial_parent,
-                                "Offset" + base_name + side,
+                                (base_name + "Attach" + side
+                                 if kind is CustomControlKind.SOFT_MOD
+                                 else "Offset" + base_name + side),
                                 base_name + side,
                                 base_name + "Base" + side
                                 if kind is CustomControlKind.SOFT_MOD else None,

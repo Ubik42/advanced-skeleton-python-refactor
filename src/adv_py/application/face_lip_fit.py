@@ -4,12 +4,12 @@ from adv_py.core.face_lip_fit import plan_lip_fit
 class CreateFaceLipFit:
     def __init__(self,host): self.host=host
     def apply(self,part):
-        source=self.host.capture_lip_fit_input(part)
-        plan=plan_lip_fit(source)
-        self.host.preflight_lip_fit(plan)
         with self.host.transaction("创建 Lip "+part+" Fit"):
-            if self.host.capture_lip_fit_input(part)!=source:
-                raise RuntimeError("Lip 输入在创建前发生变化")
+            # The original samples the previous fit through a temporary
+            # closestPointOnMesh. Capture belongs to the same undo boundary.
+            source=self.host.capture_lip_fit_input(part)
+            plan=plan_lip_fit(source)
+            self.host.preflight_lip_fit(plan)
             return self.host.create_lip_fit(plan)
 
 class SwapFaceLipFit:

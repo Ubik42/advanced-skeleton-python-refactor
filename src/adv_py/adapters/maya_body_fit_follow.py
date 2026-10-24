@@ -311,8 +311,7 @@ class MayaBodyFitFollowMixin:
                           (name + ".output",
                            spec.blend_matrix +
                            f".target[{index}].weight")))
-        return (all(c.connectionInfo(destination,
-                                     sourceFromDestination=True) == upstream
+        return (all(c.isConnected(upstream, destination, ignoreUnitConversion=True)
                     for upstream, destination in links)
                 and all(abs(a - b) <= 1e-4 for a, b in zip(
                     _matrix(c.xform(spec.receiver, query=True,

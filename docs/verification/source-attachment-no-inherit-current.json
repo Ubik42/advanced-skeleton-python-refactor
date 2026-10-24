@@ -1,0 +1,164 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 54568,
+  "pin": {
+    "status": "passed",
+    "pid": 54568,
+    "cases": [
+      {
+        "mirrored": false,
+        "weight": 0.0,
+        "maximum_error": 0.0
+      },
+      {
+        "mirrored": false,
+        "weight": 5.0,
+        "maximum_error": 0.0
+      },
+      {
+        "mirrored": false,
+        "weight": 10.0,
+        "maximum_error": 0.0
+      },
+      {
+        "mirrored": true,
+        "weight": 0.0,
+        "maximum_error": 0.0
+      },
+      {
+        "mirrored": true,
+        "weight": 5.0,
+        "maximum_error": 0.0
+      },
+      {
+        "mirrored": true,
+        "weight": 10.0,
+        "maximum_error": 0.0
+      }
+    ],
+    "local_scale": [
+      {
+        "mirrored": false,
+        "native": [
+          [
+            1.0,
+            1.0,
+            1.0
+          ]
+        ],
+        "python": [
+          [
+            1.0,
+            1.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "mirrored": true,
+        "native": [
+          [
+            1.0,
+            1.0,
+            1.0
+          ]
+        ],
+        "python": [
+          [
+            1.0,
+            1.0,
+            1.0
+          ]
+        ]
+      }
+    ]
+  },
+  "aim": {
+    "status": "passed",
+    "pid": 54568,
+    "scope": "Native asAlign + two-target constraint against source Python AimAt, nonuniform parents and existing receiver OPM",
+    "cases": [
+      {
+        "up": "self",
+        "sign": 1,
+        "weight": 0.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "self",
+        "sign": 1,
+        "weight": 5.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "self",
+        "sign": 1,
+        "weight": 10.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "self",
+        "sign": -1,
+        "weight": 0.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "self",
+        "sign": -1,
+        "weight": 5.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "self",
+        "sign": -1,
+        "weight": 10.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "target",
+        "sign": 1,
+        "weight": 0.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "target",
+        "sign": 1,
+        "weight": 5.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "target",
+        "sign": 1,
+        "weight": 10.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "target",
+        "sign": -1,
+        "weight": 0.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "target",
+        "sign": -1,
+        "weight": 5.0,
+        "maximum_error": 0.0
+      },
+      {
+        "up": "target",
+        "sign": -1,
+        "weight": 10.0,
+        "maximum_error": 0.0
+      }
+    ]
+  },
+  "process_exited": true,
+  "threshold": 1e-05,
+  "scope": "Original relative Pin parent and absolute AimAt parent versus source Python with receiver inheritsTransform=False, existing receiver OPM, nonuniform parents, Pin reflection and AimAt self/target signs, 0/5/10 weights",
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "runtime_report": "validation/results/source-attachment-no-inherit-current/report.json",
+  "remaining": [
+    "Independent local receiver input; full character lifecycle evidence is separately scoped",
+    "Other Maya proximity generator option combinations not covered"
+  ]
+}

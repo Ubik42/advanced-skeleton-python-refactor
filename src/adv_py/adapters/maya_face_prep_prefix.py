@@ -6,6 +6,8 @@ restores the captured graph through asFaceRebuildRestore's Python port.
 """
 
 
+import json
+
 from .maya_original_skin_history import bind_original_skin, remove_unused_for_skin
 
 
@@ -25,6 +27,7 @@ class MayaFacePrepPrefixMixin:
         c.setAttr(prefix + ".v", False)
         c.addAttr(prefix, longName="version", attributeType="double")
         c.setAttr(prefix + ".version", c.getAttr("FaceGroup.version"), lock=True)
+        self._capture_original_face_external_bind_pre(prefix, source["skin"])
         holders = []
         number = 1
         for geometry in source["all_head"]:
@@ -107,6 +110,39 @@ class MayaFacePrepPrefixMixin:
                 c.rename(node, "prefix_" + leaf)
         self._transaction_changed = True
         return {"prefix_group": prefix, "weight_holders": tuple(holders), "renamed_nodes": tuple(renamed)}
+
+    def _capture_original_face_external_bind_pre(self, prefix, primary_skin):
+        """Retain bind data on surviving Face-part Skins before old joints go."""
+        c = self._cmds
+        raw = getattr(c, "raw", c)
+        primary = set(raw.ls(self.scene_address(primary_skin), uuid=True) or [])
+        rows = []
+        for skin in raw.ls(type="skinCluster") or []:
+            identity = raw.ls(skin, uuid=True) or []
+            if len(identity) != 1:
+                continue
+            key = "@primary" if identity[0] in primary else identity[0]
+            for index in raw.getAttr(skin + ".matrix", multiIndices=True) or []:
+                plug = f"{skin}.matrix[{index}]"
+                source = raw.connectionInfo(plug, sourceFromDestination=True)
+                if not source:
+                    continue
+                joints = raw.ls(source.split(".", 1)[0], long=True, type="joint") or []
+                if len(joints) != 1 or not any(
+                    part.rsplit(":", 1)[-1] == "FaceJoint_M"
+                    for part in joints[0].split("|")[:-1]
+                ):
+                    continue
+                bind_pre = f"{skin}.bindPreMatrix[{index}]"
+                if raw.connectionInfo(bind_pre, sourceFromDestination=True):
+                    continue
+                value = raw.getAttr(bind_pre)
+                if len(value) == 1 and isinstance(value[0], (tuple, list)):
+                    value = value[0]
+                rows.append((key, joints[0].rsplit("|", 1)[-1],
+                             tuple(float(item) for item in value)))
+        c.addAttr(prefix, longName="advPyExternalBindPre", dataType="string")
+        c.setAttr(prefix + ".advPyExternalBindPre", json.dumps(rows), type="string")
 
     def _capture_original_face_weight_holder(self,geometry,skin,name,prefix):
         """Native holder for one production Skin, retaining source joint names."""

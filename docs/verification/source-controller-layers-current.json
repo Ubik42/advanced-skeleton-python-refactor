@@ -1,0 +1,653 @@
+{
+  "status": "incomplete",
+  "scope": "Source optional controller layers and fresh complete Body lifecycle; full numeric parity remains incomplete.",
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "source_operations": {
+    "controller_proc_line": 73352,
+    "sub_block_line": 73476,
+    "extra_block_line": 73488,
+    "clone": "Transform duplicate, not duplicateCurve",
+    "sub_scale": 0.9,
+    "extra_scale": 1.1,
+    "component_range": "cv[0:99]",
+    "sub_color": 30,
+    "extra_color": 29,
+    "order": "Sub before Extra; Extra shape instance reparent then temporary transform deletion"
+  },
+  "sub_helper": {
+    "pid": 82936,
+    "process_exited": true,
+    "status": "passed",
+    "cases": 6,
+    "maximum_errors": {
+      "sub": 8.881784197001252e-16,
+      "joint": 0.0,
+      "cvs": 4.440892098500625e-17
+    }
+  },
+  "extra_helper": {
+    "pid": 21968,
+    "process_exited": true,
+    "status": "passed",
+    "cases": 24,
+    "maximum_errors": {
+      "extra": 0.0,
+      "joint": 0.0,
+      "cvs": 1.1102230246251565e-16
+    }
+  },
+  "sub_body": {
+    "status": "failed",
+    "pose_pid": 46188,
+    "process_exited": true,
+    "lifecycle_pid": 38292,
+    "native_reference_pid": 51044,
+    "lifecycle": {
+      "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-rp-sub-constructor-current\\sub-input.ma",
+      "body_joints": 81,
+      "opm": false,
+      "bendy": true,
+      "bendy_count": 3,
+      "bendy_joints": [
+        "Shoulder",
+        "Elbow"
+      ],
+      "part_joints": 27,
+      "channels": 4118,
+      "skins": [
+        "AdvPy_BodySkin"
+      ],
+      "restricted_skin": false,
+      "portable_pose_roundtrip": true,
+      "portable_animation_roundtrip": true,
+      "native_global_deformation": true,
+      "registry_reopened": true,
+      "fbx_bytes": null,
+      "export_tested": false,
+      "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-rp-sub-constructor-current\\sub\\original-biped-current.mb",
+      "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-rp-sub-constructor-current\\sub\\original-biped-rebuilt.mb",
+      "rebuilt_scene_reopened": true,
+      "native_skin_curve_identity_preserved": true,
+      "single_undo_redo_preserved": true,
+      "native_rebuild_retained_skin_animation": true,
+      "skin_weights_membership_preserved": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "all_vertex_rebuild_maximum_error": 0.0,
+      "status": "passed"
+    },
+    "neutral_error": 2.633192348867979e-06,
+    "poses": [
+      {
+        "limb": "Arm",
+        "side": "R",
+        "maximum_error": 0.00014440488486913705,
+        "parent": "AdvPy_ArmIKSub_R"
+      },
+      {
+        "limb": "Arm",
+        "side": "L",
+        "maximum_error": 0.00014370041191325011,
+        "parent": "AdvPy_ArmIKSub_L"
+      },
+      {
+        "limb": "Leg",
+        "side": "R",
+        "maximum_error": 2.596847033343484e-06,
+        "parent": "AdvPy_LegIKSub_R"
+      },
+      {
+        "limb": "Leg",
+        "side": "L",
+        "maximum_error": 2.633192348867979e-06,
+        "parent": "AdvPy_LegIKSub_L"
+      }
+    ],
+    "tolerance": 0.0001
+  },
+  "limitation": "Default baseline remains 70/71. Sub-only Arm R/L edits (translateX -.15/+.15, rotateY 15) exceed 1e-4 even after time reevaluation; Leg edits pass. Sub+Extra has 12/12 passing poses with different target edits, including Arm translateZ .15. Do not use the latter to overwrite the former failures. Full ADV and arbitrary production geometries remain unconfirmed.",
+  "sub_extra_body": {
+    "status": "passed",
+    "pid": 50420,
+    "lifecycle_evidence_pid": 79640,
+    "native_reference_pid": 79640,
+    "lifecycle": {
+      "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-optional-layers-body-current\\input.ma",
+      "body_joints": 81,
+      "opm": false,
+      "bendy": true,
+      "bendy_count": 3,
+      "bendy_joints": [
+        "Shoulder",
+        "Elbow"
+      ],
+      "part_joints": 27,
+      "channels": 4205,
+      "skins": [
+        "AdvPy_BodySkin"
+      ],
+      "additional_animated_channels": [
+        [
+          "AdvPy_ArmIKSub_R",
+          "rotateY",
+          10.0
+        ],
+        [
+          "AdvPy_ArmIKSub_L",
+          "rotateY",
+          10.0
+        ],
+        [
+          "AdvPy_ArmIKExtra_R",
+          "rotateY",
+          10.0
+        ],
+        [
+          "AdvPy_ArmIKExtra_L",
+          "rotateY",
+          10.0
+        ],
+        [
+          "AdvPy_LegIKSub_R",
+          "rotateY",
+          10.0
+        ],
+        [
+          "AdvPy_LegIKSub_L",
+          "rotateY",
+          10.0
+        ],
+        [
+          "AdvPy_LegIKExtra_R",
+          "rotateY",
+          10.0
+        ],
+        [
+          "AdvPy_LegIKExtra_L",
+          "rotateY",
+          10.0
+        ]
+      ],
+      "restricted_skin": false,
+      "portable_pose_roundtrip": true,
+      "portable_animation_roundtrip": true,
+      "native_global_deformation": true,
+      "registry_reopened": true,
+      "fbx_bytes": null,
+      "export_tested": false,
+      "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-optional-layers-body-current\\python\\original-biped-current.mb",
+      "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-optional-layers-body-current\\python\\original-biped-rebuilt.mb",
+      "rebuilt_scene_reopened": true,
+      "native_skin_curve_identity_preserved": true,
+      "single_undo_redo_preserved": true,
+      "native_rebuild_retained_skin_animation": true,
+      "skin_weights_membership_preserved": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "all_vertex_rebuild_maximum_error": 0.0,
+      "status": "passed"
+    },
+    "neutral_error": 2.633192348867979e-06,
+    "poses": [
+      {
+        "case": "Arm_R_Sub",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0248822263368993e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.2359479661938622e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.205924107239298e-07
+          ]
+        ]
+      },
+      {
+        "case": "Arm_R_Extra",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0248822263368993e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.2359479661938622e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.205924107239298e-07
+          ]
+        ]
+      },
+      {
+        "case": "Arm_L_Sub",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.1246620968140562e-07
+          ],
+          [
+            "Elbow_L",
+            1.2522867051667497e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.235833213542037e-07
+          ]
+        ]
+      },
+      {
+        "case": "Arm_L_Extra",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.1246620968140562e-07
+          ],
+          [
+            "Elbow_L",
+            1.2522867051667497e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.235833213542037e-07
+          ]
+        ]
+      },
+      {
+        "case": "Leg_R_Sub",
+        "maximum_error": 2.5968584654105824e-06,
+        "largest": [
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ToesEnd_R",
+            2.543495824902653e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0248822263368993e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.235833213542037e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.2086855694093401e-07
+          ]
+        ]
+      },
+      {
+        "case": "Leg_R_Extra",
+        "maximum_error": 2.5968584654105824e-06,
+        "largest": [
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ToesEnd_R",
+            2.5434958246806083e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0248822263368993e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.235833213542037e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.2086855694093401e-07
+          ]
+        ]
+      },
+      {
+        "case": "Leg_L_Sub",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5083536431824704e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0248822263368993e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.235833213542037e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.2086855694093401e-07
+          ]
+        ]
+      },
+      {
+        "case": "Leg_L_Extra",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.508353638630556e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0248822263368993e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.235833213542037e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.2086855694093401e-07
+          ]
+        ]
+      },
+      {
+        "case": "FKShoulder_R_Sub",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0248822263368993e-07
+          ],
+          [
+            "ElbowPart1_L",
+            1.181717435017049e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.160700069391396e-07
+          ]
+        ]
+      },
+      {
+        "case": "FKShoulder_R_Extra",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0248822263368993e-07
+          ],
+          [
+            "ElbowPart1_L",
+            1.181717435017049e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.1607000871549644e-07
+          ]
+        ]
+      },
+      {
+        "case": "FKShoulder_L_Sub",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.025590019466561e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.235833213542037e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.2086855694093401e-07
+          ]
+        ]
+      },
+      {
+        "case": "FKShoulder_L_Extra",
+        "maximum_error": 2.63318662985591e-06,
+        "largest": [
+          [
+            "ToesEnd_R",
+            2.63318662985591e-06
+          ],
+          [
+            "ToesEnd_L",
+            2.5968584654105824e-06
+          ],
+          [
+            "ThumbFinger4_L",
+            2.0255900397281312e-07
+          ],
+          [
+            "ElbowPart1_R",
+            1.235833213542037e-07
+          ],
+          [
+            "ElbowPart2_R",
+            1.2086855694093401e-07
+          ]
+        ]
+      }
+    ],
+    "animation_input_checks": [
+      {
+        "case": "Arm_R_Sub",
+        "before_time_reevaluation": [
+          [
+            "AdvPy_ArmIKSub_R.rotateY",
+            0.0,
+            15.0
+          ]
+        ],
+        "actual_after": [
+          14.999999999999998
+        ]
+      },
+      {
+        "case": "Arm_R_Extra",
+        "before_time_reevaluation": [
+          [
+            "AdvPy_ArmIKExtra_R.rotateY",
+            0.0,
+            15.0
+          ]
+        ],
+        "actual_after": [
+          14.999999999999998
+        ]
+      },
+      {
+        "case": "Arm_L_Sub",
+        "before_time_reevaluation": [
+          [
+            "AdvPy_ArmIKSub_L.rotateY",
+            0.0,
+            15.0
+          ]
+        ],
+        "actual_after": [
+          14.999999999999998
+        ]
+      },
+      {
+        "case": "Arm_L_Extra",
+        "before_time_reevaluation": [
+          [
+            "AdvPy_ArmIKExtra_L.rotateY",
+            0.0,
+            15.0
+          ]
+        ],
+        "actual_after": [
+          14.999999999999998
+        ]
+      },
+      {
+        "case": "Leg_R_Sub",
+        "before_time_reevaluation": [
+          [
+            "AdvPy_LegIKSub_R.rotateY",
+            0.0,
+            15.0
+          ]
+        ],
+        "actual_after": [
+          14.999999999999998
+        ]
+      },
+      {
+        "case": "Leg_R_Extra",
+        "before_time_reevaluation": [
+          [
+            "AdvPy_LegIKExtra_R.rotateY",
+            0.0,
+            15.0
+          ]
+        ],
+        "actual_after": [
+          14.999999999999998
+        ]
+      },
+      {
+        "case": "Leg_L_Sub",
+        "before_time_reevaluation": [
+          [
+            "AdvPy_LegIKSub_L.rotateY",
+            0.0,
+            15.0
+          ]
+        ],
+        "actual_after": [
+          14.999999999999998
+        ]
+      },
+      {
+        "case": "Leg_L_Extra",
+        "before_time_reevaluation": [
+          [
+            "AdvPy_LegIKExtra_L.rotateY",
+            0.0,
+            15.0
+          ]
+        ],
+        "actual_after": [
+          14.999999999999998
+        ]
+      }
+    ],
+    "process_exited": true,
+    "tolerance": 0.0001,
+    "pose_scope": "IK Sub and Extra for Arm/Leg R/L: translateZ .15 and rotateY 15; Shoulder FK Sub/Extra rotateY 20. Animated values explicitly evaluated and checked."
+  },
+  "sub_only_reevaluated_poses": {
+    "pid": 66144,
+    "process_exited": true,
+    "status": "failed",
+    "context": "Same edits after frame 2 then 1 reevaluation; supplemental to unchanged direct-edit baseline.",
+    "poses": [
+      {
+        "limb": "Arm",
+        "side": "R",
+        "maximum_error": 0.00014440488486913705,
+        "parent": "AdvPy_ArmIKSub_R"
+      },
+      {
+        "limb": "Arm",
+        "side": "L",
+        "maximum_error": 0.00014370041191325011,
+        "parent": "AdvPy_ArmIKSub_L"
+      },
+      {
+        "limb": "Leg",
+        "side": "R",
+        "maximum_error": 2.596847033343484e-06,
+        "parent": "AdvPy_LegIKSub_R"
+      },
+      {
+        "limb": "Leg",
+        "side": "L",
+        "maximum_error": 2.633192348867979e-06,
+        "parent": "AdvPy_LegIKSub_L"
+      }
+    ]
+  }
+}

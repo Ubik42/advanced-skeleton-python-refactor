@@ -35,9 +35,9 @@ class BuildFitGeoAttach:
     def __init__(self, host: FitGeoAttachHost) -> None:
         self._host = host
 
-    def apply(self, metadata, controls, body_joints):
+    def apply(self, metadata, controls, body_joints, *, instances=(), source_native=False):
         specs = plan_body_fit_geo_attach(
-            tuple(metadata), tuple(controls), tuple(body_joints))
+            tuple(metadata), tuple(controls), tuple(body_joints), instances=instances, source_native=source_native)
         states = tuple(self._host.preflight_body_fit_geo_attach(spec)
                        for spec in specs)
         if not specs:

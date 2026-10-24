@@ -37,7 +37,7 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
         non_sym = bool(c.objExists(fit + ".NonSym") and c.getAttr(fit + ".NonSym"))
         if side == "L" and not non_sym:
             raise FitSkeletonValidationError("对称 Face 只允许编辑右侧控制器")
-        if c.ls("convertedSoftModHandle_*", type="transform"):
+        if c.ls("convertedSoftModHandle_*", assemblies=True):
             raise FitSkeletonValidationError("已有控制器处于 SoftMod 编辑，请先完成")
         if not c.sets(control, isMember="FaceControlSet"):
             raise FitSkeletonValidationError("所选对象不属于 FaceControlSet")
@@ -48,6 +48,7 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
         skin = self.face_skin_cluster(geometry)
         time = c.currentTime(query=True)
         selection = tuple(raw.ls(selection=True) or [])
+        self._transaction_changed = True
         c.currentTime(0)
         values = {attr: tuple(c.getAttr(control + "." + attr)[0]) for attr in ("t", "r", "s")}
         c.xform(control, objectSpace=True, translation=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1))
@@ -88,6 +89,7 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
 
     def restore_original_face_softmod_layer(self, fit_loc, name, side, radius):
         """SoftModLayerWeight's returning-from-edit branch, 45806–45916."""
+        self._require_transaction()
         c = self._cmds
         raw = getattr(c, "raw", c)
         fit = self._fit(required=True)
@@ -96,6 +98,7 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
         skin = self.face_skin_cluster(geometry)
         control = name + side
         joint = name + "Joint" + side
+        self._transaction_changed = True
         if c.objExists("SoftModLayer"):
             c.delete("SoftModLayer")
         c.duplicate("templateLayer", name="SoftModLayer")
@@ -112,14 +115,14 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
         if radius > 0:
             self.weight_original_face_by_softmod(joint, "SoftModLayer", "SoftModSC", radius, 1)
         if c.objExists("asSkinWeightExludeSet"):
-            vertices = []
-            members = c.sets("asSkinWeightExludeSet", query=True) or []
-            converted = raw.polyListComponentConversion([self.scene_address(item) for item in members], toVertex=True) or [] if members else []
-            for member in raw.ls(converted, flatten=True) or []:
-                if ".vtx[" in member:
-                    vertices.append("SoftModLayer." + member.split(".", 1)[1])
-            if vertices:
-                c.skinPercent("SoftModSC", vertices, transformValue=((head, 1),))
+            from .maya_fit_auto_place_mesh import cast
+            c.select("asSkinWeightExludeSet", replace=True)
+            members = c.ls(selection=True, flatten=True) or []
+            # asobjSetCast preserves the original component kinds.
+            # Converting every member to vertices changes edge/face
+            # membership and the source's first-object substitution rule.
+            c.select(cast(members, "SoftModLayer"), replace=True)
+            c.skinPercent("SoftModSC", transformValue=((head, 1),))
         raw.select(self.scene_address(geometry), replace=True)
         raw.polySelectConstraint(mode=3, type=1, dist=1, distbound=(0, radius), distpoint=position)
         raw.polySelectConstraint(mode=0)
@@ -148,6 +151,7 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
         self._require_transaction()
         c = self._cmds
         raw = getattr(c, "raw", c)
+        self._transaction_changed = True
         raw.setToolTo("selectSuperContext")
         leaf = self._original_restore_leaf(handle)
         if not leaf.startswith("convertedSoftModHandle_"):
@@ -175,6 +179,7 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
 
     def complete_original_face_softmod_edits(self):
         """asConvertAllSoftModBackToControl, including NonSym left replay."""
+        self._require_transaction()
         c = self._cmds
         raw = getattr(c, "raw", c)
         time = c.currentTime(query=True)
@@ -182,6 +187,7 @@ class MayaFaceSoftModEditMixin(MayaFaceSoftModWeightsMixin):
         fit = self._fit(required=True)
         non_sym = bool(c.objExists(fit + ".NonSym") and c.getAttr(fit + ".NonSym"))
         count = 0
+        self._transaction_changed = True
         for handle in tuple(c.ls("convertedSoftModHandle_*", assemblies=True) or []):
             leaf = self._original_restore_leaf(handle)
             self.convert_original_face_softmod_to_control(handle)

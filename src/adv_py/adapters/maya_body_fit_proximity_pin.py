@@ -87,7 +87,8 @@ class MayaBodyFitProximityPinMixin:
                             worldSpace=True, matrix=True)),
             _matrix(c.xform(spec.receiver, query=True,
                             worldSpace=True, matrix=True)),
-            upstream, _matrix(c.getAttr(plug)))
+            upstream, _matrix(c.getAttr(plug)),
+            bool(c.getAttr(spec.receiver + ".inheritsTransform")))
         if any(len(matrix) != 16 or not all(isfinite(v) for v in matrix)
                for matrix in (state.offset_world, state.receiver_world,
                               state.receiver_opm_value)):
@@ -138,8 +139,16 @@ class MayaBodyFitProximityPinMixin:
         destinations = raw.listConnections(
             output_plug, source=False, destination=True,
             plugs=True) or []
+        if spec.source_native:
+            input_outputs=[destination for destination in destinations
+                if (raw.ls(destination.split('.',1)[0],long=True) or []) == [input_scene]]
+            if not input_outputs:
+                raw.connectAttr(output_plug,input_scene+'.offsetParentMatrix',force=True)
+                raw.xform(input_scene,objectSpace=True,translation=(0,0,0),rotation=(0,0,0))
+                destinations.append(input_scene+'.offsetParentMatrix')
         for destination in destinations:
-            raw.disconnectAttr(output_plug, destination)
+            if raw.isConnected(output_plug,destination):
+                raw.disconnectAttr(output_plug, destination)
         generated_transforms = set(
             raw.ls(type="transform", long=True) or []) - before_transforms
         if source_node:
@@ -153,9 +162,12 @@ class MayaBodyFitProximityPinMixin:
             if (len(paths) == 1 and paths[0] in generated_transforms
                     and paths[0] != input_scene):
                 raw.delete(paths[0])
-        raw.delete(input_scene)
+        if not spec.source_native:
+            raw.delete(input_scene)
         for attr in ("coordMode", "normalAxis", "relativeSpaceMode"):
             raw.setAttr(pin + "." + attr, 0)
+        if spec.source_native:
+            c.parent(spec.input_transform,spec.fk_offset,relative=True)
         return pin
 
     def create_body_fit_proximity_pin(
@@ -163,6 +175,9 @@ class MayaBodyFitProximityPinMixin:
         state: BodyFitProximityPinState,
     ) -> None:
         self._require_transaction()
+        if spec.source_native:
+            from .maya_source_fit_proximity_pin import create
+            return create(self, spec, state)
         from maya.api import OpenMaya as om
 
         c = self._cmds
@@ -218,6 +233,9 @@ class MayaBodyFitProximityPinMixin:
         self, spec: BodyFitProximityPinSpec,
         state: BodyFitProximityPinState,
     ) -> bool:
+        if spec.source_native:
+            from .maya_source_fit_proximity_pin import capture
+            return capture(self, spec, state)
         from maya.api import OpenMaya as om
 
         c = self._cmds
@@ -269,7 +287,7 @@ class MayaBodyFitProximityPinMixin:
                                       + ".target[0]." + attr))
                        for attr in ("useScale", "useShear"))):
             return False
-        return (all(c.connectionInfo(dst, sourceFromDestination=True) == src
+        return (all(c.isConnected(src, dst, ignoreUnitConversion=True)
                     for src, dst in links)
                 and all(int(c.getAttr(spec.pin_node + "." + attr)) == 0
                         for attr in ("coordMode", "normalAxis",

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .fit_metadata import FitJointMetadata
+from .source_fit_identity import source_fit_build_name, source_fit_control_matches, source_fit_side_sign
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,9 +23,16 @@ class BodyFitGeoAttachSpec:
     blend_matrix: str
     weight_node: str
     output_matrix: str
+    source_native: bool = False
+    fit_joint: str | None = None
+    source_sign: int = 1
 
     @property
     def node_names(self) -> tuple[str, ...]:
+        if self.source_native:
+            return (self.surface, self.constraint, self.static_matrix,
+                    self.attached_matrix, self.blend_matrix, self.weight_node,
+                    self.output_matrix, self.attached_matrix + "_parentConstraint1")
         return (self.surface, self.constraint, self.static_matrix,
                 self.attached_matrix, self.blend_matrix,
                 self.weight_node, self.output_matrix)
@@ -43,7 +51,7 @@ class BodyFitGeoAttachState:
 
 def plan_body_fit_geo_attach(
     metadata: tuple[FitJointMetadata, ...], controls: tuple,
-    body_joints: tuple,
+    body_joints: tuple, *, instances: tuple = (), source_native: bool = False,
 ) -> tuple[BodyFitGeoAttachSpec, ...]:
     bodies = {joint.name.rsplit(":", 1)[-1]: joint.path
               for joint in body_joints}
@@ -55,8 +63,10 @@ def plan_body_fit_geo_attach(
         if item.geo_attach is None:
             continue
         name = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if instances:
+            name = source_fit_build_name(name)
         matches = tuple(control for control in controls
-                        if name in control.fit_joint_names)
+                        if source_fit_control_matches(item, control, instances))
         for control in matches:
             side = control.side.value
             source_body = bodies.get(name + "_" + side)
@@ -83,8 +93,9 @@ def plan_body_fit_geo_attach(
                 parent, item.geo_attach, item.geo_attach_mode, side,
                 stem + "Surface", stem + "POPC", stem + "StaticMM",
                 stem + "AttachedMM", stem + "BM", stem + "Weight",
-                stem + "OutputMM"))
-        if not matches and any(name + "_" + side in bodies
+                stem + "OutputMM", source_native, name if source_native else None,
+                source_fit_side_sign(name + "_" + side, instances)))
+        if not source_native and not matches and any(name + "_" + side in bodies
                                for side in ("M", "R", "L")):
             raise ValueError("Geo Attach 来源缺少 FK 控制：" + name)
     names = tuple(name for spec in result for name in spec.node_names)

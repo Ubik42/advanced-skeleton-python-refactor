@@ -24,6 +24,10 @@ class SquashSelection:
     one_joint_prop: bool
     game_engine: bool
 
+    @property
+    def meshes(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(item.split('.', 1)[0] for item in self.vertices))
+
 
 @dataclass(frozen=True, slots=True)
 class SquashPlan:
@@ -37,6 +41,10 @@ class SquashPlan:
     falloff_radius: float
     axis_sign: int
     one_joint_prop: bool
+
+    @property
+    def meshes(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(item.split('.', 1)[0] for item in self.vertices))
 
     @property
     def mirror_bounds(self) -> tuple[float, float, float, float, float, float]:
@@ -84,9 +92,9 @@ def plan_squash_controller(selection: SquashSelection,
         raise ValueError("须先选择受 Squash 影响的网格顶点")
     if len(set(selection.vertices)) != len(selection.vertices):
         raise ValueError("Squash 顶点选择包含重复项")
-    if not selection.mesh or any(not item.startswith(selection.mesh + ".vtx[")
-                                 for item in selection.vertices):
-        raise ValueError("Squash 顶点须属于同一件网格")
+    if (not selection.mesh or not all(isinstance(item, str) and item for item in selection.vertices)
+            or selection.mesh not in selection.meshes):
+        raise ValueError("Squash 选择缺少有效的来源网格")
     if selection.side not in ("_R", "_L", "_M"):
         raise ValueError("Squash 父关节侧别须为 _R、_L 或 _M")
     if (not base_name or "_" in base_name or not base_name[0].isalpha()
@@ -116,12 +124,12 @@ def plan_mirrored_squash_selection(
     """Match original R→L mirror by an expanded reflected bounding box."""
     if source.side != "_R":
         raise ValueError("Squash 自动镜像只从右侧控制器开始")
-    if not target_mesh or not target_parent_joint.endswith("_L"):
+    if not target_mesh or not target_parent_joint:
         raise ValueError("Squash 镜像缺少左侧网格或父关节")
     tolerance = source.falloff_radius / 10.0
     selected = []
     for vertex, point in target_vertices:
-        if (not vertex.startswith(target_mesh + ".vtx[")
+        if (not isinstance(vertex, str) or ".vtx[" not in vertex
                 or len(point) != 3 or not all(isfinite(value) for value in point)):
             raise ValueError("Squash 镜像候选顶点无效")
     # The source selected vertex positions are represented by its world bounds.
@@ -137,6 +145,7 @@ def plan_mirrored_squash_selection(
         (min(point[axis] for _, point in selected) if edge == 0
          else max(point[axis] for _, point in selected))
         for edge in (0, 1) for axis in range(3))
+    target_mesh = selected[0][0].split('.',1)[0]
     return SquashSelection(tuple(vertex for vertex, _ in selected),
                            target_mesh, mirrored_bounds, target_parent_joint,
                            "_L", source.one_joint_prop, False)

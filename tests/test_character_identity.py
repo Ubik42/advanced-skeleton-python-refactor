@@ -4,6 +4,21 @@ from adv_py.core.character_registry import CharacterRegistryError
 
 
 class CharacterIdentityTests(unittest.TestCase):
+    def test_uuid_lookup_remains_global_and_returns_local_addresses(self):
+        from adv_py.adapters.maya_namespace import MayaCharacterCommands
+        uuid = '01234567-89AB-CDEF-0123-456789abcdef'
+        class Commands:
+            def namespace(self,**flags):return not flags.get('query',False)
+            def ls(self,*args,**flags):
+                self.args=args
+                return ['hero:Control'] if args==(uuid,) else []
+        raw=Commands()
+        scoped=MayaCharacterCommands(raw,'hero')
+        self.assertEqual(scoped.ls(uuid,long=True),['Control'])
+        self.assertEqual(raw.args,(uuid,))
+        scoped.ls('Control',long=True)
+        self.assertEqual(raw.args,(':hero:Control',))
+
     def test_face_geometry_constraints_resolve_local_targets_and_preserve_foreign_reads(self):
         from adv_py.adapters.maya_namespace import MayaCharacterCommands
         class Commands:

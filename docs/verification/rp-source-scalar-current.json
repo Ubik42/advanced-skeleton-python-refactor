@@ -1,0 +1,347 @@
+{
+  "status": "passed",
+  "pid": 39820,
+  "scope": "Disposable native-input isolation; not a production fix or parity acceptance",
+  "neutral_scalar_differences": [
+    {
+      "node": "AdvPy_ShoulderIKDriver_L",
+      "differences": {
+        "boundingBoxMinX": {
+          "native": -5.854501696679734,
+          "python": -5.839606310088708
+        },
+        "boundingBoxMinY": {
+          "native": -1.3438000724879724,
+          "python": -1.2106305270406197
+        },
+        "boundingBoxMinZ": {
+          "native": -0.9999999999999023,
+          "python": -0.8660000000005027
+        },
+        "boundingBoxMaxX": {
+          "native": 2.220446049250313e-16,
+          "python": 0.0
+        },
+        "boundingBoxMaxY": {
+          "native": 1.104962167297982,
+          "python": 0.7031639460203793
+        },
+        "boundingBoxMaxZ": {
+          "native": 1.0000000000000977,
+          "python": 0.8659999999994973
+        },
+        "boundingBoxSizeX": {
+          "native": 5.854501696679734,
+          "python": 5.839606310088708
+        },
+        "boundingBoxSizeY": {
+          "native": 2.448762239785954,
+          "python": 1.913794473060999
+        },
+        "boundingBoxSizeZ": {
+          "native": 2.0,
+          "python": 1.732
+        },
+        "boundingBoxCenterX": {
+          "native": -2.927250848339867,
+          "python": -2.919803155044354
+        },
+        "boundingBoxCenterY": {
+          "native": -0.11941895259499524,
+          "python": -0.25373329051012017
+        },
+        "boundingBoxCenterZ": {
+          "native": 9.769962616701378e-14,
+          "python": -5.027089855502709e-13
+        },
+        "translateX": {
+          "native": 2.220446049250313e-16,
+          "python": 0.0
+        },
+        "translateY": {
+          "native": 5.551115123125783e-17,
+          "python": -6.106226635438361e-16
+        },
+        "translateZ": {
+          "native": 0.0,
+          "python": 3.552713678800501e-15
+        },
+        "rotateX": {
+          "native": -0.0,
+          "python": 1.4014508742440531e-14
+        },
+        "rotateY": {
+          "native": 0.0,
+          "python": 7.282734573229287e-16
+        },
+        "rotateZ": {
+          "native": -0.0,
+          "python": 1.4529996148039496e-27
+        },
+        "side": {
+          "native": 0,
+          "python": 1
+        },
+        "ikRotateX": {
+          "native": -0.0,
+          "python": 1.4014508742440531e-14
+        },
+        "ikRotateY": {
+          "native": 0.0,
+          "python": 7.282734573229287e-16
+        },
+        "ikRotateZ": {
+          "native": -0.0,
+          "python": 1.4529996148039496e-27
+        },
+        "fkRotateX": {
+          "native": -0.0,
+          "python": 1.4014508742440531e-14
+        },
+        "fkRotateY": {
+          "native": 0.0,
+          "python": 7.282734573229287e-16
+        },
+        "fkRotateZ": {
+          "native": -0.0,
+          "python": 1.4529996148039496e-27
+        }
+      }
+    },
+    {
+      "node": "AdvPy_ElbowIKDriver_L",
+      "differences": {
+        "boundingBoxMinX": {
+          "native": -5.854501696679734,
+          "python": -5.839606310088708
+        },
+        "boundingBoxMinY": {
+          "native": -1.3438000724879724,
+          "python": -1.210630527040619
+        },
+        "boundingBoxMinZ": {
+          "native": -0.9999999999999023,
+          "python": -0.8660000000005063
+        },
+        "boundingBoxMaxX": {
+          "native": -1.5092896847375419,
+          "python": -2.6142518520355225
+        },
+        "boundingBoxMaxY": {
+          "native": 1.104962167297982,
+          "python": 0.70316394602038
+        },
+        "boundingBoxMaxZ": {
+          "native": 1.0000000000000977,
+          "python": 0.8659999999994937
+        },
+        "boundingBoxSizeX": {
+          "native": 4.345212011942192,
+          "python": 3.225354458053186
+        },
+        "boundingBoxSizeY": {
+          "native": 2.448762239785954,
+          "python": 1.913794473060999
+        },
+        "boundingBoxSizeZ": {
+          "native": 2.0,
+          "python": 1.732
+        },
+        "boundingBoxCenterX": {
+          "native": -3.681895690708638,
+          "python": -4.226929081062115
+        },
+        "boundingBoxCenterY": {
+          "native": -0.11941895259499524,
+          "python": -0.2537332905101195
+        },
+        "boundingBoxCenterZ": {
+          "native": 9.769962616701378e-14,
+          "python": -5.062616992290714e-13
+        },
+        "translateY": {
+          "native": 1.2073675392798577e-15,
+          "python": 1.7069679003611782e-15
+        },
+        "translateZ": {
+          "native": 9.769962616701378e-14,
+          "python": 1.0658141036401503e-13
+        },
+        "rotateX": {
+          "native": 6.165247472836184e-18,
+          "python": 6.2338241783193496e-18
+        },
+        "rotateY": {
+          "native": 6.291435326101079e-17,
+          "python": 6.424303275387954e-17
+        },
+        "rotateZ": {
+          "native": -2.323514984361589e-05,
+          "python": -2.3257331285990947e-05
+        },
+        "jointOrientZ": {
+          "native": 6.382188951501966,
+          "python": 6.382188947481612
+        },
+        "side": {
+          "native": 0,
+          "python": 1
+        },
+        "ikRotateX": {
+          "native": 6.165247472836184e-18,
+          "python": 6.2338241783193496e-18
+        },
+        "ikRotateY": {
+          "native": 6.291435326101079e-17,
+          "python": 6.424303275387954e-17
+        },
+        "ikRotateZ": {
+          "native": -2.323514984361589e-05,
+          "python": -2.3257331285990947e-05
+        },
+        "fkRotateX": {
+          "native": 6.165247472836184e-18,
+          "python": 6.2338241783193496e-18
+        },
+        "fkRotateY": {
+          "native": 6.291435326101079e-17,
+          "python": 6.424303275387954e-17
+        },
+        "fkRotateZ": {
+          "native": -2.323514984361589e-05,
+          "python": -2.3257331285990947e-05
+        }
+      }
+    },
+    {
+      "node": "AdvPy_WristIKDriver_L",
+      "differences": {
+        "boundingBoxMinZ": {
+          "native": -0.8660000000006057,
+          "python": -0.8660000000006128
+        },
+        "boundingBoxMaxZ": {
+          "native": 0.8659999999993943,
+          "python": 0.8659999999993871
+        },
+        "boundingBoxCenterZ": {
+          "native": -6.057376822354854e-13,
+          "python": -6.128431095930864e-13
+        },
+        "translateZ": {
+          "native": -6.057376822354854e-13,
+          "python": -6.128431095930864e-13
+        },
+        "rotateX": {
+          "native": 1.6998449969245928e-06,
+          "python": 0.0
+        },
+        "rotateY": {
+          "native": -9.337776358656192e-08,
+          "python": 0.0
+        },
+        "rotateZ": {
+          "native": -3.1442748398330127,
+          "python": -3.144274747073892
+        },
+        "side": {
+          "native": 0,
+          "python": 1
+        }
+      }
+    },
+    {
+      "node": "|Group|MotionSystem|IKSystem|AdvPy_ArmIKControls|AdvPy_ArmIKOffset_L|AdvPy_ArmIKExtra_L|AdvPy_ArmIK_L|AdvPy_ArmIKHandle_L",
+      "differences": {
+        "boundingBoxMinX": {
+          "native": -4.947170625082235,
+          "python": -4.926127283124608
+        },
+        "boundingBoxMinY": {
+          "native": -1.0006546704971893,
+          "python": -0.8665927668191848
+        },
+        "boundingBoxMinZ": {
+          "native": -1.4081909475619425,
+          "python": -1.0061016854405933
+        },
+        "boundingBoxMaxX": {
+          "native": 1.027552842490124,
+          "python": 1.0057028820447498
+        },
+        "boundingBoxMaxY": {
+          "native": 1.0006607145946163,
+          "python": 0.8664736254184433
+        },
+        "boundingBoxMaxZ": {
+          "native": 1.3447473085531472,
+          "python": 1.2116981222169583
+        },
+        "boundingBoxSizeX": {
+          "native": 5.974723467572359,
+          "python": 5.931830165169358
+        },
+        "boundingBoxSizeY": {
+          "native": 2.0013153850918055,
+          "python": 1.7330663922376282
+        },
+        "boundingBoxSizeZ": {
+          "native": 2.7529382561150895,
+          "python": 2.217799807657552
+        },
+        "boundingBoxCenterX": {
+          "native": -1.9598088912960554,
+          "python": -1.9602122005399294
+        },
+        "boundingBoxCenterY": {
+          "native": 3.022048713496872e-06,
+          "python": -5.957070037077017e-05
+        },
+        "boundingBoxCenterZ": {
+          "native": -0.031721819504397675,
+          "python": 0.10279821838818248
+        },
+        "translateX": {
+          "native": 1.7763568394002505e-15,
+          "python": 0.0
+        },
+        "translateY": {
+          "native": 3.552713678800501e-15,
+          "python": -8.881784197001252e-15
+        },
+        "translateZ": {
+          "native": -2.7200464103316335e-15,
+          "python": -4.440892098500626e-16
+        },
+        "poleVectorX": {
+          "native": 2.62637734404215,
+          "python": 2.6263773522679
+        },
+        "poleVectorY": {
+          "native": 0.002296268613235952,
+          "python": 0.002296226834943127
+        },
+        "poleVectorZ": {
+          "native": -4.898069885304168,
+          "python": -4.898069875431695
+        }
+      }
+    }
+  ],
+  "rows": [
+    {
+      "case": "baseline",
+      "errors": {
+        "Shoulder_L": 5.4419743566486156e-05,
+        "Elbow_L": 0.0001422600032230381,
+        "Wrist_L": 2.949071470982915e-08
+      },
+      "maximum_error": 0.0001422600032230381
+    }
+  ],
+  "note": "No scenes saved; copying input values is diagnostic only",
+  "process_exited": true,
+  "limitations": [
+    "Scalar-state inspection and a baseline pose only; no parity acceptance."
+  ]
+}

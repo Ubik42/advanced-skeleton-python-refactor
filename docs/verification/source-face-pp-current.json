@@ -1,0 +1,108 @@
+{
+  "updated": "2026-10-11",
+  "status": "passed",
+  "pid": 41072,
+  "cases": [
+    {
+      "opm": false,
+      "legacy": false,
+      "side": "_M",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": false,
+      "legacy": false,
+      "side": "_R",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": false,
+      "legacy": false,
+      "side": "_L",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": false,
+      "legacy": true,
+      "side": "_M",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": false,
+      "legacy": true,
+      "side": "_R",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": false,
+      "legacy": true,
+      "side": "_L",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": true,
+      "legacy": false,
+      "side": "_M",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": true,
+      "legacy": false,
+      "side": "_R",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": true,
+      "legacy": false,
+      "side": "_L",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": true,
+      "legacy": true,
+      "side": "_M",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": true,
+      "legacy": true,
+      "side": "_R",
+      "error": 0.0,
+      "redo_error": 0.0
+    },
+    {
+      "opm": true,
+      "legacy": true,
+      "side": "_L",
+      "error": 0.0,
+      "redo_error": 0.0
+    }
+  ],
+  "source_lines": [
+    46039,
+    46040,
+    46041,
+    46042,
+    46043,
+    46044,
+    46045,
+    46049,
+    46050,
+    46051,
+    46052,
+    46053,
+    46054
+  ],
+  "scope": "Traditional/OPM, central/right/left, legacy off/on; source MM offset and actual joint/control world matrices at 0/.25/-.25 translation. Native full graph Undo and Python full graph Undo/Redo identity checked. Legacy mode inherited from Fit when caller does not override it.",
+  "fix": "Create the source temporary transform at world, parent absolutely, reset only T/R and preserve its inverse scale/reflection. Legacy orientation uses a separate world transform exactly as the source."
+}

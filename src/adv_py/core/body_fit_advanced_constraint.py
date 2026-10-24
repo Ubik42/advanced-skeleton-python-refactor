@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .fit_metadata import FitJointMetadata
+from .source_fit_identity import source_fit_build_name, source_fit_control_matches
 
 
 _KINDS = ("parent", "point", "orient", "scale")
@@ -24,6 +25,9 @@ class BodyFitAdvancedConstraintSpec:
     split_name: str | None = None
     align_target: bool = False
     reoffset_name: str | None = None
+    source_native: bool = False
+    use_offset_parent_matrix: bool = True
+    target_offsets: tuple[str, ...] = ()
 
     @property
     def attribute(self) -> str:
@@ -38,6 +42,8 @@ class BodyFitAdvancedConstraintSpec:
 
     @property
     def node_names(self) -> tuple[str, ...]:
+        if self.source_native:
+            return (self.static_name, self.weight_name, self.reverse_name, self.constraint_name, self.constraint_name+"Target", self.constraint_name+"Blend", self.constraint_name+"Offset", self.constraint_name+"Driver", self.constraint_name+"Bridge") + tuple(self.constraint_name+"Side"+side for side in ("R","L") if len(self.target_joints)==2)
         return (self.static_name, self.weight_name,
                 self.reverse_name, self.constraint_name) + (
                     (self.split_name,) if self.split_name is not None else ()) + (
@@ -47,7 +53,8 @@ class BodyFitAdvancedConstraintSpec:
 def plan_body_fit_advanced_constraints(
     metadata: tuple[FitJointMetadata, ...],
     controls: tuple,
-    body_joints: tuple,
+    body_joints: tuple, *, instances: tuple = (), source_native: bool = False,
+    use_offset_parent_matrix: bool = True,
 ) -> tuple[BodyFitAdvancedConstraintSpec, ...]:
     """Resolve side-aware targets; defer scene ownership checks to Maya."""
     by_name = {joint.name.rsplit(":", 1)[-1]: joint.path
@@ -65,8 +72,10 @@ def plan_body_fit_advanced_constraints(
         if not targets:
             continue
         source_name = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if instances:
+            source_name = source_fit_build_name(source_name)
         matches = tuple(control for control in controls
-                        if source_name in control.fit_joint_names)
+                        if source_fit_control_matches(item, control, instances))
         # MEL skips Fit joints without an FK control, including most ends.
         for control in matches:
             side = control.side.value
@@ -114,7 +123,11 @@ def plan_body_fit_advanced_constraints(
                     stem + "Split" if len(target_paths) == 2 else None,
                     item.orient_constraint_maintain_offset,
                     (stem + "ReOffset"
-                     if item.orient_constraint_maintain_offset else None)))
+                     if item.orient_constraint_maintain_offset else None),
+                    source_native, use_offset_parent_matrix,
+                    tuple(next((candidate.offset_path for candidate in controls
+                                if candidate.driven_joint == target), target)
+                          for target in target_paths)))
     names = tuple(name for spec in result for name in spec.node_names)
     if len(names) != len(set(names)):
         raise ValueError("Advanced Constraint 生成节点名称重复")

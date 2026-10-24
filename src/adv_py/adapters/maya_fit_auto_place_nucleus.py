@@ -9,9 +9,10 @@ def temporary_nucleus(host):
 
     The original single-character operation renames and then deletes that
     solver. For a namespaced Python character, explicitly select a fresh
-    stock NSystem before creating any cloth, and restore the global active
-    solver setting afterward. Solver defaults and all cloth flags remain the
-    stock/source values.
+    stock NSystem when a foreign solver exists, and restore the global active
+    solver setting afterward. Without an existing solver, stock createNCloth
+    creates the first one at the source's original point in the finger loop.
+    Solver defaults and all cloth flags remain the stock/source values.
     """
     from maya import mel
     c=host._cmds
@@ -23,14 +24,19 @@ def temporary_nucleus(host):
     previous=mel.eval('global string $gActiveNucleusNode; $gActiveNucleusNode = $gActiveNucleusNode;')
     selection=raw.ls(selection=True,long=True) or []
     try:
-        raw.select(clear=True)
-        with c._creation_namespace() if hasattr(c,'_creation_namespace') else nullcontext():
-            nucleus=mel.eval('setActiveNucleusNode ""; getActiveNucleusNode(0, 1);')
-        identity=getattr(c,'identity',None)
-        if not nucleus or not raw.objExists(nucleus):
-            raise RuntimeError('Fit 展指未生成临时 Nucleus')
-        if identity and not identity.owns(nucleus):
-            raise RuntimeError('Fit 展指的 Nucleus 不属于当前角色')
+        nucleus=''
+        if raw.ls(type='nucleus'):
+            # Isolate a user's existing solver. With no existing solver,
+            # retain the source order: stock createNCloth creates it during
+            # the first finger pass, not before the sampling operations.
+            raw.select(clear=True)
+            with c._creation_namespace() if hasattr(c,'_creation_namespace') else nullcontext():
+                nucleus=mel.eval('setActiveNucleusNode ""; getActiveNucleusNode(0, 1);')
+            identity=getattr(c,'identity',None)
+            if not nucleus or not raw.objExists(nucleus):
+                raise RuntimeError('Fit 展指未生成临时 Nucleus')
+            if identity and not identity.owns(nucleus):
+                raise RuntimeError('Fit 展指的 Nucleus 不属于当前角色')
         yield nucleus
     finally:
         mel.eval('setActiveNucleusNode '+json.dumps(previous or '')+';')

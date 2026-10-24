@@ -80,12 +80,12 @@ class MayaBodySpineMixin:
                           else "Pole_icon"), radius=1.5,
                 fallback_normal=(1.0, 0.0, 0.0))
             if control == plan.ik_control:
-                if plan.ik_extra_path and plan.ik_extra_curve:
-                    self._add_body_extra_curve(plan.ik_extra_path, control)
                 if plan.ik_sub_path:
                     self._create_body_sub_control(
                         control, plan.ik_sub_path.rsplit("|", 1)[-1],
                         plan.ik_sub_path)
+                if plan.ik_extra_path and plan.ik_extra_curve:
+                    self._add_body_extra_curve(plan.ik_extra_path, control)
             for axis in "XYZ":
                 c.setAttr(control + ".scale" + axis, lock=True, keyable=False)
         c.addAttr(plan.ik_control, longName="spineIkFk", attributeType="double", minValue=0, maxValue=1, defaultValue=0, keyable=True)

@@ -16,6 +16,10 @@ class SourceSplineAnimationBinding:
     blend_key: str
 
     @property
+    def mode_maximum(self):
+        return self.plan.mode_maximum
+
+    @property
     def blend_plug(self):
         return self.plan.mode_plug
 
@@ -42,15 +46,17 @@ def source_spline_nearest_deform(position,joints):
     """asGetDeformJointsByDistance filters and three-decimal sort (26401)."""
     eligible=[]
     for path,point in joints:
-        leaf=path.rsplit('|',1)[-1].rsplit(':',1)[-1]
+        leaf=path.rsplit('|',1)[-1]
         if leaf.endswith('_L') or 'Partial_' in leaf or 'Fix' in leaf:continue
         distance=sqrt(sum((a-b)**2 for a,b in zip(position,point)))
-        # MEL asRoundOff rounds positive distances; equal rounded distances
-        # sort by the joint's name rather than by traversal order.
+        # Native sorts padded TEXT, including the namespace. Keep the five
+        # integer digits as a minimum width (not a numeric-sort shortcut).
         rounded=floor(distance*1000.+.5)
-        eligible.append((rounded,leaf,path))
+        integer,fraction=divmod(rounded,1000)
+        key=str(integer).zfill(5)+'.'+str(fraction).zfill(3)+'|'+leaf
+        eligible.append((key,path))
     if not eligible:raise CharacterRegistryError('来源 Spline 没有可对齐的 Deform 关节')
-    return min(eligible)[2]
+    return min(eligible)[1]
 
 
 def resolve_source_spline(registration,system=None):
@@ -65,7 +71,8 @@ def resolve_source_spline(registration,system=None):
         if len(matches)!=1:
             raise CharacterRegistryError('来源 Spline 系统缺失或不唯一：'+str(system))
         plan=matches[0]
-    body={joint.path:joint for joint in registration.body}
+    from .character_body_retirement import complete_body_bindings
+    body={joint.path:joint for joint in complete_body_bindings(registration)}
     chain=[]
     current=plan.body_joints[-1]
     while True:

@@ -98,6 +98,11 @@ class MayaCharacterPoseMixin:
         """Read-only rebuild capture accepts original Keep Lock/Hide states."""
         c=self._cmds
         self._validate_character_registration(registration)
+        from .maya_source_name_matcher_session import audit as audit_mocap, allowed_input
+        mocap_edges = audit_mocap(self)
+        from .maya_source_native_animation import audit as audit_native_animation
+        mocap_edges |= audit_native_animation(self)
+        identities = {node.path: node.uuid for node in registration.nodes}
         if (c.ls(type='animLayer') or c.currentUnit(q=True,angle=True)!='deg'
                 or c.currentUnit(q=True,linear=True)!='cm'
                 or not c.undoInfo(q=True,state=True)):
@@ -107,6 +112,8 @@ class MayaCharacterPoseMixin:
             source=c.connectionInfo(plug,sourceFromDestination=True)
             if not source:continue
             if not self._character_direct_animation(source):
+                if allowed_input(self,mocap_edges,identities[channel.node],channel.attribute,source):
+                    continue
                 raise CharacterRegistryError('重建控制通道含未支持的外部动画输入：'+channel.key)
             curve=source.rsplit('.',1)[0]
             if c.referenceQuery(curve,isNodeReferenced=True) or any(c.lockNode(curve,q=True,lock=True) or []):

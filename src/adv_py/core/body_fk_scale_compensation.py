@@ -7,6 +7,7 @@ from .body_limb_controls import BodyLimbFkControlSpec
 from .fit_metadata import FitJointMetadata
 from .fit_scale_compensation import fit_segment_scale_compensate
 from .fit_symmetry import FitSymmetryInstance
+from .source_fit_identity import source_fit_control_reference
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +137,12 @@ def plan_body_fk_scale_compensation(
             return source
         # Arm/Leg FK mechanism joints are generated after Body symmetry;
         # their original Fit identity is carried by the control spec.
+        # The same semantic name can describe the original right Fit and
+        # its authored NonSymmetry left branch. Resolve the current side
+        # through Body expansion before falling back to legacy Fit names.
+        reference = source_fit_control_reference(control, instances)
+        if reference is not None:
+            return reference
         candidates = set().union(*(
             metadata_by_name.get(name, set())
             for name in control.fit_joint_names))

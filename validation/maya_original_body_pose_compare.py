@@ -106,9 +106,34 @@ def scoped_spline_cases(systems):
     return tuple(rows)+(('all_splines_native_bend',tuple(simultaneous)),)
 
 
-def main(native,python_scene,reference,output,*,extended=False,source_matrices=False,source_splines=False,spline_systems=()):
-    import maya.standalone
-    maya.standalone.initialize(name='python')
+def set_edit(cmds, row, index):
+    plug = row[index]
+    value = row[2+index] if len(row) == 4 else row[2]
+    if index == 1 and not cmds.getAttr(plug, settable=True):
+        # Current source RP modes expose the original FKIKBlend 0..10
+        # control. Historical tests wrote its generated normalized output.
+        # Resolve only the locked, explicitly saved source mode declaration.
+        from adv_py.adapters.maya_source_limb_mode import PLAN_MARKER
+        from adv_py.core.source_limb_mode import decode_source_limb_mode
+        marker = row[0].split('.', 1)[0] + '.' + PLAN_MARKER
+        if not cmds.objExists(marker) or not cmds.getAttr(marker, lock=True):
+            raise AssertionError('No declared source mode for connected test input: ' + plug)
+        plan = decode_source_limb_mode(cmds.getAttr(marker))
+        physical = (cmds.ls(plug.split('.', 1)[0], long=True) or [None])[0]
+        mode_node = (cmds.ls(row[0].split('.', 1)[0], long=True) or [None])[0]
+        if (plan.blend_plug != physical + '.' + plug.split('.', 1)[1]
+                or plan.mode_plug != mode_node + '.' + row[0].split('.', 1)[1]
+                or not cmds.isConnected(plan.source_mode.weight_unit + '.output', plug)
+                or cmds.getAttr(plan.source_mode.weight_unit + '.conversionFactor') != .1):
+            raise AssertionError('Source mode does not match historical normalized input: ' + plug)
+        plug, value = plan.mode_plug, row[2]
+    cmds.setAttr(plug, value)
+
+
+def main(native,python_scene,reference,output,*,extended=False,source_matrices=False,source_splines=False,spline_systems=(),standalone=True):
+    if standalone:
+        import maya.standalone
+        maya.standalone.initialize(name='python')
     from maya import cmds
     names=tuple(json.loads(reference.read_text())['neutral_body'])
     matrices={}
@@ -120,7 +145,7 @@ def main(native,python_scene,reference,output,*,extended=False,source_matrices=F
             cmds.currentTime(1,update=True)
             for row in edits:
                 assert cmds.objExists(row[index]),row[index]
-                cmds.setAttr(row[index],row[2+index] if len(row)==4 else row[2])
+                set_edit(cmds, row, index)
             cmds.dgdirty(allPlugs=True)
             matrices[label][name]={node:cmds.xform(node,q=True,ws=True,m=True) for node in names}
     rows=[]

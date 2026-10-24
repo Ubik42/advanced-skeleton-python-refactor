@@ -222,11 +222,15 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
                objectSpace=True,worldSpaceDistance=True)
 
     def create_original_face_pp(self,position,name,side,kind,*,create_joint=False,
-                                bind_skin=None,attach=False,legacy_orient=False):
+                                bind_skin=None,attach=False,legacy_orient=None):
         """asCreatePP: projected control, matrix joint, subtracter and attacher."""
         self._require_transaction()
         c=self._cmds
         if isinstance(position,str): position=c.xform(position,query=True,worldSpace=True,translation=True)
+        if legacy_orient is None:
+            fit=self._fit(required=True)
+            legacy_orient=bool(c.objExists(fit+".LegacyFaceJointOrient")
+                               and c.getAttr(fit+".LegacyFaceJointOrient"))
         control=self.create_original_face_controller(name,side,kind)
         offset=name+"Offset"+side; sdk="SDK"+control
         joint=name+"Joint"+side; joint_offset=name+"JointOffset"+side
@@ -254,10 +258,19 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
             c.connectAttr("FaceJoint_M.worldInverseMatrix[0]",name+"JointMM"+side+".matrixIn[2]",force=True)
             c.xform(joint,objectSpace=True,translation=(0,0,0))
             c.delete(joint_offset)
-            temp=c.createNode("transform",name="facePPMatrixTemp#",parent=control)
-            c.xform(temp,objectSpace=True,translation=(0,0,0),rotation=(0,0,180 if legacy_orient else 0))
+            # asCreatePP 46039 creates this at world, then parents absolutely.
+            # Reset only T/R: its inherited inverse scale/reflection must stay.
+            temp=c.createNode("transform",name="facePPMatrixTemp#")
+            temp=c.parent(temp,control,absolute=True)[0]
+            c.xform(temp,objectSpace=True,translation=(0,0,0),rotation=(0,0,0))
             matrix=c.xform(temp,query=True,objectSpace=True,matrix=True)
             c.delete(temp)
+            if legacy_orient:
+                temp=c.createNode("transform",name="facePPLegacyMatrixTemp#")
+                c.xform(temp,worldSpace=True,matrix=matrix)
+                c.xform(temp,objectSpace=True,rotation=(0,0,180))
+                matrix=self.original_face_matrix_values(temp+".matrix")
+                c.delete(temp)
             c.setAttr(name+"JointMM"+side+".matrixIn[0]",*matrix,type="matrix")
         if attach:
             attacher=c.createNode("transform",name=name+"Attach"+side,parent=offset)
@@ -347,12 +360,10 @@ class MayaFaceControllersMixin(MayaFaceSDKInsertMixin):
         before=set(c.listConnections(bw+".input",source=True,destination=False,
                                      type="animCurve",skipConversionNodes=True) or [])
         keys=((0,start),(driver_value,value))
-        if quick:
-            self.set_original_face_sdk_keys(source,destination,keys)
-        else:
-            for dv,v in keys:
-                c.setDrivenKeyframe(destination,currentDriver=source,driverValue=dv,value=v,
-                                    inTangentType="linear",outTangentType="linear")
+        # The same explicit native insertion used by Quick also owns the
+        # extra curves inserted during a full multi-driver Face build.
+        # Routing, additive values, names and infinity still follow asDsSdk.
+        self.set_original_face_sdk_keys(source,destination,keys)
         self.name_original_face_sdk_curves()
         after=c.listConnections(bw+".input",source=True,destination=False,
                                 type="animCurve",skipConversionNodes=True) or []

@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-24",
+  "source_version": "AdvancedSkeleton 6.925",
+  "source_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "scope": "Complete Face rebuild with RigType BlendShapes, using the saved ordinary Face scene",
+  "passed": [
+    {
+      "stage": 4,
+      "name": "EyeLid",
+      "maya_pid": 35944,
+      "finding": "The sampled upper and lower lid curves match. Selecting sampled vertices before iterating them makes the overlapping vertex 1129 belong to upperLidMain1_R in both MEL and Python."
+    },
+    {
+      "stage": 10,
+      "name": "CageToSkin",
+      "maya_pid": 46084,
+      "finding": "The source UI preparation now carries FaceFitSkeleton.Mask. Both builds read 1406 interior mask vertices and the selected HeadSkin and PreCageWeightsSC samples match."
+    }
+  ],
+  "unfinished": {
+    "name": "Full BlendShapes source parity",
+    "maya_pid": 46768,
+    "last_completed_original_stage": 12,
+    "report_status": "running",
+    "reason": "The user paused the task and the owned Maya process was stopped. The partial run is not a validation result."
+  },
+  "local_reports": [
+    "validation/results/face-blendshapes-full-current/stage-weight-timeline.json",
+    "validation/results/face-blendshapes-full-current/report.json"
+  ],
+  "next_step": "Run the full MEL/Python comparison with equivalent Mask input, then investigate remaining target, pose, skin and matrix differences without changing thresholds."
+}

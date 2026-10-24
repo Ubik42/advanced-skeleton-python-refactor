@@ -8,16 +8,18 @@ from .maya_original_control_identity import source_control_name, source_control_
 from .maya_original_control_orient import _path, _uuid, _by_uuid, DETACH_HOLDER
 
 
-def mirror_original_controls(host, controls=None, *, side='R2L', space='Main', axis='X'):
+def mirror_original_controls(host, controls=None, *, side='R2L', space='Main', axis='X', ui_name='', ui_state=None):
     host._require_transaction()
-    if side not in ('R2L', 'L2R', 'Flip') or space not in ('Main', 'Center', 'World') or axis not in 'XYZ':
+    if side not in ('R2L', 'L2R', 'Flip') or space not in ('Main', 'Center', 'World') or axis not in ('X','Y','Z'):
         raise ValueError('原版镜像选项无效')
     c = host._cmds
     selected = c.ls(selection=True, long=True) or []
     if controls is None:
-        if not c.objExists('ControlSet'):
+        from .maya_original_control_sets import resolve
+        sets = resolve(host,ui_name,**(ui_state or {}))
+        if not sets:
             raise ValueError('No controlSets detected. select a controller')
-        controls = c.sets('ControlSet', query=True) or []
+        controls = c.sets(sets, query=True) or []
     by_role = {}
     for control in controls:
         role = source_control_name(host, control)
@@ -35,17 +37,18 @@ def mirror_original_controls(host, controls=None, *, side='R2L', space='Main', a
     writes = []
     try:
         reference = None
+        try:
+            main = source_main(host)
+        except ValueError:
+            main = None
         if space == 'Main':
-            try:
-                reference = source_main(host)
-            except ValueError:
-                reference = None
+            reference = main
         elif space == 'Center':
             reference = source_control_from_role(host, 'RootX_M')
-        if reference and c.objExists(reference):
+        if space == 'Center' or reference and c.objExists(reference):
             group = c.parent(group, reference)[0]
         c.xform(group, objectSpace=True, translation=(0., 0., 0.), rotation=(0., 0., 0.))
-        if space in ('Main', 'Center') and reference and c.objExists(reference):
+        if space in ('Main', 'Center') and main is not None:
             group = c.parent(group, world=True)[0]
         for role in ordered:
             source = by_role.get(role)

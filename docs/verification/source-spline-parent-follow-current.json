@@ -1,0 +1,44 @@
+{
+  "status": "passed",
+  "pid": 35600,
+  "scope": "Original MEL Spline physical parent, Fit follow levels, declared defaults and initial weights; native OPM/traditional outputs",
+  "case_count": 48,
+  "maximum_error": 0.0,
+  "configurations": {
+    "opm": [
+      false,
+      true
+    ],
+    "part": [
+      false,
+      true
+    ],
+    "non_symmetry": [
+      false,
+      true
+    ],
+    "weight": [
+      0,
+      5,
+      10
+    ],
+    "scale": [
+      [
+        1,
+        1,
+        1
+      ],
+      [
+        1.2,
+        0.9,
+        1.4
+      ]
+    ]
+  },
+  "attribute_defaults_and_initial_values_matched": true,
+  "source_lines": [
+    "74359-74510",
+    "81466-81492"
+  ],
+  "script": "validation/maya_source_spline_parent_follow.py"
+}

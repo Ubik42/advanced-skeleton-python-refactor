@@ -1,0 +1,106 @@
+{
+  "status": "passed",
+  "scope": "Complete seven-axis connected proxy source parity, normal finish/reopen lifecycle and namespace flow; inherited full-scan Undo/Redo limitation separately recorded",
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "scan": {
+    "pid": 76588,
+    "process_exited": true,
+    "axes": [
+      "z",
+      "x",
+      "yArmStraight",
+      "yElbowStraight",
+      "y",
+      "zLoft",
+      "yLoft"
+    ],
+    "four_fingers": true,
+    "guides_active": true,
+    "comparison": {
+      "scan_records": 691,
+      "scan_differences": 0,
+      "maximum_joint_matrix_error": 4.722853219618628e-09,
+      "maximum_fat_error": 0.0,
+      "whole_success_accepted": false
+    }
+  },
+  "finish": {
+    "pid": 10988,
+    "process_exited": true,
+    "maximum_joint_matrix_error": 1.3563845158159893e-08,
+    "maximum_fat_error": 0.0,
+    "undo_error": 7.105427357601002e-15,
+    "redo_error": 0.0,
+    "native_reopen_error": 3.9968028886505635e-15,
+    "python_reopen_error": 0.0,
+    "restored": {
+      "finished": true,
+      "fingers": [
+        "Index",
+        "Middle",
+        "Ring",
+        "Pinky"
+      ],
+      "arm": true
+    }
+  },
+  "namespace": {
+    "pid": 46976,
+    "process_exited": true,
+    "namespace": "OtherRig",
+    "fit_input": "Complete original biped.ma imported into namespace, including DrivingSystem animCurves",
+    "scan": {
+      "axes": [
+        "z",
+        "x",
+        "yArmStraight",
+        "yElbowStraight",
+        "y",
+        "zLoft",
+        "yLoft"
+      ],
+      "maximum_joint_matrix_error": 4.722849666904949e-09,
+      "maximum_fat_error": 0.0,
+      "undo_error": 2.5965465935151235e-06,
+      "before_native_error": 0.0,
+      "undo_native_error": 0.0,
+      "redo_error": 8.3439492258688,
+      "redo_native_error": 0.0
+    },
+    "guide_reopen_error": 7.105427357601002e-15,
+    "finish": {
+      "maximum_joint_matrix_error": 1.3563850487230411e-08,
+      "undo_error": 1.0658141036401503e-14,
+      "redo_error": 5.822564652646633e-13,
+      "reopen_error": 5.823674875671259e-13,
+      "fingers": [
+        "Index",
+        "Middle",
+        "Ring",
+        "Pinky"
+      ],
+      "arm": true
+    }
+  },
+  "scan_undo_redo": {
+    "reference_pid": 56560,
+    "reference_process_exited": true,
+    "native_undo_error": 2.5965465935151235e-06,
+    "native_redo_error": 8.3439492258688,
+    "python_undo_error": 2.5965465935151235e-06,
+    "python_redo_error": 8.3439492258688,
+    "undo_source_parity_error": 0,
+    "redo_source_parity_error": 0,
+    "perfect_restoration_accepted": false,
+    "normal_lifecycle": "Saved successful placed scene before diagnostic Undo/Redo, reopened it before finishing; did not overwrite good scene with altered redo output",
+    "perfect_redo_accepted": false
+  },
+  "limits": [
+    "Connected generated proxy, not original default model",
+    "Sam default-model successful placement remains unaccepted",
+    "Full scan Undo/Redo does not perfectly restore placement in native or Python; no relaxed restoration tolerance or production workaround",
+    "One complete character namespace tested, not simultaneous multi-character scenes with arbitrary external deformers"
+  ],
+  "proxy_normal_lifecycle_accepted": true,
+  "original_default_model_accepted": false
+}

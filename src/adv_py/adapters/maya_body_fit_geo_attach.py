@@ -86,7 +86,7 @@ class MayaBodyFitGeoAttachMixin:
         state = BodyFitGeoAttachState(
             shape,
             tuple(float(v) for v in c.xform(
-                spec.source_body, query=True, worldSpace=True,
+                spec.fit_joint if spec.source_native else spec.source_body, query=True, worldSpace=True,
                 translation=True)),
             _matrix(c.xform(spec.fk_offset, query=True,
                             worldSpace=True, matrix=True)),
@@ -107,6 +107,9 @@ class MayaBodyFitGeoAttachMixin:
         state: BodyFitGeoAttachState,
     ) -> None:
         self._require_transaction()
+        if spec.source_native:
+            from .maya_source_fit_geo_attach import create
+            return create(self, spec, state)
         from maya.api import OpenMaya as om
 
         c = self._cmds
@@ -203,6 +206,9 @@ class MayaBodyFitGeoAttachMixin:
         self, spec: BodyFitGeoAttachSpec,
         state: BodyFitGeoAttachState,
     ) -> bool:
+        if spec.source_native:
+            from .maya_source_fit_geo_attach import capture
+            return capture(self, spec, state)
         c = self._cmds
         raw = getattr(c, "raw", c)
         expected = (
@@ -260,7 +266,7 @@ class MayaBodyFitGeoAttachMixin:
         return (bool(c.getAttr(spec.fk_offset + ".inheritsTransform"))
                 == state.inherits_transform
                 and state.mesh_shape in connected_shapes
-                and all(c.connectionInfo(dst, sourceFromDestination=True) == src
+                and all(c.isConnected(src, dst, ignoreUnitConversion=True)
                     for src, dst in links)
                 and abs(float(c.getAttr(spec.fk_control + ".attach")) - 10)
                 < 1e-8

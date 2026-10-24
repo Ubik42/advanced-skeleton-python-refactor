@@ -4,6 +4,7 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_face_base import MayaFaceBaseMixin
 from .maya_face_pre import MayaFacePreHost
 from .maya_face_body_jaw import MayaFaceBodyJawMixin
+from .maya_original_control_identity import source_control_from_role
 from .maya_face_forehead_fit import MayaFaceForeHeadFitMixin
 from .maya_face_eye_loop_fit import MayaFaceEyeLoopFitMixin
 
@@ -15,7 +16,7 @@ class MayaFaceFitMarkersHost(MayaFaceEyeLoopFitMixin,MayaFaceForeHeadFitMixin,Ma
             raise FitSkeletonValidationError("先在 Pre 记录 Mask")
         scale=float(c.getAttr(fit+".faceScale"))
         if scale<=0: raise FitSkeletonValidationError("Face Fit faceScale 必须为正")
-        suffix="Left" if c.objExists(fit+".NonSymSide") and c.getAttr(fit+".NonSymSide")=="Left" else ""
+        suffix="Left" if c.objExists(fit+".NonSym") and c.getAttr(fit+".NonSymSide")=="Left" else ""
         holder="FaceFit"+section+suffix
         names=[holder,*("FaceFit"+section+stem+suffix for stem in ("Geo","Curve","Loc"))]
         if section=="UpMidLo": names.extend(("upperFace","middleFace","lowerFace"))
@@ -34,13 +35,16 @@ class MayaFaceFitMarkersHost(MayaFaceEyeLoopFitMixin,MayaFaceForeHeadFitMixin,Ma
         for stem in ("Geo","Curve","Loc"):
             c.createNode("transform",name="FaceFit"+section+stem+suffix,parent=holder)
 
-    def create_face_fit_marker(self,section):
+    def create_face_fit_marker(self,section, *,shading_group=None):
         self._require_transaction()
         if section not in MARKER_SHADERS: raise ValueError("原版球形 Fit 类型无效")
+        if shading_group is not None and shading_group not in set(MARKER_SHADERS.values()):
+            raise ValueError('原版球形 Fit 材质无效')
         c=self._cmds
-        if section=="Jaw" and c.objExists("FKJaw_M"):
+        if section=="Jaw" and c.objExists(source_control_from_role(self, "FKJaw_M")):
             previous=tuple(c.ls(selection=True,long=True,flatten=True) or [])
-            self.remove_original_body_jaw_for_face()
+            if not self.remove_original_body_jaw_for_face():
+                return None
             c.select(previous,replace=True) if previous else c.select(clear=True)
         fit,scale,suffix,holder=self._marker_context(section)
         selected=tuple(c.ls(selection=True,long=True,flatten=True) or [])
@@ -84,7 +88,7 @@ class MayaFaceFitMarkersHost(MayaFaceEyeLoopFitMixin,MayaFaceForeHeadFitMixin,Ma
         c.setAttr(holder+".selection"," ".join(self.scene_address(item) for item in selected)+" ",type="string")
         if position is not None:
             c.xform(name,worldSpace=True,translation=position)
-            c.sets(sphere,edit=True,forceElement=MARKER_SHADERS[section])
+            c.sets(sphere,edit=True,forceElement=shading_group or MARKER_SHADERS[section])
             c.select(clear=True)
         return name
 

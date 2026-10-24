@@ -1,4 +1,5 @@
 """Original BlendShape target reset, wizard, extract and new target."""
+from .maya_face_body_roles import face_body_main
 from adv_py.core.fit_settings import FitSkeletonValidationError
 
 
@@ -248,7 +249,7 @@ class MayaFaceBSTargetsMixin:
         with self._original_bs_creation_context():
             deformer = raw.deltaMush(source["geometry"], smoothingIterations=10,
                                     smoothingStep=.5, pinBorderVertices=True, envelope=1)[0]
-        if c.objExists("Main") and c.objExists("MainScaleMultiplyDivide"):
+        if c.objExists(face_body_main(self)) and c.objExists("MainScaleMultiplyDivide"):
             for axis in "XYZ":
                 raw.connectAttr(self.scene_address("MainScaleMultiplyDivide") + ".output" + axis,
                                 deformer + ".s" + axis.lower())

@@ -127,6 +127,12 @@ class BodyCharacterRigHost(
                              global_control: str,
                              use_offset_parent_matrix: bool) -> bool: ...
 
+    def capture_body_fit_aim_source_order(self, hierarchy) -> tuple[str, ...]: ...
+
+    def create_body_fit_aims(self, specs: tuple[BodyFitAimSpec, ...], *,
+                             global_control: str,
+                             use_offset_parent_matrix: bool) -> None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class BodyCharacterRigBuildPlan:
@@ -236,6 +242,7 @@ class BuildBodyCharacterRig:
         hand_fkx_joint_names: frozenset[str] | None = None,
         hand_point_control_names: frozenset[str] | None = None,
         standard_fk_independent_controls: frozenset[str] | None = None,
+        source_aim_layouts: tuple | None = None,
         torso_fkx_joint_names: frozenset[str] | None = None,
         torso_point_control_names: frozenset[str] | None = None,
         torso_root_point_from_fkx: bool = True,
@@ -425,13 +432,15 @@ class BuildBodyCharacterRig:
                                    + ".scale"),
                     mode_plug=spline.mode_weight,
                 )
+        root_metadata=next((metadata for metadata in safety.symmetry.source.metadata
+            if metadata.joint.rsplit('|',1)[-1].rsplit(':',1)[-1]=='Root'),None)
+        read_main_extras=getattr(self._host,'read_source_main_extras',None)
+        main_extras=(read_main_extras(safety.symmetry.source.hierarchy.container,root_metadata.joint)
+            if read_main_extras is not None and root_metadata is not None
+            else root_metadata.num_main_extras or 0 if root_metadata is not None else 0)
         global_control = plan_body_character_global(
             up_axis=self._host.scene_up_axis(),
-            num_main_extras=next(
-                (metadata.num_main_extras or 0
-                 for metadata in safety.symmetry.source.metadata
-                 if metadata.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1] == "Root"),
-                0),
+            num_main_extras=main_extras,
             fit_height=fit_height,
             body_root=arm.safety.body.root,
             driven_roots=driven_roots,
@@ -544,7 +553,9 @@ class BuildBodyCharacterRig:
             safety.symmetry.source.hierarchy,
             safety.symmetry.source.metadata,
             safety.body,
-            fk_controls)
+            fk_controls, instances=safety.symmetry.instances,
+            fit_joint_order=self._host.capture_body_fit_aim_source_order(safety.symmetry.source.hierarchy),
+            saved_layouts=source_aim_layouts)
         no_control_paths = plan_body_no_control(
             safety.symmetry.source.metadata,
             fk_controls)
@@ -626,6 +637,7 @@ class BuildBodyCharacterRig:
         hand_fkx_joint_names: frozenset[str] | None = None,
         hand_point_control_names: frozenset[str] | None = None,
         standard_fk_independent_controls: frozenset[str] | None = None,
+        source_aim_layouts: tuple | None = None,
         torso_fkx_joint_names: frozenset[str] | None = None,
         torso_point_control_names: frozenset[str] | None = None,
         torso_root_point_from_fkx: bool = True,
@@ -654,6 +666,7 @@ class BuildBodyCharacterRig:
             hand_point_control_names=hand_point_control_names,
             standard_fk_independent_controls=(
                 standard_fk_independent_controls),
+            source_aim_layouts=source_aim_layouts,
             torso_fkx_joint_names=torso_fkx_joint_names,
             torso_point_control_names=torso_point_control_names,
             torso_root_point_from_fkx=torso_root_point_from_fkx,
@@ -727,10 +740,9 @@ class BuildBodyCharacterRig:
                 )
             aim_use_opm = BodyBuildOptions.from_fit_settings(
                 plan.arm.safety.symmetry.settings).use_offset_parent_matrix
-            for spec in plan.fit_aim:
-                self._host.create_body_fit_aim(
-                    spec, global_control=plan.global_control.control_path,
-                    use_offset_parent_matrix=aim_use_opm)
+            self._host.create_body_fit_aims(plan.fit_aim,
+                global_control=plan.global_control.control_path,
+                use_offset_parent_matrix=aim_use_opm)
             if any(not self._host.capture_body_fit_aim(
                     spec, global_control=plan.global_control.control_path,
                     use_offset_parent_matrix=aim_use_opm)

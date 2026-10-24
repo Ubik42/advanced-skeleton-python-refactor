@@ -1,0 +1,98 @@
+{
+  "updated": "2026-10-12",
+  "status": "passed-current-scope",
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "source_lines": [
+    "29507-29510",
+    "30691-30713",
+    "31549-31562",
+    "32138-32260",
+    "46772-46930",
+    "46953-47100"
+  ],
+  "changes": [
+    "Resolve native Main, Eye Aim and FK Offset roles through the registered Python Body",
+    "Identify axis-restricted FK controls without requiring rotateX, including default Jaw",
+    "Use the real Body controls in Face fitting, visibility, follow, mirroring and BlendShape helpers",
+    "Keep FaceJoint_M descendants owned by FaceAllSet outside the Body joint-count schema while retaining foreign-joint checks"
+  ],
+  "offline_regressions": {
+    "source_control_identity": 3,
+    "face_body_roles": 3,
+    "status": "passed"
+  },
+  "maya": {
+    "pid": 47576,
+    "process_exited": true,
+    "scope": "Traditional registered Body + ordinary Complete Face with brow/lash attachments; procedural geometry is a functional fixture",
+    "complete_first_build_pid": 24040,
+    "completed_first_build_checkpoint": "validation/results/body-face-lifecycle-current/body-face-built-checkpoint.mb",
+    "body_joint_counts": [
+      81,
+      75
+    ],
+    "replaced_body_roles": [
+      "Eye_R",
+      "EyeEnd_R",
+      "Eye_L",
+      "EyeEnd_L",
+      "Jaw_M",
+      "JawEnd_M"
+    ],
+    "body_registry_preserved": true,
+    "existing_body_animation_curves_preserved": true,
+    "poses": [
+      "neutral",
+      "head_turn",
+      "mouth",
+      "head_and_mouth",
+      "main_scale"
+    ],
+    "global_animation_error": 4.76837158203125e-07,
+    "saved_reopened": true,
+    "rebuild": {
+      "stages": [
+        "Prep",
+        "CtrlBox",
+        "EyeBall",
+        "EyeLid",
+        "EyeBlink",
+        "EyeWide",
+        "Lip",
+        "LipFalloff",
+        "FaceCage",
+        "CageToSkin",
+        "EyeBrow",
+        "Squint",
+        "SmilePull",
+        "FrownPull",
+        "Cheek",
+        "CheekRaiser",
+        "JawWeighing",
+        "JawOpen",
+        "LipUp",
+        "LipDown",
+        "LipSide",
+        "Snarl",
+        "Tongue",
+        "Regions",
+        "EyeAim",
+        "UpMidLo",
+        "Phonemes",
+        "Emotions",
+        "Finish",
+        "RebuildRestore"
+      ],
+      "skin_error": 0.0,
+      "pose_error": 0.0,
+      "undo_redo": true
+    },
+    "report": "validation/results/body-face-lifecycle-current/report.json"
+  },
+  "limits": [
+    "Current run reused the completed first-build checkpoint; fresh-build Undo/Redo was not exercised on the combined character",
+    "Combined scene was saved/reopened before Face rebuilding; final rebuilt scene was saved",
+    "Whole Body rebuilding after Face, combined original-MEL parity, OPM Body/Face and layered Face combinations remain unverified",
+    "This batch does not resolve old Toe binding matrices, the four OPM near-straight source differences, or layered edited Lip/Tongue weights"
+  ]
+}

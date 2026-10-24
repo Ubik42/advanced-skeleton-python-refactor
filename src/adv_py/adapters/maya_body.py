@@ -421,6 +421,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         result = self._cmds.parent(matches[0], container, absolute=True)
         return (self._cmds.ls(result[0], long=True, type="joint") or result)[0]
 
+    def prepare_body_wrap_options(self):
+        self._require_transaction()
+        from .maya_original_wrap_options import set_fixed_wrap_options
+        set_fixed_wrap_options(self._cmds)
+
     def copy_external_mesh_for_character(self, mesh_path: str) -> str:
         """Keep a source mesh intact when building a separate character."""
         from adv_py.core.character_identity import CharacterIdentity
@@ -668,31 +673,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             self._cmds.upAxis(axis=axis)
 
     def flip_character_scene_up_axis(self, transform: str, axis: str) -> None:
-        """Port asSceneUpAxisFlip's rotate-channel and up-axis sequence."""
-        self._require_transaction()
-        matches = self._cmds.ls(transform, long=True, type="transform") or []
-        if len(matches) != 1:
-            raise FitSkeletonValidationError(
-                "场景上方向转换目标不存在或不唯一：" + transform)
-        transform = matches[0]
-        if axis not in ("y", "z"):
-            raise ValueError("场景上方向只能是 Y 或 Z")
-        channels = tuple(transform + ".r" + suffix
-                         for suffix in ("x", "y", "z", ""))
-        locked = tuple(bool(self._cmds.getAttr(plug, lock=True))
-                       for plug in channels)
-        self._transaction_changed = True
-        try:
-            for plug, was_locked in zip(channels, locked):
-                if was_locked:
-                    self._cmds.setAttr(plug, lock=False)
-            self._cmds.setAttr(transform + ".r", 90 if axis == "z" else 0,
-                               0, 0, type="float3")
-        finally:
-            for plug, was_locked in zip(channels, locked):
-                if was_locked:
-                    self._cmds.setAttr(plug, lock=True)
-        self.set_scene_up_axis(axis)
+        from .maya_source_scene_axis import flip
+        flip(self, transform, axis)
 
     def create_body_system_hierarchy(
         self, *, include_dynamic: bool = True,
@@ -704,17 +686,18 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             raise FitSkeletonValidationError(
                 "角色系统层级名称已被占用")
         authored_geo = self._cmds.ls("geo", long=True,
-                                     type="transform") or []
-        if len(authored_geo) > 1:
-            raise FitSkeletonValidationError(
-                "原版自动归档的 geo 模型组名称不唯一")
-        if authored_geo and (
-                self._cmds.referenceQuery(authored_geo[0],
-                                          isNodeReferenced=True)
-                or any(self._cmds.lockNode(authored_geo[0], query=True,
-                                           lock=True) or [])):
-            raise FitSkeletonValidationError(
-                "原版自动归档的 geo 模型组被引用或锁定")
+                                     type="transform", recursive=True) or []
+        geo_state=[]
+        for path in authored_geo:
+            identities=self._cmds.ls(path,uuid=True) or []
+            if len(identities)!=1:
+                raise FitSkeletonValidationError('geo 模型组身份不唯一：'+path)
+            geo_state.append((identities[0],tuple(float(value) for value in self._cmds.xform(
+                path,query=True,worldSpace=True,matrix=True))))
+        # The original parents every result of ls -r 1 geo in one native
+        # command. Maya resolves duplicate leaf names itself. Do not reject
+        # valid multiple groups or invent a reference restriction here.
+        self._transaction_changed = True
         group = self._cmds.createNode(
             "transform", name="Group", skipSelect=True)
         deformation = self._cmds.createNode(
@@ -778,19 +761,15 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         self._cmds.setAttr(geometry + ".inheritsTransform", False)
         self._cmds.setAttr(geometry + ".inheritsTransform", lock=True)
         if authored_geo:
-            before = tuple(float(value) for value in self._cmds.xform(
-                authored_geo[0], query=True, worldSpace=True,
-                matrix=True))
-            moved = self._cmds.parent(authored_geo[0], geometry,
-                                      absolute=True) or []
-            actual = (self._cmds.ls(moved[0], long=True,
-                                    type="transform") or []) if len(moved) == 1 else []
-            if actual != ["|Group|Geometry|geo"]:
-                raise RuntimeError("原版 geo 模型组没有进入 Geometry")
-            after = tuple(float(value) for value in self._cmds.xform(
-                actual[0], query=True, worldSpace=True, matrix=True))
-            if max(abs(a - b) for a, b in zip(before, after)) > 1e-5:
-                raise RuntimeError("原版 geo 模型组归档后世界变换变化")
+            self._cmds.parent(authored_geo,geometry,absolute=True)
+            for identity,before in geo_state:
+                actual=self._cmds.ls(identity,long=True,type='transform') or []
+                if len(actual)!=1 or (self._cmds.listRelatives(actual[0],parent=True,fullPath=True) or [])!=['|Group|Geometry']:
+                    raise RuntimeError('原版 geo 模型组没有进入 Geometry')
+                after=tuple(float(value) for value in self._cmds.xform(
+                    actual[0],query=True,worldSpace=True,matrix=True))
+                if len(after)!=len(before) or max(abs(a-b) for a,b in zip(before,after))>1e-5:
+                    raise RuntimeError('原版 geo 模型组归档后世界变换变化')
         self._transaction_changed = True
         group_path = (self._cmds.ls(group, long=True) or [group])[0]
         deformation_path = (self._cmds.ls(deformation, long=True)
@@ -1212,6 +1191,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         ) or []
         paths.append(root)
         paths = sorted(set(paths), key=lambda path: (path.count("|"), path))
+        from .maya_face_body_roles import face_body_joint_paths
+        face_paths = face_body_joint_paths(self, paths)
+        paths = [path for path in paths if path not in face_paths]
         paths = [path for path in paths if not (
             self._cmds.attributeQuery("advPyAuxiliaryInfluenceKind",
                                       node=path, exists=True)
@@ -1221,7 +1203,8 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     "root-volume-v1", "chest-volume-v1", "sdk-volume-v1",
                     "volume-half-parent-v1", "original-local-angle-v1",
                     "face-eye-v1", "custom-skin-v1",
-                    "custom-partial-parent-v1", "original-partial-v1"})]
+                    "custom-partial-parent-v1", "original-partial-v1",
+                    "name-matcher-external-v1"})]
         states: list[BodyJointState] = []
         for path in paths:
             parents = self._cmds.listRelatives(path, parent=True, fullPath=True) or []
@@ -1719,7 +1702,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if self._cmds.objExists("|Group|FitSkeleton") else [])
             fit_shape = fit_shapes[0] if len(fit_shapes) == 1 else None
 
-            def copy_fit_outline(destination: str, expansion: float = 1.0) -> None:
+            def copy_fit_outline(destination: str, expansion_steps: int = 0) -> None:
                 if fit_shape is None:
                     return
                 self._cmds.connectAttr(fit_shape + ".worldSpace[0]",
@@ -1727,11 +1710,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 self._cmds.getAttr(destination + ".spans")
                 self._cmds.disconnectAttr(fit_shape + ".worldSpace[0]",
                                           destination + ".create")
-                if expansion != 1.0:
-                    self._cmds.scale(
-                        expansion, expansion, expansion,
-                        destination + ".cv[*]", relative=True,
-                        objectSpace=True, pivot=(0, 0, 0))
+                # MEL duplicates the preceding MainExtra, then scales only
+                # cv[0:7] once. Repeating that native component operation
+                # retains the same policy for an authored outline with more
+                # CVs; the remaining CVs are deliberately left unchanged.
+                for _ in range(expansion_steps):
+                    self._cmds.xform(destination+'.cv[0:7]',scale=(1.1,1.1,1.1))
 
             extra_parent = root
             for index in range(len(plan.extra_control_paths), 0, -1):
@@ -1748,7 +1732,7 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 if len(shapes) != 1:
                     raise RuntimeError("MainExtra 曲线 shape 创建失败")
                 shape = self._cmds.rename(shapes[0], extra_name + "Shape")
-                copy_fit_outline(shape, 1.1 ** index)
+                copy_fit_outline(shape,index)
                 self._cmds.setAttr(shape + ".overrideEnabled", True)
                 self._cmds.setAttr(shape + ".overrideColor", 19 + index)
                 self._cmds.connectAttr(motion + ".visibility",
@@ -7812,21 +7796,30 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             fullPath=True, type="nurbsCurve") or []
         if len(main_shapes) != 1:
             raise RuntimeError("Sub 来源控制器须恰有一条曲线")
-        sub = self._cmds.duplicateCurve(
-            main_shapes[0], constructionHistory=False, local=True)[0]
-        sub = self._cmds.rename(sub, sub_name)
-        sub = self._cmds.parent(sub, control, relative=True)[0]
+        # asCreateController duplicates the complete controller transform,
+        # then reparents absolutely. Retain its pivots/Euler order/channels;
+        # duplicateCurve is a different Maya extraction operation.
+        sub = self._cmds.duplicate(control, name=sub_name,
+                                   returnRootsOnly=True)[0]
+        sub = self._cmds.parent(sub, control, absolute=True)[0]
         sub = (self._cmds.ls(sub, long=True) or [sub])[0]
         if sub != sub_path:
             raise RuntimeError("Body Sub 控制器路径漂移")
+        self._cmds.setAttr(sub + ".visibility",
+                           self._cmds.getAttr(control + ".visibility"),
+                           keyable=False, channelBox=True)
         shapes = self._cmds.listRelatives(
             sub, shapes=True, noIntermediate=True, fullPath=True) or []
         if len(shapes) != 1:
             raise RuntimeError("Body Sub 控制器曲线无效")
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
-        c.scale(0.9, 0.9, 0.9, shapes[0] + ".cv[*]",
-                relative=True, pivot=(0, 0, 0))
-        self._cmds.setAttr(shapes[0] + ".overrideEnabled", True)
+        # Native scales before placing its world-origin Offset. The adapter
+        # already placed it; Maya's component pivot is a world-space point
+        # even with objectSpace. Move that pivot to the same local origin.
+        pivot = c.xform(self.scene_address(sub), query=True,
+                         worldSpace=True, translation=True)
+        c.scale(0.9, 0.9, 0.9, self.scene_address(sub) + ".cv[0:99]",
+                relative=True, pivot=pivot)
         self._cmds.setAttr(shapes[0] + ".overrideColor", 30)
         self._cmds.addAttr(control, longName="subControl",
                            attributeType="bool", defaultValue=False)
@@ -7853,23 +7846,34 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
             fullPath=True, type="nurbsCurve") or []
         if len(main_shapes) != 1:
             raise RuntimeError("Extra 来源控制器须恰有一条曲线")
-        temp = self._cmds.duplicateCurve(
-            main_shapes[0], constructionHistory=False, local=True)[0]
+        # asCreateController's Extra2 is a transform duplicate, whose shape
+        # is instanced onto Extra before deleting the temporary transform.
+        temp = self._cmds.duplicate(
+            control, name=extra.rsplit("|", 1)[-1] + "2",
+            returnRootsOnly=True)[0]
         shapes = self._cmds.listRelatives(
             temp, shapes=True, noIntermediate=True, fullPath=True) or []
         if len(shapes) != 1:
             raise RuntimeError("IK Extra 来源曲线无效")
         shape = self._cmds.parent(
-            shapes[0], extra, shape=True, relative=True)[0]
+            shapes[0], extra, add=True, shape=True)[0]
         shape = self._cmds.rename(
             shape, extra.rsplit("|", 1)[-1] + "Shape")
-        shape = (self._cmds.ls(shape, long=True) or [shape])[0]
         if self._cmds.objExists(temp):
             self._cmds.delete(temp)
+        # Until Extra2 is deleted the same shape has two DAG instance paths.
+        # Resolve the retained Extra path, never the deleted temporary path.
+        shape = extra + "|" + extra.rsplit("|", 1)[-1] + "Shape"
+        shapes = self._cmds.ls(shape, long=True) or []
+        if len(shapes) != 1:
+            raise RuntimeError("Extra 曲线挂接路径无效")
+        shape = shapes[0]
         c = self._cmds.raw if hasattr(self._cmds, "raw") else self._cmds
-        c.scale(1.1, 1.1, 1.1, shape + ".cv[*]",
-                relative=True, pivot=(0, 0, 0))
-        self._cmds.setAttr(shape + ".overrideEnabled", True)
+        # As for Sub, this adapter's Offset is already positioned.
+        pivot = c.xform(self.scene_address(extra), query=True,
+                         worldSpace=True, translation=True)
+        c.scale(1.1, 1.1, 1.1, self.scene_address(shape) + ".cv[0:99]",
+                relative=True, pivot=pivot)
         self._cmds.setAttr(shape + ".overrideColor", 29)
         self._cmds.addAttr(control, longName="extraControl",
                            attributeType="bool", defaultValue=False)
@@ -8017,56 +8021,9 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 raise FitSkeletonValidationError(
                     "Wrist AlignIKTo 的 FK 父关节缺失")
             self._transaction_changed = True
-            wrist_offset = self._cmds.createNode("transform", name=spec.wrist_offset_name, parent=spec.root_path, skipSelect=True)
-            wrist_offset = (self._cmds.ls(wrist_offset, long=True) or [wrist_offset])[0]
-            x_axis, y_axis, z_axis = spec.wrist_axes
-            if spec.source_aligned_graph:
-                x_axis,y_axis,z_axis=(1.,0.,0.),(0.,1.,0.),(0.,0.,1.)
-            matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *spec.wrist_position, 1.0)
-            self._cmds.xform(wrist_offset, worldSpace=True, matrix=matrix)
-            if spec.wrist_extra_name is None or spec.wrist_extra_path is None:
-                raise FitSkeletonValidationError("Arm IK 缺少 Extra 层计划")
-            wrist_extra = self._create_body_extra_layer(
-                wrist_offset, spec.wrist_extra_name, spec.wrist_extra_path)
-            wrist = create_adv_icon(
-                self._cmds, name=spec.wrist_control_name,
-                parent=wrist_extra, template="IK_icon", radius=spec.radius,
-                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
-                mirror_left=spec.side is FitBuildSide.LEFT)
-            wrist = (self._cmds.ls(wrist, long=True) or [wrist])[0]
-            pole_offset = self._cmds.createNode("transform", name=spec.pole_offset_name, parent=spec.root_path, skipSelect=True)
-            pole_offset = (self._cmds.ls(pole_offset, long=True) or [pole_offset])[0]
-            self._cmds.xform(pole_offset, worldSpace=True, translation=spec.pole_position)
-            if spec.pole_extra_name is None or spec.pole_extra_path is None:
-                raise FitSkeletonValidationError("Arm Pole 缺少 Extra 层计划")
-            pole_extra = self._create_body_extra_layer(
-                pole_offset, spec.pole_extra_name, spec.pole_extra_path)
-            pole = create_adv_icon(
-                self._cmds, name=spec.pole_control_name,
-                parent=pole_extra, template="Pole_icon",
-                radius=spec.radius,
-                fallback_normal=(0.0, 0.0, 1.0),
-                mirror_left=spec.side is FitBuildSide.LEFT)
-            pole = (self._cmds.ls(pole, long=True) or [pole])[0]
-            if spec.source_aligned_graph and spec.ik_local_mode=='localOrient':
-                for node in (wrist_offset,wrist_extra,wrist,pole_offset,pole_extra,pole):
-                    self._cmds.setAttr(node+'.rotateOrder',spec.source_rotation_order)
-            if spec.source_original_pole:
-                from .maya_original_transform_channels import lock_original_transform_channels
-                lock_original_transform_channels(self._cmds,pole,False,True,True,True)
-                self._cmds.addAttr(pole,longName='advPySourceRpPolePlacement',attributeType='bool',defaultValue=True)
-                self._cmds.setAttr(pole+'.advPySourceRpPolePlacement',True,lock=True)
-            if wrist != spec.wrist_control_path or pole != spec.pole_control_path:
-                raise RuntimeError("Arm IK 控制路径漂移")
-            if spec.wrist_extra_curve:
-                self._add_body_extra_curve(
-                    wrist_extra, wrist)
-            if spec.wrist_sub_path is not None:
-                if spec.wrist_sub_name is None:
-                    raise FitSkeletonValidationError("Arm IK Sub 缺少名称")
-                self._create_body_sub_control(
-                    wrist, spec.wrist_sub_name, spec.wrist_sub_path)
-            if spec.wrist_align_name is not None:
+            early_align = (spec.source_native_effector and spec.source_aligned_graph
+                           and spec.source_align_joint_path is not None)
+            def create_align_helper(matrix=None):
                 if spec.source_aligned_graph:
                     from .maya_original_transform_channels import align_original_transform
                     # MEL 80048: the helper starts at world origin with world
@@ -8086,19 +8043,95 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 self._cmds.addAttr(aligned,longName='advPyIkAlignOwner',dataType='string')
                 self._cmds.setAttr(aligned+'.advPyIkAlignOwner',
                     'adv_py.ik_align.v1',type='string',lock=True)
+            if spec.wrist_align_name is not None and early_align:
+                # MEL 80048 creates AlignIKTo before solver/controllers.
+                create_align_helper()
+            source_handle = None
+            if spec.source_native_effector:
+                if self.find_name_collisions(spec.source_effector_name):
+                    raise FitSkeletonValidationError('来源 IK Effector 名称冲突：'+spec.source_effector_name)
+                # MEL 80801–80807 creates/configures the solver before either
+                # IK or Pole controller. Controller creation may evaluate the
+                # live Body graph; retain the source constructor state/order.
+                source_handle, source_effector = self._cmds.ikHandle(
+                    name=spec.handle_name, startJoint=spec.chain[0],
+                    endEffector=spec.chain[2], solver="ikRPsolver",
+                    numSpans=2, createCurve=False)
+                from .maya_source_limb_effector import configure
+                configure(self,spec,source_handle,source_effector)
+            wrist_offset = self._cmds.createNode("transform", name=spec.wrist_offset_name, parent=spec.root_path, skipSelect=True)
+            wrist_offset = (self._cmds.ls(wrist_offset, long=True) or [wrist_offset])[0]
+            x_axis, y_axis, z_axis = spec.wrist_axes
+            if spec.source_aligned_graph:
+                x_axis,y_axis,z_axis=(1.,0.,0.),(0.,1.,0.),(0.,0.,1.)
+            matrix = (*x_axis, 0.0, *y_axis, 0.0, *z_axis, 0.0, *spec.wrist_position, 1.0)
+            self._cmds.xform(wrist_offset, worldSpace=True, matrix=matrix)
+            if spec.wrist_extra_name is None or spec.wrist_extra_path is None:
+                raise FitSkeletonValidationError("Arm IK 缺少 Extra 层计划")
+            wrist_extra = self._create_body_extra_layer(
+                wrist_offset, spec.wrist_extra_name, spec.wrist_extra_path)
+            wrist = create_adv_icon(
+                self._cmds, name=spec.wrist_control_name,
+                parent=wrist_extra, template="IK_icon", radius=spec.radius,
+                fallback_normal=(1.0, 0.0, 0.0), fallback_sections=12,
+                mirror_left=spec.side is FitBuildSide.LEFT)
+            wrist = (self._cmds.ls(wrist, long=True) or [wrist])[0]
+            def create_pole_control():
+                pole_offset = self._cmds.createNode("transform", name=spec.pole_offset_name, parent=spec.root_path, skipSelect=True)
+                pole_offset = (self._cmds.ls(pole_offset, long=True) or [pole_offset])[0]
+                self._cmds.xform(pole_offset, worldSpace=True, translation=spec.pole_position)
+                if spec.pole_extra_name is None or spec.pole_extra_path is None:
+                    raise FitSkeletonValidationError("Arm Pole 缺少 Extra 层计划")
+                pole_extra = self._create_body_extra_layer(
+                    pole_offset, spec.pole_extra_name, spec.pole_extra_path)
+                pole = create_adv_icon(
+                    self._cmds, name=spec.pole_control_name,
+                    parent=pole_extra, template="Pole_icon",
+                    radius=spec.radius,
+                    fallback_normal=(0.0, 0.0, 1.0),
+                    mirror_left=spec.side is FitBuildSide.LEFT)
+                pole = (self._cmds.ls(pole, long=True) or [pole])[0]
+                if spec.source_aligned_graph and spec.ik_local_mode=='localOrient':
+                    for node in (pole_offset,pole_extra,pole):
+                        self._cmds.setAttr(node+'.rotateOrder',spec.source_rotation_order)
+                if spec.source_original_pole:
+                    from .maya_original_transform_channels import lock_original_transform_channels
+                    lock_original_transform_channels(self._cmds,pole,False,True,True,True)
+                    self._cmds.addAttr(pole,longName='advPySourceRpPolePlacement',attributeType='bool',defaultValue=True)
+                    self._cmds.setAttr(pole+'.advPySourceRpPolePlacement',True,lock=True)
+                if pole != spec.pole_control_path:
+                    raise RuntimeError("Arm IK 控制路径漂移")
+                return pole
+            pole = None if spec.source_native_effector else create_pole_control()
+            if spec.source_aligned_graph and spec.ik_local_mode=='localOrient':
+                for node in (wrist_offset,wrist_extra,wrist):
+                    self._cmds.setAttr(node+'.rotateOrder',spec.source_rotation_order)
+            if wrist != spec.wrist_control_path:
+                raise RuntimeError("Arm IK 控制路径漂移")
+            if spec.wrist_sub_path is not None:
+                if spec.wrist_sub_name is None:
+                    raise FitSkeletonValidationError("Arm IK Sub 缺少名称")
+                self._create_body_sub_control(
+                    wrist, spec.wrist_sub_name, spec.wrist_sub_path)
+            if spec.wrist_extra_curve:
+                self._add_body_extra_curve(wrist_extra, wrist)
+            if spec.wrist_align_name is not None and not early_align:
+                create_align_helper(matrix)
             if (spec.source_aligned_graph and spec.source_straight_chain
                     and not spec.source_pole_joint_paths):
                 self._cmds.setAttr(spec.chain[1]+'.preferredAngle',0.,0.,-90.,type='double3')
-            if spec.source_native_effector and self.find_name_collisions(spec.source_effector_name):
-                raise FitSkeletonValidationError('来源 IK Effector 名称冲突：'+spec.source_effector_name)
-            handle, effector = self._cmds.ikHandle(name=spec.handle_name,
-                startJoint=spec.chain[0], endEffector=spec.chain[2], solver="ikRPsolver",
-                numSpans=2 if spec.source_native_effector else 1,
-                **({"createCurve": False} if spec.source_native_effector else {}))
-            if spec.source_native_effector:
-                from .maya_source_limb_effector import configure
-                configure(self,spec,handle,effector)
-            self._cmds.parent(handle, wrist, absolute=True)
+            if source_handle is None:
+                handle, _ = self._cmds.ikHandle(name=spec.handle_name,
+                    startJoint=spec.chain[0], endEffector=spec.chain[2],
+                    solver="ikRPsolver", numSpans=1)
+            else:
+                handle = source_handle
+            self._cmds.parent(handle,
+                (spec.wrist_sub_path or wrist) if spec.source_aligned_graph else wrist,
+                absolute=True)
+            if pole is None:
+                # MEL 80830 parents the Handle before Pole creation.
+                pole = create_pole_control()
             if spec.source_original_pole and spec.source_pole_joint_paths:
                 from .maya_source_limb_pole import place_original_limb_pole
                 place_original_limb_pole(self, spec)
@@ -8284,14 +8317,13 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 or pole != spec.pole_control_path
             ):
                 raise RuntimeError("Leg IK 控制路径漂移")
-            if spec.ankle_extra_curve:
-                self._add_body_extra_curve(
-                    ankle_extra, ankle)
             if spec.ankle_sub_path is not None:
                 if spec.ankle_sub_name is None:
                     raise FitSkeletonValidationError("Leg IK Sub 缺少名称")
                 self._create_body_sub_control(
                     ankle, spec.ankle_sub_name, spec.ankle_sub_path)
+            if spec.ankle_extra_curve:
+                self._add_body_extra_curve(ankle_extra, ankle)
             handle, _ = self._cmds.ikHandle(
                 name=spec.handle_name,
                 startJoint=spec.chain[0],
@@ -9044,12 +9076,12 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     raise RuntimeError("Toe IK 图标曲线不唯一")
                 self._cmds.setAttr(shapes[0] + ".overrideEnabled", True)
                 self._cmds.setAttr(shapes[0] + ".overrideColor", 13)
-                if spec.toe_extra_curve:
-                    self._add_body_extra_curve(toe_parent, toe_control)
                 if spec.toe_sub_path:
                     self._create_body_sub_control(
                         toe_control, spec.toe_sub_name,
                         spec.toe_sub_path)
+                if spec.toe_extra_curve:
+                    self._add_body_extra_curve(toe_parent, toe_control)
             handles = self._cmds.ls(spec.handle_name, long=True, type="ikHandle") or []
             if len(handles) != 1:
                 raise FitSkeletonValidationError("Leg IK Handle 在执行前失效")
@@ -10086,23 +10118,22 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 f"Arm 机制关节父级或来源失效：{spec.name}"
             )
         self._transaction_changed = True
-        joint = self._cmds.createNode(
-            "joint",
-            name=spec.name,
-            parent=parents[0],
-            skipSelect=True,
-        )
+        from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole
+        source_ik = spec.role is BodyLimbMechanismRole.IK and spec.rotation_order is not None
+        if source_ik:
+            from .maya_source_limb_joint import create
+            joint = create(self,spec)
+        else:
+            joint = self._cmds.createNode(
+                "joint", name=spec.name, parent=parents[0], skipSelect=True)
         joint = (self._cmds.ls(joint, long=True) or [joint])[0]
         if spec.rotation_order is not None:
             self._cmds.setAttr(joint+'.rotateOrder',spec.rotation_order)
             self._cmds.addAttr(joint,longName='advPySourceIkRotationOrder',attributeType='bool',defaultValue=True)
             self._cmds.setAttr(joint+'.advPySourceIkRotationOrder',lock=True)
-        self._cmds.xform(
-            joint,
-            worldSpace=True,
-            translation=spec.world_position,
-        )
-        self._set_joint_world_axes(joint, spec.world_axes)
+        if not source_ik:
+            self._cmds.xform(joint,worldSpace=True,translation=spec.world_position)
+            self._set_joint_world_axes(joint, spec.world_axes)
         self._cmds.setAttr(f"{joint}.side", _MAYA_SIDE_FROM_CORE[spec.side])
         self._cmds.addAttr(joint, longName="advPySourceJoint", attributeType="message")
         self._cmds.connectAttr(
@@ -10232,6 +10263,22 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_spline import create
         create(self, plan)
 
+    def create_source_spline_alignment_frames(self,plan,fk,all_splines,hierarchy,instances):
+        from .maya_source_spline_alignment import create
+        return create(self,plan,fk,all_splines,hierarchy,instances)
+
+    def capture_source_fit_non_terminal(self,hierarchy):
+        from .maya_source_fit_terminal import capture_non_terminal_fits
+        return capture_non_terminal_fits(self,hierarchy)
+
+    def capture_source_fit_terminal_state(self,container):
+        from .maya_source_fit_terminal import capture_state
+        return capture_state(self,container)
+
+    def install_source_fit_terminal_state(self,state,container='FitSkeleton'):
+        from .maya_source_fit_terminal import install_staged_state
+        install_staged_state(self,state,container)
+
     def connect_source_body_spline_visibility(self, plan, fk) -> None:
         from .maya_source_spline_visibility import create
         create(self,plan,fk)
@@ -10286,9 +10333,11 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_inbetween_matrix import configure_fk
         configure_fk(self,fk,segments,global_control,metadata,instances)
 
-    def create_source_rp_follows(self,body,limbs,global_control,root,*,leg_aim=()):
+    def create_source_rp_follows(self,body,limbs,global_control,root,*,leg_aim=(),use_offset_parent_matrix=True,native_controls=None,hierarchy=None,instances=()):
         from .maya_source_rp_follow import create
-        return create(self,body,limbs,global_control,root,leg_aim=leg_aim)
+        return create(self,body,limbs,global_control,root,leg_aim=leg_aim,
+            use_offset_parent_matrix=use_offset_parent_matrix,native_controls=native_controls,
+            hierarchy=hierarchy,instances=instances)
 
     def create_source_rp_dynamics(self,body,limbs,global_control,internal_local=(),root_follow=None, *,source_pole_targets=True,source_x_translation=True,source_part_scale=True,instances=(),inbetween_segments=(),source_start_frame=True):
         from .maya_source_rp_dynamics import create
@@ -10335,14 +10384,18 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
         from .maya_source_limb_aim import create
         return create(self,body,fk,limbs,root,splines,global_control,policy,instances,use_offset_parent_matrix)
 
-    def connect_source_body_limb_follow(self, body, mechanisms, *,root_follow_path=None,root_frames=()) -> None:
+    def connect_source_body_limb_follow(self, body, mechanisms, *,root_follow_path=None,root_frames=(),use_offset_parent_matrix=True,root_modes=(),root_offsets=()) -> None:
         """Follow the real parent of an imported IK start, outside its blend."""
         from adv_py.core.body_limb_mechanisms import BodyLimbMechanismRole
         self._require_transaction()
         c = self._cmds
         from .maya_source_limb_root_frame import connect as connect_frame
+        modes=dict(root_modes)
+        offsets=dict(root_offsets)
         for frame in root_frames:
-            connect_frame(self,frame,body.root,root_follow_path)
+            connect_frame(self,frame,body.root,root_follow_path,
+                use_offset_parent_matrix=modes.get(frame.frame.rsplit('|',1)[-1],use_offset_parent_matrix),
+                saved_offset_matrix=offsets.get(frame.frame.rsplit('|',1)[-1]))
         by_path = {joint.path: joint for joint in body.joints}
         for joint in mechanisms.joints:
             if (joint.role is not BodyLimbMechanismRole.IK
@@ -10524,6 +10577,14 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                     c.connectAttr(scale_source
                                   + ".scale" + axis,
                                   node + ".scale" + axis)
+            # Multiple implementation frames can carry the same original
+            # FKParentConstraintTo role. Record the exact Body identity for
+            # Game Engine Scaling, rather than guessing from child names.
+            scale_body = follower.scale_source_body_joint or follower.source_body_joint
+            if c.nodeType(scale_body) == 'joint':
+                c.addAttr(node, longName='advPySourceFkFollowerScaleBody', attributeType='message')
+                c.connectAttr(scale_body + '.message', node + '.advPySourceFkFollowerScaleBody')
+                c.setAttr(node + '.advPySourceFkFollowerScaleBody', lock=True)
             if (follower.source_body_joint.rsplit("|", 1)[-1]
                     .rsplit(":", 1)[-1]
                     .startswith("Wrist_")
@@ -11452,17 +11513,16 @@ class MayaBodyBuildHost(MayaBodyDrivingFitMixin, MayaFitNonSymmetryMixin, MayaBo
                 )
             self._cmds.setAttr(control + ".rotateOrder", spec.rotate_order)
             self._cmds.setAttr(driven[0] + ".rotateOrder", spec.rotate_order)
-            if spec.extra_curve:
-                if spec.extra_path is None:
-                    raise FitSkeletonValidationError("FK Extra 曲线缺少层路径")
-                self._add_body_extra_curve(
-                    spec.extra_path, control)
             if spec.sub_control_path is not None:
                 if spec.sub_control_name is None:
                     raise FitSkeletonValidationError("FK Sub 控制器缺少名称")
                 self._create_body_sub_control(
                     control, spec.sub_control_name,
                     spec.sub_control_path)
+            if spec.extra_curve:
+                if spec.extra_path is None:
+                    raise FitSkeletonValidationError("FK Extra 曲线缺少层路径")
+                self._add_body_extra_curve(spec.extra_path, control)
             orientation_source = (
                 spec.sub_control_path or control)
             if spec.source_override_path is not None:

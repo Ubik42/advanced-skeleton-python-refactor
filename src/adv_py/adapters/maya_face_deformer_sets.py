@@ -2,6 +2,18 @@
 from contextlib import contextmanager
 
 
+def original_deformer_set(commands, deformer):
+    """Resolve the native geometry set, excluding ownership/selection sets."""
+    raw = getattr(commands, 'raw', commands)
+    plugs = raw.listConnections(deformer + '.message', source=False,
+                                destination=True, type='objectSet', plugs=True) or []
+    sets = tuple(dict.fromkeys(plug.rsplit('.', 1)[0] for plug in plugs
+                              if plug.rsplit('.', 1)[-1].split('[', 1)[0] == 'usedBy'))
+    if len(sets) != 1:
+        raise ValueError('变形器缺少唯一原生影响集合：' + deformer)
+    return sets[0]
+
+
 @contextmanager
 def original_face_deformer_sets(cmds):
     """Force legacy sets even in a fresh standalone Maya preference session.

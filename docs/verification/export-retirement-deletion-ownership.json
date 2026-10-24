@@ -1,0 +1,31 @@
+{
+  "status": "passed",
+  "scope": "Saved weighted input versus saved rebuild stage: native deletion and AllSet ownership diagnostics only",
+  "pid": 32584,
+  "process_exited": true,
+  "source_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "runtime_report": "validation/results/retirement-delete-probe/report.json",
+  "prepared_stage_scene": "validation/results/export-retirement-current/retired-stage-before.mb",
+  "variants": {
+    "saved-weighted": {
+      "removed_scale_nodes": []
+    },
+    "without-skin": {
+      "removed_scale_nodes": []
+    },
+    "saved-stage": {
+      "removed_scale_nodes": [
+        "AdvPy_Spline_SplineSolo_L_Body2ScaleBlend",
+        "AdvPy_Spline_SplineSolo_L_IKScaleBlend2",
+        "AdvPy_Spline_SplineTail_L_Body2ScaleBlend",
+        "AdvPy_Spline_SplineTail_L_IKScaleBlend2",
+        "AdvPy_Spline_SplineTail_R_Body2ScaleBlend",
+        "AdvPy_Spline_SplineTail_R_IKScaleBlend2"
+      ]
+    },
+    "stage-owned": {
+      "removed_scale_nodes": []
+    }
+  },
+  "limitation": "Does not certify retained-data rebuild, whole undo/redo or save/reopen; those require the separate lifecycle report."
+}

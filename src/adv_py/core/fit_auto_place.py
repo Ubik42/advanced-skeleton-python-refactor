@@ -1,11 +1,23 @@
 """Results and source constants for the Fit AutoPlace editing lifecycle."""
 from dataclasses import dataclass
+from math import sin
 
 FIT_AUTO_PLACE_AXES=('z','x','yArmStraight','yElbowStraight','y','zLoft','yLoft')
 FIT_AUTO_PLACE_FINGERS=('Index','Middle','Ring','Pinky')
 FIT_AUTO_PLACE_GROUPS=('asFitOrbitA','asFitScanCurves','asFitHandles',
     'asFitProjections','asFitPivots','asFitConstraints','asFitCombinedSkins',
     'asFitCombinedLofts','asFitAutoPlaceJoints','asFitNCloth')
+
+
+def source_fit_finger_force(rotation_y):
+    """MEL 52767–52768, including the actual deg_to_rad intrinsic.
+
+    Maya's MEL deg_to_rad(1.0) returns 0.01745329, not math.pi / 180.
+    Using Python radians changes the authored float3 forces and the simulated
+    hand. Preserve the source computation rather than tuning its physics.
+    """
+    factor=sin(rotation_y*.01745329)
+    return -98.*(1.-factor),0.,98.*factor
 
 
 @dataclass(frozen=True,slots=True)

@@ -18,6 +18,7 @@ class DrivingRebuildState:
     controls: tuple
     graph: object = None
     pose_drivers: tuple = ()
+    owned_sdk_nodes: tuple[tuple[str, str], ...] = ()
 
 
 def _bridge(host):
@@ -53,7 +54,7 @@ def capture(host, registration):
     # insertions therefore recreate their original parent address changes.
     sdks = tuple(node.path.rsplit('|', 1)[-1][3:]
                  for node in registration.nodes if c.objExists(node.path + '.' + SDK_MARKER))
-    systems = driving.capture_original_driving_fit_restore(registration.container)
+    systems = _capture_live_fit_systems(host, driving, registration.container)
     if not sdks and not systems:
         return None
     from .maya_driving_rebuild_graph import capture as capture_graph
@@ -101,7 +102,106 @@ def capture(host, registration):
             control, attribute = plug.split('.', 1)
             if (leaf(control), attribute) in requested:
                 pose_drivers.append((leaf(control), attribute, value))
-    return DrivingRebuildState(systems, sdks, tuple(controls), graph, tuple(pose_drivers))
+    owned_sdk_nodes = _owned_sdk_nodes(host, registration)
+    return DrivingRebuildState(systems, sdks, tuple(controls), graph, tuple(pose_drivers),
+                               owned_sdk_nodes)
+
+
+def _capture_live_fit_systems(host, driving, fit):
+    """Capture asDsToFitSkeleton's current graph without editing the old rig.
+
+    A completed Body may have deleted its Fit template curves. Rebuild must
+    rediscover the live curves from driver outputs, just as the MEL does on
+    entering edit mode, rather than replay those now-empty Fit arrays.
+    """
+    import re
+    from adv_py.core.original_driving_fit import (
+        OriginalDrivingFitCurve, OriginalDrivingFitSystem,
+        original_fit_driven_destination, order_original_fit_driving_systems,
+    )
+    plan = host.plan_body_driving_fit_sync(fit)
+    if plan is None:
+        return driving.capture_original_driving_fit_restore(fit)
+    c = host._cmds
+    systems = []
+    for control in plan.controls:
+        curves = []
+        for attribute in control.attributes:
+            for source in attribute.curves:
+                name, driven, target = original_fit_driven_destination(source)
+                limits = (attribute.minimum, attribute.maximum,
+                          attribute.soft_minimum, attribute.soft_maximum)
+                message_index = None
+                if c.objExists(source + '.drivingSystemOut'):
+                    for output in c.listConnections(source + '.drivingSystemOut',
+                            source=False, destination=True, plugs=True) or []:
+                        node, message_attribute = output.split('.', 1)
+                        match = re.fullmatch(r'drivingSystem\[([0-9]+)\]', message_attribute)
+                        if leaf(node) == leaf(fit) and match:
+                            message_index = int(match[1])
+                curves.append(OriginalDrivingFitCurve(
+                    source, name, attribute.name, driven, target, limits,
+                    c.ls(source, uuid=True)[0], len(curves), message_index))
+        depth = max((len([token for token in leaf(row.source).split('_') if token])
+                     for row in curves), default=0)
+        systems.append(OriginalDrivingFitSystem(
+            leaf(control.path), tuple(curves), depth, control.fit_attribute))
+    return order_original_fit_driving_systems(systems)
+
+
+def _owned_sdk_nodes(host, registration):
+    """Read native curve ownership from the actual registered SDK inputs.
+
+    Fit's driver catalogue can point to its template curves. The inserted
+    SDK receivers instead identify the live rig curves and conversions.
+    """
+    c = host._cmds
+    if not c.objExists('AllSet'):
+        return ()
+    pending = [node.path + '.' + kind + axis for node in registration.nodes
+               if c.objExists(node.path + '.' + SDK_MARKER)
+               for kind in ('translate', 'rotate', 'scale') for axis in 'XYZ']
+    visited = set()
+    owned = {}
+    curve_types = ('animCurveUA', 'animCurveUL', 'animCurveUT', 'animCurveUU')
+    while pending:
+        plug = pending.pop()
+        for source in c.listConnections(plug, source=True, destination=False, plugs=True) or []:
+            node = source.split('.', 1)[0]
+            if node in visited:
+                continue
+            visited.add(node)
+            kind = c.nodeType(node)
+            if kind not in (*curve_types, 'unitConversion', 'blendWeighted'):
+                continue
+            if kind in (*curve_types, 'unitConversion') and c.sets(node, isMember='AllSet'):
+                owned[leaf(node)] = kind
+            if kind in ('unitConversion', 'blendWeighted'):
+                pending.append(node + '.input')
+    return tuple(sorted(owned.items()))
+
+
+def restore_membership(host, state):
+    """Replay saved SDK ownership after final native converter naming.
+
+    Portable Fit can import these exact nodes before the stage's scene
+    snapshot. Their original AllSet membership is explicit source data,
+    even when scene-difference collection does not consider them newly made.
+    The complete ownership/connection audit still follows this handoff.
+    """
+    if state is None or not state.owned_sdk_nodes:
+        return
+    host._require_transaction()
+    c = host._cmds
+    targets = []
+    for name, kind in state.owned_sdk_nodes:
+        matches = c.ls(name, long=True) or []
+        if len(matches) != 1 or c.nodeType(matches[0]) != kind:
+            raise CharacterRegistryError('SDK 重建缺少原 AllSet 对应节点：' + name)
+        targets.append(matches[0])
+    for target in targets:
+        host._transaction_changed = True
+        c.sets(target, add='AllSet')
 
 
 def restore(host, state, registration, rig, *, fit='FitSkeleton'):
@@ -164,6 +264,23 @@ def restore(host, state, registration, rig, *, fit='FitSkeleton'):
                     raise CharacterRegistryError('Fit SDK 恢复没有生成全部原曲线')
                 curve = restored[index]
                 index += 1
+                # asDsToFitSkeleton recreates the curve-side attribute from
+                # the live driver's current limits. Do this on the duplicate
+                # only: a live curve need not carry its old Fit metadata.
+                if c.objExists(curve + '.' + row.attribute):
+                    c.deleteAttr(curve + '.' + row.attribute)
+                options = {}
+                for value, flag, enabled in zip(row.limits,
+                        ('minValue', 'maxValue', 'softMinValue', 'softMaxValue'),
+                        ('hasMinValue', 'hasMaxValue', 'hasSoftMinValue', 'hasSoftMaxValue')):
+                    if value is not None:
+                        options[flag] = value
+                        options[enabled] = True
+                c.addAttr(curve, longName=row.attribute, attributeType='float',
+                          keyable=False, **options)
+                if not c.objExists(curve + '.drivingSystemOut'):
+                    c.addAttr(curve, longName='drivingSystemOut',
+                              attributeType='message', keyable=False)
                 slot = row.fit_index if row.fit_index is not None else number
                 c.connectAttr(fit + '.' + name + '[' + str(slot) + ']',
                               curve + '.' + row.attribute, force=True)

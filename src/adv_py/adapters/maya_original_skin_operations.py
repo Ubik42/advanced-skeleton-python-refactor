@@ -219,7 +219,7 @@ def smooth_skin_on_selected(namespace: str = "", *, cmds=None, transactional: bo
                   if cmds.objExists(prefix + leaf))
     from .maya_original_control_identity import original_character_height
     height = original_character_height(cmds, namespace)
-    progress = mel.eval("global string $gMainProgressBar; $gMainProgressBar;")
+    progress = mel.eval("$advPyProgress = $gMainProgressBar")
     skin = ""
     affected = 0
     scope = _operation(cmds, "Smooth Skin") if transactional else nullcontext()

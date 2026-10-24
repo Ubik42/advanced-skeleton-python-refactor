@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from .body_fit_follow import BodyFitFollowSpec
 from .fit_metadata import FitJointMetadata
+from .source_fit_identity import source_fit_build_name, source_fit_reference
 
 
 def plan_body_fit_ik_follow(
     metadata: tuple[FitJointMetadata, ...], arm_ik: tuple,
     leg_ik: tuple, body_joints: tuple, *, spine=None, spline=None,
-    driver_body_sources: tuple[tuple[str, str], ...] = (),
+    driver_body_sources: tuple[tuple[str, str], ...] = (), instances: tuple = (),
 ) -> tuple[BodyFitFollowSpec, ...]:
     by_name = {joint.name.rsplit(":", 1)[-1]: joint.path
                for joint in body_joints}
@@ -47,11 +48,18 @@ def plan_body_fit_ik_follow(
         if item.ik_follow is None:
             continue
         source_name = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if instances:
+            source_name = source_fit_build_name(source_name)
         limbs = by_source.get(source_name, ())
         if not limbs:
             raise ValueError("IK Follow 来源尚无已构建的 IK 末端控制器："
                              + source_name)
         for source_body, side, control, offset in limbs:
+            if instances:
+                reference = source_fit_reference(
+                    source_body.rsplit("|", 1)[-1].rsplit(":", 1)[-1], instances)
+                if reference is not None and reference != item.joint:
+                    continue
             if source_body not in by_name.values():
                 raise ValueError("IK Follow 来源 Body 末端关节缺失："
                                  + source_body)

@@ -4,6 +4,7 @@ Only declared node arguments/results are mapped. Attribute values, JSON,
 filenames, tangent names, labels and node types are never rewritten.
 """
 from contextlib import contextmanager
+import re
 
 from adv_py.core.character_identity import CharacterIdentity, SHARED_NODES
 from adv_py.core.character_registry import CharacterRegistryError
@@ -111,6 +112,15 @@ _CREATE |= {'polyProjection','polyCopyUV','offsetCurve','nurbsToPoly','extendSur
 # Version queries carry no scene addresses and are shared by all characters.
 _GLOBAL |= {'about'}
 
+# Native FaceRig display metadata reads a shared color table and classifies
+# owned DAG nodes. Numeric color indices are not scene node addresses.
+_GLOBAL |= {'colorIndex'}
+_NODE_ARGS |= {'objectType'}
+_READ |= {'objectType'}
+_NODE_ARGS |= {'dagPose'}
+_NODE_RESULTS |= {'dagPose'}
+_CREATE |= {'dagPose'}
+
 # Original Align/Switch changes shared timeline and Auto Key state. These
 # flags carry no scene addresses; node-bearing key commands remain scoped.
 _GLOBAL |= {'autoKeyframe', 'playbackOptions', 'warning'}
@@ -121,6 +131,19 @@ _NODE_ARGS |= {'mirrorJoint', 'listSets'}
 _NODE_RESULTS |= {'mirrorJoint', 'listSets'}
 _CREATE |= {'mirrorJoint'}
 _READ |= {'listSets'}
+
+# Maya's Skin chain query is a node-address read, unlike full DAG history.
+_NODE_ARGS |= {'deformableShape'}
+_NODE_RESULTS |= {'deformableShape'}
+_READ |= {'deformableShape'}
+
+# Native TagAsController operates on the current owned selection.
+_NODE_ARGS |= {'controller'}
+_NODE_RESULTS |= {'controller'}
+_CREATE |= {'controller'}
+
+# Native Fit SDK edits animation curves belonging to the owned selection.
+_NODE_ARGS |= {'setInfinity'}
 
 class MayaCharacterCommands:
     def __init__(self,commands,namespace):
@@ -160,6 +183,11 @@ class MayaCharacterCommands:
             default_solver=None
             def address(value):
                 def convert(item):
+                    # ls accepts immutable UUIDs as identifiers. They are
+                    # neither local names nor writable scene addresses.
+                    if name == 'ls' and isinstance(item, str) and re.fullmatch(
+                            r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', item):
+                        return item
                     actual=identity.to_scene(item)
                     if actual and not actual.startswith(('|',':')):actual=':'+actual
                     addresses.append(actual);return actual

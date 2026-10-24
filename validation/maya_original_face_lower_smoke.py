@@ -13,13 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
 
-def create_face(cmds, om):
+def create_face(cmds, om, *, transform_point=None):
     points = []
     for iy in range(41):
         y = 1 + iy * .1
         for ix in range(41):
             x = -2 + ix * .1
-            points.append(om.MPoint(x, y, 1.2 - .12*x*x + .03*(y-3)**2))
+            point = (x, y, 1.2 - .12*x*x + .03*(y-3)**2)
+            points.append(om.MPoint(*(transform_point(point) if transform_point else point)))
     counts, vertices = [], []
     holes = ((10, 14, 28, 32), (26, 30, 28, 32), (14, 26, 13, 17))
     for iy in range(40):
@@ -51,15 +52,23 @@ def create_face(cmds, om):
     return mesh, ring, vertex_index
 
 
-def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12, complete=False, attachments=False):
-    if multi: cmds.createNode('transform', name='DeformationSystem')
+def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12,
+              complete=False, attachments=False, head_joint=None, geometry_scale=1.0):
+    if multi and not cmds.objExists('DeformationSystem'):
+        cmds.createNode('transform', name='DeformationSystem')
     cmds.select(clear=True)
-    head = cmds.joint(name='Head_M', position=(0, 3, 0))
-    mesh, ring, vertex_index = create_face(cmds, om)
+    head = head_joint or cmds.joint(name='Head_M', position=(0, 3, 0))
+    head_position = cmds.xform(head, query=True, worldSpace=True, translation=True)
+    def point(value):
+        if head_joint is None and geometry_scale == 1.0:
+            return value
+        return tuple(head_position[i] + geometry_scale * (value[i] - (0, 3, 0)[i])
+                     for i in range(3))
+    mesh, ring, vertex_index = create_face(cmds, om, transform_point=point)
     for side, x in (('Right', -.8), ('Left', .8)):
-        eye = cmds.polySphere(name='Eye'+side, radius=.31, subdivisionsX=16,
+        eye = cmds.polySphere(name='Eye'+side, radius=.31 * geometry_scale, subdivisionsX=16,
                               subdivisionsY=12, constructionHistory=False)[0]
-        cmds.xform(eye, translation=(x, 4, 1.05), worldSpace=True)
+        cmds.xform(eye, translation=point((x, 4, 1.05)), worldSpace=True)
         cmds.makeIdentity(eye,apply=True,translate=True,rotate=True,scale=True)
         cmds.skinCluster(head, eye, toSelectedBones=True, name=eye+'HeadSkin')
     cmds.skinCluster(head, mesh, toSelectedBones=True, name='HeadSkin')
@@ -67,11 +76,15 @@ def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12, 
     for role in ('Face', 'AllHead'):
         cmds.select([mesh, 'EyeRight', 'EyeLeft'] if role == 'AllHead' else mesh, replace=True)
         controller.face_pre_record_objects(':', role, head)
-    controller.face_fit_eye_ball(':', '|EyeRight', head)
     fit = 'FaceFitSkeleton'
     for attr, value in (('RightEye', 'EyeRight'), ('LeftEye', 'EyeLeft')):
         if not cmds.objExists(fit+'.'+attr): cmds.addAttr(fit, longName=attr, dataType='string')
         cmds.setAttr(fit+'.'+attr, value, type='string')
+    controller.face_fit_eye_ball(':', '|EyeRight', head)
+    if head_joint:
+        # The native Body-to-Face operation starts at the old Body eye.
+        # Author this procedural fixture's Fit at its own actual eye center.
+        cmds.xform('FitEyeBall', translation=point((-.8, 4, 1.05)), worldSpace=True)
     if not cmds.objExists(fit+'.Include'):
         cmds.addAttr(fit, longName='Include', attributeType='enum',
                      enumName='Complete:Skip Above Eyes:Skip Below Eyes:Skip Above+Below Eyes')
@@ -117,10 +130,10 @@ def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12, 
         parts=[]
         for name,y,width,depth in (('UpperTeethMesh',2.65,.6,.3),
                                    ('LowerTeethMesh',2.35,.6,.3),('TongueMesh',2.45,.35,.7)):
-            part=cmds.polyCube(name=name,width=width,height=.1,depth=depth,
+            part=cmds.polyCube(name=name,width=width*geometry_scale,height=.1*geometry_scale,depth=depth*geometry_scale,
                 subdivisionsWidth=4,subdivisionsHeight=2,subdivisionsDepth=8,
                 constructionHistory=False)[0]
-            cmds.xform(part,translation=(0,y,.6),worldSpace=True)
+            cmds.xform(part,translation=point((0,y,.6)),worldSpace=True)
             cmds.makeIdentity(part,apply=True,translate=True,rotate=True,scale=True)
             cmds.skinCluster(head,part,toSelectedBones=True,name=name+'HeadSkin')
             parts.append(part)
@@ -128,9 +141,9 @@ def fit_input(cmds, om, controller, *, multi=False, opm=False, lip_controls=12, 
             for role,y,height in (('Eyebrow',4.65,.16),('EyeLash',4.32,.06)):
                 fitted=[]
                 for side,x in (('Right',-.8),('Left',.8)):
-                    part=cmds.polyPlane(name=role+side,width=.8,height=height,
+                    part=cmds.polyPlane(name=role+side,width=.8*geometry_scale,height=height*geometry_scale,
                         subdivisionsX=8,subdivisionsY=2,axis=(0,0,1),constructionHistory=False)[0]
-                    cmds.xform(part,translation=(x,y,1.16),worldSpace=True)
+                    cmds.xform(part,translation=point((x,y,1.16)),worldSpace=True)
                     cmds.makeIdentity(part,apply=True,translate=True,rotate=True,scale=True)
                     cmds.skinCluster(head,part,toSelectedBones=True,name=part+'HeadSkin')
                     parts.append(part); fitted.append(part)

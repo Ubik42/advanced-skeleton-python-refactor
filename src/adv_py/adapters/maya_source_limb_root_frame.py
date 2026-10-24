@@ -2,8 +2,6 @@
 from dataclasses import asdict,replace
 from .maya_original_transform_channels import align_original_transform
 from adv_py.core.character_registry import canonical,CharacterRegistryError
-from adv_py.core.source_body_matrix import SourceBodyMatrixPlan
-from adv_py.core.source_rp_dynamics import SourceRpNode
 from adv_py.core.source_limb_root_frame import SourceIkRootFrameRecord,decode_record
 
 MARKER='advPySourceIkRootFrame'
@@ -30,23 +28,29 @@ def create(host,spec):
     host._transaction_changed=True
 
 
-def connect(host,spec,body_root,root_follow):
+def connect(host,spec,body_root,root_follow,*,use_offset_parent_matrix=True,saved_offset_matrix=None):
     host._require_transaction();c=host._cmds
     source=root_follow if spec.source_parent==body_root and root_follow else spec.source_parent
     if source is None:return
-    stem=spec.frame.rsplit('|',1)[-1];matrix=stem+'MM';pick=stem+'PM'
-    nodes=(SourceRpNode(matrix,'multMatrix',connections=((source+'.worldMatrix[0]','matrixIn[0]'),
-            (spec.parent+'.worldInverseMatrix[0]','matrixIn[1]'))),
-           SourceRpNode(pick,'pickMatrix',(('useScale',0.),('useShear',0.)),((matrix+'.matrixSum','inputMatrix'),)))
-    for node in nodes:
+    from adv_py.core.source_limb_root_frame import plan_graph
+    plan=plan_graph(spec.frame,spec.parent,source,spec.rotate_order,use_offset_parent_matrix)
+    for node in plan.nodes:
         if host.find_name_collisions(node.name):raise CharacterRegistryError('来源 IK 起点矩阵名称冲突')
         c.createNode(node.kind,name=node.name,skipSelect=True)
         for attr,value in node.values:c.setAttr(node.name+'.'+attr,value)
-    for node in nodes:
+    for node in plan.nodes:
         for upstream,attr in node.connections:c.connectAttr(upstream,node.name+'.'+attr)
-    for attr in ('translate','rotate'):c.setAttr(spec.frame+'.'+attr,0.,0.,0.,type='double3')
-    outputs=((pick+'.outputMatrix',spec.frame+'.offsetParentMatrix'),)
-    c.connectAttr(*outputs[0]);plan=SourceBodyMatrixPlan(spec.frame,nodes,outputs)
+    if use_offset_parent_matrix:
+        for attr in ('translate','rotate'):c.setAttr(spec.frame+'.'+attr,0.,0.,0.,type='double3')
+    for output in plan.outputs:c.connectAttr(*output)
+    # MEL 80427–80452 connects the parent-follow matrix BEFORE aligning
+    # IKXOffset, and 80802 creates the solver only after that bind frame.
+    # Copying parent Euler values before connection is not the final frame
+    # when parent/child rotation orders differ.
+    if saved_offset_matrix is None:
+        align_original_transform(c,spec.offset,spec.source_joint,True,True)
+    else:
+        c.xform(spec.offset,objectSpace=True,matrix=saved_offset_matrix)
     c.addAttr(spec.frame,longName=MARKER,dataType='string')
     record=SourceIkRootFrameRecord(plan,spec.offset,tuple(c.getAttr(spec.offset+'.matrix')),spec.joint,spec.rotate_order)
     c.setAttr(spec.frame+'.'+MARKER,canonical(asdict(record)),type='string',lock=True)
@@ -74,9 +78,16 @@ def audit_registered(host,registration):
         marker=node.path+'.advPySourceIkRotationOrder'
         if not c.objExists(marker):continue
         source=c.listConnections(node.path+'.advPySourceJoint',source=True,destination=False,type='joint') or []
-        if (node.node_type!='joint' or len(source)!=1 or not c.getAttr(marker)
+        order = None
+        if len(source)==1:
+            order = c.getAttr(source[0]+'.rotateOrder')
+        elif not source:
+            from .maya_character_body_retirement import retired_message_source
+            retired = retired_message_source(host,node.path+'.advPySourceJoint')
+            if retired is not None:order = retired.rotate_order
+        if (node.node_type!='joint' or order is None or not c.getAttr(marker)
                 or not c.getAttr(marker,lock=True) or c.connectionInfo(marker,isDestination=True)
-                or c.getAttr(node.path+'.rotateOrder')!=c.getAttr(source[0]+'.rotateOrder')):
+                or c.getAttr(node.path+'.rotateOrder')!=order):
             raise CharacterRegistryError('来源 IK 机制关节旋转顺序或来源改变：'+node.path)
     for node in registration.nodes:
         plug=node.path+'.'+MARKER
@@ -107,10 +118,15 @@ def audit_registered(host,registration):
                 if not c.isConnected(upstream,saved.name+'.'+attr):raise CharacterRegistryError('来源 IK 起点矩阵接线变化')
         for upstream,target in plan.outputs:
             if not c.isConnected(upstream,target):raise CharacterRegistryError('来源 IK 起点矩阵输出变化')
-        for attr in ('translate','rotate'):
-            if c.listConnections(node.path+'.'+attr,source=True,destination=False) or any(
-                    abs(value)>1e-8 for value in c.getAttr(node.path+'.'+attr)[0]):
-                raise CharacterRegistryError('来源 IK 起点矩阵本地变换变化')
+        if plan.outputs[0][1].endswith('.offsetParentMatrix'):
+            for attr in ('translate','rotate'):
+                if c.listConnections(node.path+'.'+attr,source=True,destination=False) or any(
+                        abs(value)>1e-8 for value in c.getAttr(node.path+'.'+attr)[0]):
+                    raise CharacterRegistryError('来源 IK 起点矩阵本地变换变化')
+        elif (c.connectionInfo(node.path+'.offsetParentMatrix',isDestination=True)
+              or tuple(c.getAttr(node.path+'.offsetParentMatrix')) !=
+              (1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.)):
+            raise CharacterRegistryError('来源非 OPM IK 起点出现额外矩阵驱动')
 
 
 def finalize(host,specs):

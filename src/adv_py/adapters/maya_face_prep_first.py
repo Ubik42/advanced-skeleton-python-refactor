@@ -1,4 +1,5 @@
 """Shared first-build and rebuild preparation of original asFacePrep."""
+from .maya_face_body_roles import face_body_main
 from adv_py.application.face_pre import FacePreRole
 from adv_py.core.face_build_requirements import FaceInclude, required_face_fit_nodes
 from adv_py.core.fit_settings import FitSkeletonValidationError
@@ -124,8 +125,8 @@ class MayaFacePrepFirstMixin(MayaFaceForeHeadFitMixin):
             raw.setAttr(skin + ".maintainMaxInfluences", False)
         if raw.getAttr(skin + ".normalizeWeights") != 1:
             raw.setAttr(skin + ".normalizeWeights", 1)
-        if c.objExists("Main.jointVis"):
-            c.setAttr("Main.jointVis", False)
+        if c.objExists(face_body_main(self)+".jointVis"):
+            c.setAttr(face_body_main(self)+".jointVis", False)
         self.prepare_original_face_fit_sides()
         self.prepare_original_face_skin_environment(source)
         if source.get("rebuild"):

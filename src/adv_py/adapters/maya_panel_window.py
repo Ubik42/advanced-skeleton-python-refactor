@@ -14,7 +14,7 @@ def attach_to_maya_window(panel) -> None:
 
 
 def attach_to_maya_dock(panel) -> str:
-    """Mount the compact navigation panel in Maya's left workspace area."""
+    """Mount the source-ordered business panel in Maya's left workspace area."""
     from maya import cmds, OpenMayaUI
     from shiboken2 import getCppPointer
 
@@ -23,7 +23,7 @@ def attach_to_maya_dock(panel) -> str:
         cmds.deleteUI(name, control=True)
     cmds.workspaceControl(name, label="AdvancedSkeleton Python",
                           dockToControl=("ToolBox", "left"),
-                          initialWidth=400, minimumWidth=330,
+                          initialWidth=425, minimumWidth=330,
                           retain=False)
     pointer = OpenMayaUI.MQtUtil.findControl(name)
     if not pointer:

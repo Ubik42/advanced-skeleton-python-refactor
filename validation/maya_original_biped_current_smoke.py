@@ -8,38 +8,55 @@ sys.path.insert(0, str(ROOT / 'src'))
 
 
 def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
-         bendy=False, export=True, bendy_count=3, bendy_joints=('Shoulder','Elbow')):
-    import maya.standalone
-    maya.standalone.initialize(name='python')
+         bendy=False, export=True, bendy_count=3, bendy_joints=('Shoulder','Elbow'),
+         standalone=True, additional_animation=(), reuse_scene=False):
+    if standalone:
+        import maya.standalone
+        maya.standalone.initialize(name='python')
     from maya import cmds
     from adv_py.adapters.maya_body import MayaBodyBuildHost
     from adv_py.product.maya_panel_controller import MayaPanelController
 
     output.mkdir(parents=True, exist_ok=True)
-    cmds.file(str(source.resolve()), open=True, force=True,
-              executeScriptNodes=False)
-    cmds.undoInfo(state=True)
-    if opm:
-        if not cmds.objExists('FitSkeleton.useOffsetParentMatrix'):
-            cmds.addAttr('FitSkeleton', ln='useOffsetParentMatrix', at='bool')
-        cmds.setAttr('FitSkeleton.useOffsetParentMatrix', True)
-    if bendy:
-        for joint in bendy_joints:
-            if joint == 'Spine1':
-                if cmds.objExists(joint+'.inbetweenJoints'):
-                    cmds.deleteAttr(joint+'.inbetweenJoints')
-                if not cmds.objExists(joint+'.twistJoints'):
-                    cmds.addAttr(joint,ln='twistJoints',at='long',min=0)
-                cmds.setAttr(joint+'.twistJoints',2)
-            if not cmds.objExists(joint + '.bendyCtrls'):
-                cmds.addAttr(joint, ln='bendyCtrls', at='long', min=0)
-            cmds.setAttr(joint + '.bendyCtrls', bendy_count)
-    # This proxy checks binding/deformation plumbing, not model appearance.
-    mesh = cmds.polyCube(name='BipedBindProxy', width=30, height=100,
-                         depth=20, subdivisionsY=10)[0]
-    cmds.setAttr(mesh + '.translateY', 100)
-    controller = MayaPanelController()
-    result = controller.body_build(':', meshes=(mesh,), segment_influences=True)
+    if reuse_scene:
+        from types import SimpleNamespace
+        scene=output/'original-biped-current.mb'
+        assert scene.is_file(),scene
+        cmds.file(str(scene.resolve()),open=True,force=True,executeScriptNodes=False)
+        cmds.undoInfo(state=True)
+        mesh=cmds.ls('BipedBindProxy',long=True)[0]
+        controller=MayaPanelController()
+        saved=MayaBodyBuildHost().read_character_registration()
+        segments=[node for node in (cmds.listRelatives('Root_M',allDescendents=True,
+                  type='joint',fullPath=True) or [])
+                  if cmds.objExists(node+'.advPyAuxiliaryInfluenceKind')]
+        result=SimpleNamespace(joint_count=len(saved.body),channel_count=len(saved.channels),
+                               segment_joint_count=len(segments))
+    else:
+        cmds.file(str(source.resolve()), open=True, force=True,
+                  executeScriptNodes=False)
+        cmds.undoInfo(state=True)
+        if opm:
+            if not cmds.objExists('FitSkeleton.useOffsetParentMatrix'):
+                cmds.addAttr('FitSkeleton', ln='useOffsetParentMatrix', at='bool')
+            cmds.setAttr('FitSkeleton.useOffsetParentMatrix', True)
+        if bendy:
+            for joint in bendy_joints:
+                if joint == 'Spine1':
+                    if cmds.objExists(joint+'.inbetweenJoints'):
+                        cmds.deleteAttr(joint+'.inbetweenJoints')
+                    if not cmds.objExists(joint+'.twistJoints'):
+                        cmds.addAttr(joint,ln='twistJoints',at='long',min=0)
+                    cmds.setAttr(joint+'.twistJoints',2)
+                if not cmds.objExists(joint + '.bendyCtrls'):
+                    cmds.addAttr(joint, ln='bendyCtrls', at='long', min=0)
+                cmds.setAttr(joint + '.bendyCtrls', bendy_count)
+        # This proxy checks binding/deformation plumbing, not model appearance.
+        mesh = cmds.polyCube(name='BipedBindProxy', width=30, height=100,
+                             depth=20, subdivisionsY=10)[0]
+        cmds.setAttr(mesh + '.translateY', 100)
+        controller = MayaPanelController()
+        result = controller.body_build(':', meshes=(mesh,), segment_influences=True)
     host = MayaBodyBuildHost()
     registration = host.read_character_registration()
     assert result.joint_count == len(registration.body)
@@ -55,10 +72,19 @@ def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
     cmds.setKeyframe('AdvPy_Global', attribute='translateX', time=1, value=0)
     cmds.setKeyframe('AdvPy_Global', attribute='translateX', time=5, value=10)
     cmds.currentTime(1)
+    global_start = tuple(cmds.pointPosition(mesh + '.vtx[0]', world=True))
+    cmds.currentTime(5)
+    global_end = tuple(cmds.pointPosition(mesh + '.vtx[0]', world=True))
+    assert abs((global_end[0] - global_start[0]) - 10) < 1e-4, (global_start, global_end)
+    for node, attribute, end_value in additional_animation:
+        cmds.setKeyframe(node, attribute=attribute, time=1, value=0)
+        cmds.setKeyframe(node, attribute=attribute, time=5, value=end_value)
+    cmds.currentTime(1)
     from adv_py.application.character_pose import save_character_pose,load_character_pose
     from adv_py.core.character_pose import validate_character_pose
     pose=host.capture_character_pose(registration)
     pose_file=output/'original-biped-pose.json'
+    pose_file.unlink(missing_ok=True)
     save_character_pose(pose,pose_file)
     assert load_character_pose(pose_file)==pose
     validate_character_pose(pose,registration)
@@ -69,12 +95,17 @@ def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
     assert decode_character_animation(encode_character_animation(animation))==animation
     validate_character_animation(animation,registration)
     from adv_py.application.character_preservation import CaptureBodyCharacterPreservation
-    curve_uuids={curve.uuid for curve in CaptureBodyCharacterPreservation(host).execute().curves}
+    preservation = CaptureBodyCharacterPreservation(host).execute()
+    curve_uuids={curve.uuid for curve in preservation.curves}
     sets=host.capture_body_rebuild_selection_members()
     start = tuple(cmds.pointPosition(mesh + '.vtx[0]', world=True))
     cmds.currentTime(5)
     end = tuple(cmds.pointPosition(mesh + '.vtx[0]', world=True))
-    assert abs((end[0] - start[0]) - 10) < 1e-4, (start, end)
+    vertex_samples = {}
+    for frame in (1, 3, 5):
+        cmds.currentTime(frame)
+        vertex_samples[frame] = tuple(cmds.xform(
+            mesh + '.vtx[*]', query=True, worldSpace=True, translation=True))
     cmds.currentTime(1)
     scene = output / 'original-biped-current.mb'
     cmds.file(rename=str(scene.resolve()))
@@ -82,23 +113,26 @@ def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
     cmds.file(str(scene.resolve()), open=True, force=True, executeScriptNodes=False)
     reopened = MayaBodyBuildHost().read_character_registration()
     assert reopened == registration
-    published = (controller.publish_fbx(':', output / 'original-biped-current.fbx',
+    # This reserved fixture output is regenerated for each verification run.
+    fbx_path = output / 'original-biped-current.fbx'
+    if export and fbx_path.exists():
+        fbx_path.unlink()
+    published = (controller.publish_fbx(':', fbx_path,
                                        start=1, end=5, include_skins=True)
                  if export else None)
     if export:
         assert published.bytes_written > 0
-    report = dict(source=str(source.resolve()), body_joints=result.joint_count,
+    report = dict(source=str(source.resolve()), reused_saved_build=reuse_scene, body_joints=result.joint_count,
                   opm=opm, bendy=bendy, bendy_count=bendy_count if bendy else 0,
                   bendy_joints=bendy_joints if bendy else (),
                   part_joints=result.segment_joint_count,
                   channels=result.channel_count, skins=skins,
+                  additional_animated_channels=additional_animation,
                   restricted_skin=restricted_skin,portable_pose_roundtrip=True,
                   portable_animation_roundtrip=True,
                   native_global_deformation=True, registry_reopened=True,
                   fbx_bytes=published.bytes_written if published else None, export_tested=export, scene=str(scene.resolve()))
-    (output / 'original-biped-current.json').write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-    print('PASS original biped current build', report)
+    print('Completed original biped build, Skin, animation, reopen and export', flush=True)
     if rebuild:
         rebuilt=controller.body_rebuild(':','BipedRebuild')
         assert rebuilt.joint_count == result.joint_count
@@ -117,6 +151,20 @@ def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
         assert cmds.ls(skins[0],uuid=True)==[skin_uuid]
         cmds.redo()
         assert MayaBodyBuildHost(namespace='').read_character_registration()==retained
+        after = CaptureBodyCharacterPreservation(MayaBodyBuildHost(namespace='')).execute()
+        for old in preservation.skins:
+            actual = next(row for row in after.skins if row.uuid == old.uuid)
+            assert actual.weights == old.weights
+            assert actual.blend_weights == old.blend_weights
+            assert actual.component_memberships == old.component_memberships
+        mesh_error = 0.
+        for frame, expected in vertex_samples.items():
+            cmds.currentTime(frame)
+            actual = tuple(cmds.xform(
+                mesh + '.vtx[*]', query=True, worldSpace=True, translation=True))
+            assert len(actual) == len(expected)
+            mesh_error = max(mesh_error, max(abs(a-b) for a,b in zip(expected, actual)))
+        assert mesh_error < 1e-4, mesh_error
         for frame,expected in ((1,start),(5,end)):
             cmds.currentTime(frame)
             actual=tuple(cmds.pointPosition(mesh+'.vtx[0]',world=True))
@@ -131,9 +179,14 @@ def main(source, output, *, rebuild=False, restricted_skin=False, opm=False,
         report['native_skin_curve_identity_preserved']=True
         report['single_undo_redo_preserved']=True
         report['native_rebuild_retained_skin_animation']=True
-        (output / 'original-biped-current.json').write_text(
-            json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-        print('PASS original biped rebuild with Skin and native animation')
+        report['skin_weights_membership_preserved']=True
+        report['all_vertex_frames']=(1,3,5)
+        report['all_vertex_rebuild_maximum_error']=mesh_error
+        print('Completed original biped rebuild with Skin and native animation', flush=True)
+    report['status'] = 'passed'
+    (output / 'original-biped-current.json').write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+    return report
 
 
 if __name__ == '__main__':

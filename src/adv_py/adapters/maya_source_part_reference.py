@@ -87,6 +87,7 @@ def create(host, inputs, independent, blended, *, main_scale_plug=None):
 
 
 def audit(host, reference):
+    from .maya_character_body_retirement import is_connected_or_retired
     c=host._cmds
     plug=reference+'.'+MARKER
     if not c.objExists(plug):return
@@ -107,10 +108,10 @@ def audit(host, reference):
             if abs(float(c.getAttr(node.name+'.'+attribute))-value)>1e-8:
                 raise CharacterRegistryError('来源 Twist 独立父参考常量变化')
         for upstream,attribute in node.connections:
-            if not c.isConnected(upstream,node.name+'.'+attribute):
+            if not is_connected_or_retired(host,upstream,node.name+'.'+attribute):
                 raise CharacterRegistryError('来源 Twist 独立父参考接线变化')
     for upstream,destination in plan.outputs:
-        if not c.isConnected(upstream,destination):
+        if not is_connected_or_retired(host,upstream,destination):
             raise CharacterRegistryError('来源 Twist 独立父参考输出变化')
 
 

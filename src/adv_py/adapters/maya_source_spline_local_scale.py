@@ -93,8 +93,8 @@ def configure(host,body,fk,splines,segments,metadata,instances,*,saved_layouts=N
 
 def audit_target(host,target):
     c=host._cmds;plug=target+'.'+MARKER
-    if not c.getAttr(plug,lock=True):raise CharacterRegistryError('来源局部缩放登记已解锁')
-    saved=decode_source_body_matrix(c.getAttr(plug))
+    from .maya_character_body_retirement import source_record,is_connected_or_retired
+    saved=decode_source_body_matrix(source_record(host,target,MARKER))
     if saved.body!=target or {destination for _,destination in saved.outputs}!={target+'.scale'+axis for axis in 'XYZ'}:
         raise CharacterRegistryError('来源局部缩放登记身份变化')
     for node in saved.nodes:
@@ -104,9 +104,12 @@ def audit_target(host,target):
             if abs(float(c.getAttr(node.name+'.'+attr))-value)>1e-8:
                 raise CharacterRegistryError('来源局部缩放常量变化')
         for source,attr in node.connections:
-            if not c.isConnected(source,node.name+'.'+attr):raise CharacterRegistryError('来源局部缩放输入变化')
+            if not is_connected_or_retired(host,source,node.name+'.'+attr):raise CharacterRegistryError('来源局部缩放输入变化')
     for source,destination in saved.outputs:
-        if not c.isConnected(source,destination):raise CharacterRegistryError('来源局部缩放输出变化')
+        from .maya_game_scaling_state import original_scale_connection
+        if not (is_connected_or_retired(host,source,destination)
+                or original_scale_connection(host,source,destination)):
+            raise CharacterRegistryError('来源局部缩放输出变化')
 
 
 def audit(host,plan):
@@ -116,7 +119,9 @@ def audit(host,plan):
         target=joint.source_joint
         if not isinstance(key,int) and not c.objExists(target+'.'+MARKER):continue
         audit_target(host,target)
-        parent=(c.listRelatives(target,parent=True,fullPath=True) or [None])[0]
+        from .maya_character_body_retirement import retired_joint
+        retired = retired_joint(host,target) if not c.objExists(target) else None
+        parent = None if retired else (c.listRelatives(target,parent=True,fullPath=True) or [None])[0]
         if (parent and c.nodeType(parent)=='joint' and c.getAttr(target+'.segmentScaleCompensate')
                 and not c.isConnected(parent+'.scale',target+'.inverseScale')):
             raise CharacterRegistryError('来源 Spline 缩放补偿未读取实际 Part 父级')

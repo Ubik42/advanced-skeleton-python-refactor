@@ -134,13 +134,67 @@ class SetSkinBlendWeights(ompx.MPxCommand):
         self._skin.setBlendWeights(self._dag, self._component, self._old)
 
 
+
+NAME_COMMAND_NAME = "advPySkinPoseNames"
+
+
+class SkinPoseNames(ompx.MPxCommand):
+    """Restore the names native Skin commands displace during Undo/Redo."""
+    @staticmethod
+    def creator():
+        return ompx.asMPxPtr(SkinPoseNames())
+
+    def isUndoable(self):
+        return True
+
+    def doIt(self, arguments):
+        import json
+        self.when = arguments.asString(0)
+        if self.when not in ("undo", "redo"):
+            raise ValueError("Skin pose name journal direction is invalid")
+        self.nodes = []
+        for name in json.loads(arguments.asString(1)):
+            selected = om.MSelectionList(); selected.add(name)
+            obj = selected.getDependNode(0)
+            if not obj.hasFn(om.MFn.kDagPose):
+                raise ValueError("Skin pose name journal accepts only dagPose")
+            self.nodes.append((om.MObjectHandle(obj), om.MFnDependencyNode(obj).name()))
+        # Capture is a no-op. Place undo journals first and redo journals last
+        # in the enclosing native chunk, so restoration runs after Skin replay.
+
+    def restore(self):
+        changed = []
+        for handle, name in self.nodes:
+            if not handle.isValid() or not handle.isAlive():
+                raise RuntimeError("Skin pose identity was not restored: " + name)
+            fn = om.MFnDependencyNode(handle.object())
+            if fn.name() != name:
+                changed.append((fn, name))
+        # Move only displaced poses aside before restoring their exact names.
+        # This handles a native collision where A acquired B's original name.
+        for fn, name in changed:
+            fn.setName("advPyPoseNameRestore#")
+        for fn, name in changed:
+            if fn.setName(name) != name:
+                raise RuntimeError("Skin pose name could not be restored: " + name)
+
+    def undoIt(self):
+        if self.when == "undo":
+            self.restore()
+
+    def redoIt(self):
+        if self.when == "redo":
+            self.restore()
+
 def initializePlugin(plugin_object):
     plugin = ompx.MFnPlugin(plugin_object, "ADV Python", "0.1", "Any")
     plugin.registerCommand(COMMAND_NAME, SetSkinWeights.creator)
     plugin.registerCommand(BLEND_COMMAND_NAME, SetSkinBlendWeights.creator)
+    plugin.registerCommand(NAME_COMMAND_NAME, SkinPoseNames.creator)
 
 
 def uninitializePlugin(plugin_object):
     plugin = ompx.MFnPlugin(plugin_object)
+    plugin.deregisterCommand(NAME_COMMAND_NAME)
     plugin.deregisterCommand(BLEND_COMMAND_NAME)
     plugin.deregisterCommand(COMMAND_NAME)

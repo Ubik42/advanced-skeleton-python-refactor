@@ -45,7 +45,9 @@ class MayaFaceJawHost(MayaFaceJawPosesMixin,MayaFaceTeethMixin,MayaFaceJawWeight
         c=self._cmds; raw=getattr(c,"raw",c); fit=self._fit(required=True)
         if c.objExists(fit+".SkinCluster"):
             saved=c.getAttr(fit+".SkinCluster")
-            if saved and raw.objExists(saved) and raw.nodeType(saved)=="skinCluster": return saved
+            if not saved or not raw.objExists(saved) or raw.nodeType(saved)!="skinCluster":
+                raise FitSkeletonValidationError("记录的 Face SkinCluster 不存在：" + str(saved))
+            return saved
         ids=set(raw.ls(self.scene_address(head),uuid=True) or [])
         matches=[]
         for skin in raw.listHistory(self.scene_address(geometry),pruneDagObjects=True) or []:

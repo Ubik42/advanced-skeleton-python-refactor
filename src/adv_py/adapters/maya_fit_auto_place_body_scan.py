@@ -62,6 +62,10 @@ def body_scan(s):
             s.previous_width=s.width;s.width=box[3]-box[0]
             if index>0 and s.width>s.previous_width:
                 c.setAttr(sampler+'.rotateY',-(index+1));break
+        else:
+            # MEL increments its shared outer $i to 90 after exhaustion.
+            # Python's range leaves the local at 89; retain the MEL side effect.
+            index=90
         # MEL reuses outer $i in this loop, so retain that index side effect.
         s.index=index;s.ankle_rotation=value(sampler+'.rotateY')
         c.setAttr(sampler+'.rotateY',0.)

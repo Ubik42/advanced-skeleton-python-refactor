@@ -65,7 +65,31 @@ def confirm_original_build_pose(host):
         message=message + '\n建议先回到构建姿态。', button=(restore, proceed, cancel),
         dismissString=cancel, defaultButton=cancel)
     if result == restore:
-        host.apply_body_build_pose(host.read_body_build_pose())
+        restore_original_body_build_pose(host)
         raw.refresh()
         return 1
     return 2 if result == proceed else 0
+
+
+def restore_original_body_build_pose(host):
+    """Use the native stored commands even for an unregistered ADV scene.
+
+    Set Axis and export confirmations need udExtraAttr, the MetaHuman GUI,
+    expression reset and Fit.run as well as the base Python pose record.
+    """
+    native=getattr(host,'go_to_original_corrective_build_pose',None)
+    if callable(native):return native(face=False)
+    from .maya_original_driver_attributes import MayaOriginalDriverAttributesMixin
+    class BodyPoseCommands(MayaOriginalDriverAttributesMixin):
+        def __init__(self,owner):
+            self.owner=owner
+            self._cmds=owner._cmds
+            self._transaction_changed=False
+        def __getattr__(self,name):return getattr(self.owner,name)
+        def read_face_build_pose(self):
+            raise ValueError('Body 构建姿态确认不能读取 Face 的构建姿态')
+    joined=BodyPoseCommands(host)
+    try:
+        return joined.go_to_original_corrective_build_pose(face=False)
+    finally:
+        if joined._transaction_changed:host._transaction_changed=True

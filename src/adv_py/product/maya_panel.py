@@ -67,9 +67,9 @@ def create_panel(controller: MayaPanelController | None = None):
             super().__init__()
             self.controller = controller or MayaPanelController()
             self.setObjectName("AdvPyCharacterPanel")
-            self.setWindowTitle("角色工作台 · Advanced Skeleton Python")
-            self.setMinimumSize(790, 590)
-            self.resize(950, 710)
+            self.setWindowTitle("AdvancedSkeleton Python")
+            self.setMinimumSize(330, 420)
+            self.resize(425, 750)
             self._busy = False
             self._help_buttons = []
             self._help_hidden = self.controller.hide_help_buttons()
@@ -77,100 +77,56 @@ def create_panel(controller: MayaPanelController | None = None):
             self._base_style = self.styleSheet()
             self._apply_panel_palette(self.controller.panel_palette())
             self.refresh_characters()
+            self._refresh_face_fit_checks()
 
         def _build_ui(self):
+            # The original tool is one vertical frame-layout panel. Keep the
+            # existing business widgets in that panel instead of a navigation
+            # window opening a second workbench.
             self.setStyleSheet("""
-                QWidget#AdvPyCharacterPanel { background: #131923; color: #E7EAF0;
-                    font-family: 'Microsoft YaHei UI', 'Noto Sans CJK SC'; font-size: 13px; }
-                QWidget#AdvPyCharacterPanel QLabel,
-                QWidget#AdvPyCharacterPanel QCheckBox { color: #DCE5EF; }
-                QWidget#RoleRail { background: #0D141D; border-right: 1px solid #354456; }
-                QLabel#Title { font-size: 24px; font-weight: 700; color: #F4F6FA; }
-                QLabel#Subtitle { color: #A9B8C8; }
-                QLabel#CurrentRole { color: #F3BE6E; font-size: 15px; font-weight: 600; }
-                QGroupBox { border: 1px solid #354456; border-radius: 8px;
-                    margin-top: 15px; padding: 12px 10px 8px; font-weight: 600; }
-                QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px;
-                    color: #C8D5E4; }
-                QLineEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: #1C2733;
-                    color: #EDF2F7; border: 1px solid #496073; border-radius: 5px;
-                    padding: 6px; selection-background-color: #A96631; }
-                QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus,
-                QDoubleSpinBox:focus,
-                QComboBox:focus {
-                    border: 2px solid #F3BE6E; }
-                QComboBox QAbstractItemView { background: #1C2733;
-                    color: #EDF2F7; selection-background-color: #3B526C; }
-                QPushButton { background: #263649; color: #F0F4F9;
-                    border: 1px solid #526478; border-radius: 6px;
-                    padding: 7px 13px; min-height: 21px; }
-                QPushButton:hover { background: #344C65; }
-                QPushButton:pressed { background: #49677F; }
-                QPushButton:disabled { color: #82909D; background: #202C38; }
-                QPushButton#PrimaryAction { background: #DA9346; color: #171A20;
-                    border-color: #E5AA6B; font-weight: 700; }
-                QPushButton#PrimaryAction:hover { background: #F2B76F; }
-                QToolButton#AdvPyCategory { background: #334960; color: #FFFFFF;
-                    border: 1px solid #60758A; border-left: 5px solid #D79552;
-                    text-align: left; font-size: 15px; font-weight: 700;
-                    padding: 9px 12px; }
-                QToolButton#AdvPySection { background: #213444; color: #E4ECF3;
-                    border: 1px solid #476174; border-left: 3px solid #6E9F90;
-                    text-align: left; font-weight: 600; padding: 7px 10px; }
-                QToolButton#AdvPyCategory:hover,
-                QToolButton#AdvPySection:hover { background: #3C546B; }
-                QScrollArea { border: none; background: transparent; }
+                QWidget#AdvPyCharacterPanel { background: #4C4C66;
+                    font-family: 'Microsoft YaHei UI'; font-size: 12px; }
                 QWidget#PageContent, QWidget#qt_scrollarea_viewport {
-                    background: #131923; }
-                QScrollBar:vertical { background: #16202B; width: 10px; }
-                QScrollBar::handle:vertical { background: #536A7F;
-                    border-radius: 5px; min-height: 28px; }
-                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                    height: 0; }
-                QListWidget { background: transparent; border: none; color: #D5E0EA; }
-                QListWidget::item { padding: 10px 8px; border-radius: 6px; }
-                QListWidget::item:selected { background: #3B526C; color: #FFFFFF; }
-                QCheckBox { spacing: 8px; }
+                    background: #4C4C66; }
+                QScrollArea { border: none; }
+                QToolButton#AdvPyCategory { background: #663333; color: white;
+                    text-align: left; padding: 4px; }
+                QToolButton#AdvPySection { background: #4C664C; color: white;
+                    text-align: left; padding: 4px; }
+                QPushButton { background: #597373; color: white;
+                    min-height: 20px; padding: 3px 6px; }
+                QComboBox { background: #1F4C52; color: white; }
+                QGroupBox { color: white; border: 1px solid #757589;
+                    margin-top: 12px; padding-top: 8px; }
+                QGroupBox::title { subcontrol-origin: margin; left: 6px; }
+                QLabel, QCheckBox { color: white; }
             """)
-            outer = QtWidgets.QHBoxLayout(self)
-            outer.setContentsMargins(0, 0, 0, 0)
-            outer.setSpacing(0)
-
-            rail = QtWidgets.QWidget(objectName="RoleRail")
-            rail.setMinimumWidth(190)
-            rail.setMaximumWidth(190)
-            rail_layout = QtWidgets.QVBoxLayout(rail)
-            rail_layout.setContentsMargins(18, 24, 14, 18)
-            title = QtWidgets.QLabel("AdvancedSkeleton", objectName="Title")
-            title.setWordWrap(True)
-            subtitle = QtWidgets.QLabel("Python", objectName="Subtitle")
-            subtitle.setWordWrap(True)
-            rail_layout.addWidget(title)
-            rail_layout.addWidget(subtitle)
-            rail_layout.addSpacing(25)
-            rail_layout.addWidget(QtWidgets.QLabel("场景命名空间"))
-            self.roles = QtWidgets.QListWidget()
+            outer = QtWidgets.QVBoxLayout(self)
+            outer.setContentsMargins(6, 6, 6, 6)
+            outer.setSpacing(5)
+            self.roles = QtWidgets.QListWidget(self)
+            self.roles.hide()
             self.roles.currentItemChanged.connect(self._role_changed)
-            rail_layout.addWidget(self.roles, 1)
-            refresh = QtWidgets.QPushButton("刷新角色")
+            namespace_row = QtWidgets.QHBoxLayout()
+            namespace_row.addWidget(QtWidgets.QLabel('Namespace'))
+            self.namespace_selector = QtWidgets.QComboBox()
+            self.namespace_selector.setModel(self.roles.model())
+            self.namespace_selector.currentIndexChanged.connect(self.roles.setCurrentRow)
+            self.roles.currentRowChanged.connect(self.namespace_selector.setCurrentIndex)
+            namespace_row.addWidget(self.namespace_selector, 1)
+            refresh = QtWidgets.QToolButton()
+            refresh.setText('Refresh')
             refresh.clicked.connect(self.refresh_characters)
-            rail_layout.addWidget(refresh)
-            outer.addWidget(rail)
-
-            main = QtWidgets.QWidget()
-            layout = QtWidgets.QVBoxLayout(main)
-            layout.setContentsMargins(20, 20, 20, 18)
-            layout.setSpacing(12)
-            self.current = QtWidgets.QLabel(objectName="CurrentRole")
-            layout.addWidget(self.current)
-            layout.addWidget(self._advanced_skeleton_page(), 1)
-            layout.addWidget(QtWidgets.QLabel("最近操作"))
+            namespace_row.addWidget(refresh)
+            outer.addLayout(namespace_row)
+            self.current = QtWidgets.QLabel(self)
+            self.current.hide()
+            self.operation_page = self._advanced_skeleton_page()
+            outer.addWidget(self.operation_page, 1)
             self.status = QtWidgets.QPlainTextEdit()
             self.status.setReadOnly(True)
-            self.status.setMaximumHeight(82)
-            self.status.setPlainText("选择场景命名空间，然后执行所需操作。")
-            layout.addWidget(self.status)
-            outer.addWidget(main, 1)
+            self.status.setMaximumHeight(52)
+            outer.addWidget(self.status)
 
         def _page(self):
             page = QtWidgets.QScrollArea()
@@ -187,6 +143,7 @@ def create_panel(controller: MayaPanelController | None = None):
             group = QtWidgets.QGroupBox(title)
             layout = QtWidgets.QFormLayout(group)
             layout.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
+            layout.setRowWrapPolicy(QtWidgets.QFormLayout.WrapAllRows)
             layout.setHorizontalSpacing(13)
             layout.setVerticalSpacing(10)
             for label, widget in rows:
@@ -234,11 +191,13 @@ def create_panel(controller: MayaPanelController | None = None):
                                      else QtCore.Qt.RightArrow))
             parent.addWidget(button)
             parent.addWidget(body)
+            inner._adv_toggle = button
             return inner
 
         def _advanced_skeleton_page(self):
             # Reuse the existing operation widgets while arranging their
             # entrances in the order of the 6.925 MEL frame layouts.
+            self._original_section_routes = {}
             sources = (self._fit_page(), self._skin_page(),
                        self._skin_cage_page(),
                        self._sub_wrap_page(),
@@ -283,20 +242,20 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Build', ('03 · 完整角色', '原版角色迁移',
                                '04 · 保留数据重建',
                                '05 · 跨段数脊柱角色替换')),
-                    ('Deform / Skinning', ('00 · 原版 Skinning',
+                    ('Deform option1', ('00 · 原版 Skinning',
                                            '01 · 建立 Skin', '02 · 权重文档',
                                            '03 · 跨场景源资产',
                                            '04 · 跨拓扑权重转移')),
-                    ('Deform / SkinCage', ('00 · SkinCage',)),
-                    ('Deform / SubWrap', ('00 · SubWrap',)),
-                    ('Deform / SkinLoops', ('00 · SkinLoops',)),
+                    ('Deform option2', ('00 · SkinCage',)),
+                    ('Deform option3', ('00 · SubWrap',)),
+                    ('Deform option4', ('00 · SkinLoops',)),
                     ('Deform Shapers', ('05 · Shapers',)),
-                    ('Deform / DeltaMush', ('05 · Delta Mush',)),
-                    ('Geometry / Skeleton', ('00 · Skeleton',)),
-                    ('Geometry / Muscular', ('00 · Muscular',)),
-                    ('Geometry / PolyBoxes', ('00 · PolyBoxes',)),
-                    ('Geometry / Mannequin', ('00 · Mannequin',)),
-                    ('Geometry / Skin Cut-Up', ('00 · Skin Cut-Up',)),
+                    ('Deform DeltaMush', ('05 · Delta Mush',)),
+                    ('Geometry Skeleton', ('00 · Skeleton',)),
+                    ('Geometry Muscular', ('00 · Muscular',)),
+                    ('Geometry PolyBoxes', ('00 · PolyBoxes',)),
+                    ('Geometry Mannequin', ('00 · Mannequin',)),
+                    ('Geometry Skin Cut-Up', ('00 · Skin Cut-Up',)),
                     ('Custom Controllers', ('06 · 自定义控制器',)),
                     ('Squash Controller', ('07 · Squash Controller',)),
                     ('Motion System', ('08 · Motion System',)),
@@ -312,7 +271,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     ('Fit', ('01 · EyeBall Fit', '02 · EyeLid Fit', '03 · Lip Fit', '04 · Face 定位点', '05 · Tongue Fit')),
                     ('Build', ('03 · 控制与变形器',)),
                     ('Build ...', ('03E · 原版 Face ctrlBox', '03D · Jaw 权重参考曲线', '03O · 原版眼部绑定与修形', '03I · Lip 绑定', '03G · Lip Falloff', '03K · Face Cage', '03L · Face 表情修形', '03J · Jaw 绑定与修形', '03F · Tongue 绑定', '03H · Regions', '03M · Eye Aim 与 UpMidLo', '03N · Phonemes 与 Emotions')),
-                    ('Skin Layers', ('03a · Face Skin Layers',)),
+                    ('Layers', ('03a · Face Skin Layers',)),
                     ('Tweaks', ('03A · Face Tweaks',)),
                     ('DeltaMush', ('03B · Face DeltaMush',)),
                     ('HeadSquash', ('03C · Face HeadSquash',)), ('WrinkleMap', ('03T · 原版 WrinkleMap',)),
@@ -330,12 +289,13 @@ def create_panel(controller: MayaPanelController | None = None):
                                         '02 · 全身动画',
                                         '06 · 角色预设')))),
                 ('Tools', (('Tools', ('01 · 外部 FBX 驱动角色',
-                                     '02 · NameMatcher')),)),
+                                     '02 · NameMatcher','03 · MoCapMatcher','04 · PoserDesigner')),)),
                 ('Display', (('Display', ('00 · Display',)),)),
                 ('Optimize', (('Optimize', ('00 · Optimize',)),)),
-                ('Updates', (('Updates', ()),)),
-                ('Publish', (('Publish', ('01 · 导出迁移后的完整角色',)),)),
-                ('Export', (('Export', ('02 · 烘焙并发布独立骨架',)),)),
+                ('Updates', (('Updates', ('00 · Updates',)),)),
+                ('Publish', (('Publish', ('00 · Publish', '01 · 导出迁移后的完整角色',
+                                         '02 · 烘焙并发布独立骨架')),)),
+                ('Export', (('Export', ('00 · Export',)),)),
                 ('Demo', (('Demo', ()),)),
                 ('About', (('About', ()),)),
             )
@@ -351,9 +311,19 @@ def create_panel(controller: MayaPanelController | None = None):
                         for name in names:
                             group = groups.pop(name)
                             group.setTitle(name.split(' · ', 1)[-1])
+                            for label in group.findChildren(QtWidgets.QLabel):
+                                label.setWordWrap(True)
+                                label.setMinimumWidth(0)
+                            from .maya_source_panel_rows import fit_group_rows
+                            fit_group_rows(group)
                             section_layout.addWidget(group)
+                            self._original_section_routes[name] = (
+                                category_layout._adv_toggle, section_layout._adv_toggle, group)
                     elif category == 'Preparation' and title == 'Settings':
-                        section_layout.addWidget(self._settings_group())
+                        group = self._settings_group()
+                        section_layout.addWidget(group)
+                        self._original_section_routes['00 · Settings'] = (
+                            category_layout._adv_toggle, section_layout._adv_toggle, group)
                     else:
                         section_layout.addWidget(QtWidgets.QLabel('尚未实现'))
             if groups:
@@ -515,6 +485,14 @@ def create_panel(controller: MayaPanelController | None = None):
             button.clicked.connect(lambda: self._run(label, callback))
             return button
 
+        def _native_button_row(self, *actions):
+            holder = QtWidgets.QWidget()
+            layout = QtWidgets.QHBoxLayout(holder)
+            layout.setContentsMargins(0, 0, 0, 0)
+            for label, callback in actions:
+                layout.addWidget(self._button(label, callback))
+            return holder
+
         def _fit_page(self):
             page, stack = self._page()
             model_source, self.preparation_model_source = self._file_field(
@@ -589,7 +567,16 @@ def create_panel(controller: MayaPanelController | None = None):
             self.name_matcher_underscore.setChecked(True)
             self.name_matcher_extra = QtWidgets.QCheckBox(
                 '动捕连接 Extra 控制层')
+            self.name_matcher_templates = QtWidgets.QComboBox()
+            self.name_matcher_templates.addItem('自定义映射','')
+            try:
+                matcher_assets = self.controller.preparation_source_name_matcher_catalog()
+            except ValueError:
+                matcher_assets = ()
+            for asset in matcher_assets:
+                self.name_matcher_templates.addItem(asset.stem,asset.stem)
             group, form = self._group('02 · NameMatcher', [
+                ('原版模板',self.name_matcher_templates),
                 ('Fit／来源名称映射', self.name_matcher_rows),
                 ('右侧标记', self.name_matcher_right),
                 ('左侧标记', self.name_matcher_left),
@@ -598,6 +585,9 @@ def create_panel(controller: MayaPanelController | None = None):
                 ('分隔符', self.name_matcher_underscore),
                 ('动捕控制层', self.name_matcher_extra),
                 ('外部骨架根', self.name_matcher_source_root)])
+            self.name_matcher_templates.currentIndexChanged.connect(self._load_source_name_matcher_template)
+            form.addRow(self._button('导出 NameMatcher 配置', self._export_source_name_matcher_template))
+            form.addRow(self._button('检查外部骨架', self._check_source_name_matcher))
             form.addRow(self._button('创建并放置 FitSkeleton',
                                      self._build_name_matcher_fit))
             form.addRow(self._button('一键创建角色并连接原 Skin／动画',
@@ -676,6 +666,25 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("从文件导入", fit_in),
                 ("模板缩放", self.fit_template_scale),
                 ("导出模式", self.external_fit_export)])
+            self.source_fit_templates = QtWidgets.QComboBox()
+            self.source_fit_limbs = QtWidgets.QComboBox()
+            for combo, limbs in ((self.source_fit_templates,False),(self.source_fit_limbs,True)):
+                try:
+                    assets = self.controller.fit_source_asset_catalog(limbs=limbs)
+                except ValueError:
+                    assets = ()
+                for asset in assets:
+                    combo.addItem(asset.name,str(asset))
+                combo.setEnabled(bool(assets))
+            native_template_row = QtWidgets.QHBoxLayout()
+            native_template_row.addWidget(self.source_fit_templates)
+            native_template_row.addWidget(self._button('导入原版 Fit 模板', self._source_fit_template_import))
+            form.addRow('原版模板',native_template_row)
+            native_limb_row = QtWidgets.QHBoxLayout()
+            native_limb_row.addWidget(self.source_fit_limbs)
+            native_limb_row.addWidget(self._button('导入原版 Fit 部件', self._source_fit_limb_import))
+            form.addRow('原版部件',native_limb_row)
+            form.addRow(self._button('导出原版 Fit／部件 .ma', self._source_fit_scene_export))
             template_row = QtWidgets.QHBoxLayout()
             template_row.addWidget(self._button("创建基础身体示例 Fit",
                 lambda: self._create_fit_template(False)))
@@ -701,6 +710,22 @@ def create_panel(controller: MayaPanelController | None = None):
             self.fit_edit_joints = QtWidgets.QPlainTextEdit()
             self.fit_edit_joints.setPlaceholderText("每行一个 Fit joint 名称或完整路径")
             self.fit_edit_joints.setMaximumHeight(72)
+            from adv_py.core.source_fit_attributes import SOURCE_FIT_ATTRIBUTE_TYPES
+            self.fit_source_attribute = QtWidgets.QComboBox()
+            for attribute in SOURCE_FIT_ATTRIBUTE_TYPES:
+                self.fit_source_attribute.addItem(attribute, attribute)
+            self.fit_source_attribute_help = QtWidgets.QLabel()
+            self.fit_source_attribute_help.setWordWrap(True)
+            self.fit_source_attribute.currentTextChanged.connect(self._update_source_fit_attribute_help)
+            self._update_source_fit_attribute_help(self.fit_source_attribute.currentText())
+            from adv_py.core.source_fit_labels import SOURCE_FIT_UI_LABELS
+            self.fit_source_label = QtWidgets.QComboBox()
+            for label in SOURCE_FIT_UI_LABELS:
+                self.fit_source_label.addItem(label, label)
+            self.fit_source_label_help = QtWidgets.QLabel()
+            self.fit_source_label_help.setWordWrap(True)
+            self.fit_source_label.currentTextChanged.connect(self._update_source_fit_label_help)
+            self._update_source_fit_label_help(self.fit_source_label.currentText())
             self.fit_metadata_field = QtWidgets.QComboBox()
             for label, value in (
                     ("Twist 关节数", "twist_joints"),
@@ -774,6 +799,18 @@ def create_panel(controller: MayaPanelController | None = None):
                 ("重采样起点", self.fit_resample_start),
                 ("重采样终点", self.fit_resample_end),
                 ("重采样关节总数", self.fit_resample_count)])
+            attribute_row = QtWidgets.QHBoxLayout()
+            attribute_row.addWidget(self.fit_source_attribute)
+            attribute_row.addWidget(self._button('添加', self._add_source_fit_attributes))
+            attribute_row.addWidget(self._button('移除', self._remove_source_fit_attributes))
+            form.insertRow(0, '所选关节属性', attribute_row)
+            form.insertRow(1, self.fit_source_attribute_help)
+            label_row = QtWidgets.QHBoxLayout()
+            label_row.addWidget(self.fit_source_label)
+            label_row.addWidget(self._button('Add', self._add_source_fit_labels))
+            label_row.addWidget(self._button('Remove', self._remove_source_fit_labels))
+            form.insertRow(0, self.fit_source_label_help)
+            form.insertRow(0, 'IK-Label', label_row)
             position_row = QtWidgets.QHBoxLayout()
             position_row.addWidget(self._button("更新 Fit 位置", self._edit_fit_positions))
             position_row.addWidget(self._button("重新定向 Fit", self._orient_fit))
@@ -782,6 +819,19 @@ def create_panel(controller: MayaPanelController | None = None):
             form.addRow(self._button("重采样 Fit 关节链", self._resample_fit))
             form.addRow(self._button("创建／移除非对称 Fit 关节",
                                       self._body_toggle_fit_non_symmetry))
+            self.fit_placement_buffer = None
+            placement_row = QtWidgets.QHBoxLayout()
+            placement_row.addWidget(self._button('吸附组件中心',self._fit_placement_snap))
+            placement_row.addWidget(self._button('复制位置',self._fit_placement_copy))
+            self.fit_placement_paste_button = self._button('粘贴位置',self._fit_placement_paste)
+            self.fit_placement_paste_button.setEnabled(False)
+            placement_row.addWidget(self.fit_placement_paste_button)
+            form.addRow('Placement',placement_row)
+            fit_mode_row = QtWidgets.QHBoxLayout()
+            fit_mode_row.addWidget(self._button('锁定／解锁中心关节', self._fit_toggle_center_locks))
+            fit_mode_row.addWidget(self._button('FitMode', self._fit_toggle_mode))
+            fit_mode_row.addWidget(self._button('立即更新 Fit', self._fit_manual_update))
+            form.addRow(fit_mode_row)
             self.fit_geometry_visible=QtWidgets.QCheckBox('显示几何')
             self.fit_geometry_visible.setChecked(False)
             self.fit_geometry_type=QtWidgets.QComboBox()
@@ -797,6 +847,36 @@ def create_panel(controller: MayaPanelController | None = None):
             geometry_row.addWidget(self.fit_geometry_gap)
             geometry_row.addWidget(self._button('更新显示',self._fit_geometry_update))
             form.addRow('几何显示／间距',geometry_row)
+            self.fit_pole_vectors_visible = QtWidgets.QCheckBox('显示 PoleVector 弯曲平面')
+            pole_row = QtWidgets.QHBoxLayout()
+            pole_row.addWidget(self.fit_pole_vectors_visible)
+            pole_row.addWidget(self._button('更新 PoleVector 显示', self._fit_pole_vector_display))
+            form.addRow(pole_row)
+            self.fit_finger_up_visible = QtWidgets.QCheckBox('显示 Finger-up')
+            finger_row = QtWidgets.QHBoxLayout()
+            finger_row.addWidget(self.fit_finger_up_visible)
+            finger_row.addWidget(self._button('更新 Finger-up 显示', self._fit_finger_up_display))
+            form.addRow(finger_row)
+            straight_row = QtWidgets.QHBoxLayout()
+            straight_row.addWidget(self._button('拉直腿部 PoleVector',
+                lambda: self._fit_straighten_pole_vector('Leg')))
+            straight_row.addWidget(self._button('拉直手臂 PoleVector',
+                lambda: self._fit_straighten_pole_vector('Arm')))
+            form.addRow(straight_row)
+            joint_display_row = QtWidgets.QHBoxLayout()
+            joint_display_row.addWidget(self._button('显示／隐藏关节朝向',
+                lambda: self._fit_toggle_joint_display('orient')))
+            joint_display_row.addWidget(self._button('显示／隐藏关节轴',
+                lambda: self._fit_toggle_joint_display('axis')))
+            form.addRow(joint_display_row)
+            form.addRow(self._button('创建 Fit SDK 属性', self._fit_sdk_create_attribute))
+            self.fit_joint_display_size = QtWidgets.QDoubleSpinBox()
+            self.fit_joint_display_size.setRange(.01, 10.)
+            self.fit_joint_display_size.setDecimals(2)
+            self.fit_joint_display_size.setValue(self.controller.fit_joint_display_scale())
+            self.fit_joint_display_size.valueChanged.connect(
+                lambda value: self.controller.fit_joint_display_scale(value))
+            form.addRow('joint', self.fit_joint_display_size)
             stack.addWidget(group)
 
             self.spine_segments = QtWidgets.QSpinBox()
@@ -1183,60 +1263,56 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
 
             group, form = self._group("10B · Game Engine", [])
+            form.addRow('Root Motion Joint：', self._native_button_row(
+                ('创建', self._create_game_engine_root_motion),
+                ('删除', self._delete_game_engine_root_motion)))
+            form.addRow('Scale Behaviour：', self._native_button_row(
+                ('启用', self._enable_game_engine_scaling),
+                ('禁用', self._disable_game_engine_scaling)))
+            form.addRow(QtWidgets.QLabel('Custom oriented GameSkeleton：'))
             self.game_joint_primary = QtWidgets.QComboBox()
             self.game_joint_secondary = QtWidgets.QComboBox()
             self.game_joint_primary.addItems(('X', 'Y', 'Z'))
             self.game_joint_secondary.addItems(('X', 'Y', 'Z'))
             self.game_joint_secondary.setCurrentIndex(1)
-            form.addRow('Custom Orient Joints · 主轴', self.game_joint_primary)
+            form.addRow('主轴', self.game_joint_primary)
             form.addRow('次轴', self.game_joint_secondary)
-            for text, action in (('创建', 'create'), ('删除', 'delete'), ('显示坐标轴', 'show_axis'),
-                                 ('连接', 'connect'), ('断开', 'disconnect'), ('转移蒙皮', 'transfer_skin')):
-                form.addRow(self._button(text,
-                    lambda checked=False, action=action: self._custom_orient_joints(action)))
-            form.addRow(self._button("创建 Root Motion",
-                                     self._create_game_engine_root_motion))
-            form.addRow(self._button("删除 Root Motion",
-                                     self._delete_game_engine_root_motion))
-            form.addRow(self._button("启用 Game Engine Scaling",
-                                     self._enable_game_engine_scaling))
-            form.addRow(self._button("恢复 Maya Scaling",
-                                     self._disable_game_engine_scaling))
+            form.addRow(self._native_button_row(
+                ('创建', lambda: self._custom_orient_joints('create')),
+                ('删除', lambda: self._custom_orient_joints('delete'))))
+            form.addRow(self._button('显示坐标轴', lambda: self._custom_orient_joints('show_axis')))
+            form.addRow(self._native_button_row(
+                ('连接', lambda: self._custom_orient_joints('connect')),
+                ('断开', lambda: self._custom_orient_joints('disconnect'))))
+            form.addRow(self._button('转移蒙皮', lambda: self._custom_orient_joints('transfer_skin')))
             stack.addWidget(group)
 
             group, form = self._group("11 · Unreal Joints", [])
-            form.addRow(self._button("重命名为 Unreal 关节",
-                                     self._rename_to_unreal))
-            form.addRow(self._button("恢复 ADV 关节名称",
-                                     self._restore_unreal_names))
-            form.addRow(self._button("创建通用 Unreal IK 关节",
-                                     self._create_unreal_joints))
-            form.addRow(self._button("删除通用 Unreal IK 关节",
-                                     self._delete_unreal_joints))
-            self.mannequin_template = QtWidgets.QComboBox()
-            self.mannequin_template.addItems(
-                ("UE4", "UE5 (Simple)", "UE5 (Full)"))
-            self.mannequin_template.setCurrentText("UE5 (Simple)")
-            self.mannequin_scale = QtWidgets.QCheckBox("缩放 ADV 角色以匹配模板")
-            self.mannequin_scale.setChecked(True)
-            self.mannequin_pose = QtWidgets.QCheckBox("匹配 Mannequin 姿态")
-            self.mannequin_pose.setChecked(True)
+            form.addRow(QtWidgets.QLabel('Unreal Mannequin Skeleton：'))
+            form.addRow(self._button('请先阅读', self._read_unreal_mannequin_note))
+            form.addRow(self._native_button_row(
+                ('创建', self._create_unreal_mannequin),
+                ('删除', self._delete_unreal_mannequin)))
+            form.addRow(self._button('转移蒙皮', self._transfer_unreal_mannequin_skin))
+            form.addRow(QtWidgets.QLabel('或者：将关节重命名为 Mannequin 名称'))
+            form.addRow(self._button('重命名为 Unreal', self._rename_to_unreal))
+            form.addRow(self._button('恢复', self._restore_unreal_names))
+            more = QtWidgets.QCheckBox('更多')
+            form.addRow(more)
+            more_group, more_form = self._group('更多选项', [])
+            more_form.addRow('Unreal Root & IK joints：', self._native_button_row(
+                ('创建', self._create_unreal_joints),
+                ('删除', self._delete_unreal_joints)))
+            more_form.addRow('Unreal TwistJoints hierarchy：', self._native_button_row(
+                ('创建', self._create_unreal_twist_hierarchy),
+                ('删除', self._delete_unreal_twist_hierarchy)))
             mannequin_file_widget, self.mannequin_file = self._file_field(
-                "ADV asUnreal.ma", filter_text="Maya ASCII (*.ma)")
-            form.addRow("Mannequin 模板", self.mannequin_template)
-            form.addRow("模板文件", mannequin_file_widget)
-            form.addRow(self.mannequin_scale)
-            form.addRow(self.mannequin_pose)
-            form.addRow(self._button("创建 Mannequin 骨架",
-                                     self._create_unreal_mannequin))
-            form.addRow(self._button("转移蒙皮到 Mannequin",
-                                     self._transfer_unreal_mannequin_skin))
-            form.addRow(self._button("删除 Mannequin 骨架",
-                                     self._delete_unreal_mannequin))
-            form.addRow(self._button("启用 Unreal Twist 层级",
-                                     self._create_unreal_twist_hierarchy))
-            form.addRow(self._button("恢复默认 Twist 层级",
-                                     self._delete_unreal_twist_hierarchy))
+                'ADV asUnreal.ma', filter_text='Maya ASCII (*.ma)')
+            self.mannequin_file.setPlaceholderText('留空使用原版 asUnreal.ma')
+            more_form.addRow('原版模板路径（可留空）', mannequin_file_widget)
+            more_group.setVisible(False)
+            more.toggled.connect(more_group.setVisible)
+            form.addRow(more_group)
             stack.addWidget(group)
 
             self.partial_include_controller = QtWidgets.QCheckBox("包含控制器")
@@ -1497,6 +1573,7 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("启用空间动画", self._enable_space_animation))
             form.addRow(row)
             form.addRow(self._button("升级旧 Spline FKIK", self._upgrade_source_spline_mode))
+            form.addRow(self._button("升级旧 Spline 对齐参考", self._upgrade_source_spline_alignment))
             stack.addWidget(group)
 
             self.limb_part = QtWidgets.QComboBox()
@@ -1689,8 +1766,27 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addStretch(1)
             return page
 
+        def _add_face_original_option(self, form, option):
+            if option.items:
+                control = QtWidgets.QComboBox()
+                control.addItems(option.items)
+                control.setCurrentText(option.default)
+                form.addRow(option.label, control)
+                signal = control.currentIndexChanged
+            else:
+                control = QtWidgets.QCheckBox(option.label)
+                control.setChecked(option.default)
+                form.addRow(control)
+                signal = control.toggled
+            self.face_original_option_controls[option.attribute] = control
+            if option.attribute == 'MultiSkinClusters':
+                control.setEnabled(self.controller.face_multi_skin_clusters_supported())
+            signal.connect(lambda _, name=option.attribute:
+                self._run('记录 Face '+name, lambda: self._face_original_option_changed(name)))
+
         def _face_page(self):
             page, stack = self._page()
+            self.face_fit_state_controls={}
             self.face_pre_mask = QtWidgets.QLineEdit()
             self.face_pre_mask.setReadOnly(True)
             self.face_pre_face = QtWidgets.QLineEdit()
@@ -1698,12 +1794,14 @@ def create_panel(controller: MayaPanelController | None = None):
             self.face_pre_all_head = QtWidgets.QLineEdit()
             self.face_pre_all_head.setReadOnly(True)
             self.face_eye_head = QtWidgets.QLineEdit()
+            self.face_eye_head.setReadOnly(True)
             self.face_eye_head.setPlaceholderText("Head_M（Face Pre 默认）")
+            self.face_pre_skin=QtWidgets.QLineEdit()
+            self.face_pre_skin.editingFinished.connect(self._face_skin_input_changed)
             group, form = self._group("00 · 面部输入", [
                 ("Mask 多边形面", self.face_pre_mask),
                 ("Face 网格", self.face_pre_face),
-                ("All Head 网格", self.face_pre_all_head),
-                ("Head 关节", self.face_eye_head)])
+                ("All Head 网格", self.face_pre_all_head)])
             for label, record, reselect in (
                     ("Mask", self._face_record_mask, self._face_reselect_mask),
                     ("Face", self._face_record_face, self._face_reselect_face),
@@ -1721,21 +1819,53 @@ def create_panel(controller: MayaPanelController | None = None):
             row = QtWidgets.QHBoxLayout()
             row.addWidget(self._button("编辑右侧", lambda: self._face_fit_switch_side("Right")))
             row.addWidget(self._button("编辑左侧", lambda: self._face_fit_switch_side("Left")))
+            row.addWidget(self._button('关闭非对称', lambda: self._face_fit_display('side_off')))
             form.addRow(self.face_fit_side_status)
             form.addRow(row)
-            self.face_include = QtWidgets.QComboBox()
-            for label in ("Complete", "Skip Above Eyes", "Skip Below Eyes",
-                          "Skip Above+Below Eyes"):
-                self.face_include.addItem(label)
-            form.addRow("Include", self.face_include)
-            self.face_include.currentIndexChanged.connect(
-                lambda _: self._run("设置 Face Include", self._face_save_include))
-            self.face_simpler_eye_lid = QtWidgets.QCheckBox("simpler eyeLid")
-            form.addRow(self.face_simpler_eye_lid)
+            form.addRow(self._button('show both sides', lambda: self._face_fit_display('show_both')))
+            form.addRow(self._button('Model Check',self._face_original_model_check))
+            from adv_py.core.original_face_options import ORIGINAL_FACE_OPTIONS
+            self.face_original_option_controls = {}
+            for option in ORIGINAL_FACE_OPTIONS:
+                if not option.advanced:
+                    self._add_face_original_option(form, option)
+            self.face_include = self.face_original_option_controls['Include']
+            self.face_simpler_eye_lid = self.face_original_option_controls['SimplerEyeLid']
+            self.face_pre_advanced_toggle=QtWidgets.QCheckBox('advanced')
+            self.face_pre_advanced=QtWidgets.QWidget()
+            advanced_form=QtWidgets.QFormLayout(self.face_pre_advanced)
+            advanced_form.setContentsMargins(0,0,0,0)
+            self.face_pre_game_engine_options = QtWidgets.QWidget()
+            game_options_form = QtWidgets.QFormLayout(self.face_pre_game_engine_options)
+            game_options_form.setContentsMargins(0,0,0,0)
+            for option in ORIGINAL_FACE_OPTIONS:
+                if option.attribute in ('UseMaxInf', 'MaxInf'):
+                    self._add_face_original_option(game_options_form, option)
+            advanced_form.addRow(self.face_pre_game_engine_options)
+            self.face_pre_game_engine_options.setVisible(False)
+            advanced_form.addRow(QtWidgets.QLabel('不使用 AdvancedSkeleton 身体绑定时的 Face 输入'))
+            advanced_form.addRow(self._button('Choose Head Joint',self._face_record_head_joint),self.face_eye_head)
+            advanced_form.addRow('Face 几何上的 SkinCluster',self.face_pre_skin)
+            for option in ORIGINAL_FACE_OPTIONS:
+                if option.attribute in ('LegacyFaceJointOrient', 'SkipFaceJointOrient'):
+                    self._add_face_original_option(advanced_form, option)
+            advanced_form.addRow(self._button('AutoFit',self._face_auto_fit))
+            offset_group = QtWidgets.QGroupBox('Offset Face（多头角色）')
+            offset_layout = QtWidgets.QHBoxLayout(offset_group)
+            for label, callback in (('Create', self._face_offset_create),
+                                    ('import', self._face_offset_import), ('Update', self._face_offset_update)):
+                offset_layout.addWidget(self._button(label, callback))
+            advanced_form.addRow(offset_group)
+            self.face_pre_advanced.setVisible(False)
+            self.face_pre_advanced_toggle.toggled.connect(self.face_pre_advanced.setVisible)
+            form.addRow(self.face_pre_advanced_toggle)
+            form.addRow(self.face_pre_advanced)
             stack.addWidget(group)
             self.face_eye_right = QtWidgets.QLineEdit()
+            self.face_eye_right.setReadOnly(True)
             self.face_eye_right.setPlaceholderText("|model:RightEye")
             self.face_eye_left = QtWidgets.QLineEdit()
+            self.face_eye_left.setReadOnly(True)
             self.face_eye_left.setPlaceholderText("|model:LeftEye")
             group, form = self._group("00 · 眼球输入与控制", [
                 ("右眼网格", self.face_eye_right),
@@ -1744,22 +1874,31 @@ def create_panel(controller: MayaPanelController | None = None):
             row.addWidget(self._button("记录所选右眼", self._face_record_right_eye))
             row.addWidget(self._button("记录所选左眼", self._face_record_left_eye))
             form.addRow(row)
-            form.addRow(self._button("建立双眼控制与蒙皮",
-                                     self._face_build_eyes, primary=True))
             stack.addWidget(group)
             self.face_fit_right_eye = QtWidgets.QLineEdit()
+            self.face_fit_right_eye.setReadOnly(True)
             self.face_fit_right_eye.setPlaceholderText("|model:RightEye")
             self.face_fit_left_eye = QtWidgets.QLineEdit()
+            self.face_fit_left_eye.setReadOnly(True)
             self.face_fit_left_eye.setPlaceholderText("|model:LeftEye")
             self.face_fit_head = QtWidgets.QLineEdit("Head_M")
+            self.face_fit_head.setReadOnly(True)
             group, form = self._group("01 · EyeBall Fit", [
                 ("右眼网格", self.face_fit_right_eye),
                 ("左眼网格", self.face_fit_left_eye),
                 ("Head 关节", self.face_fit_head)])
-            form.addRow(self._button("建立 EyeBall Fit",
+            eye_ball_row=QtWidgets.QHBoxLayout()
+            eye_ball_row.addWidget(self._button("建立 EyeBall Fit",
                                      self._face_fit_eye_ball, primary=True))
-            form.addRow(self._button("创建所选 Pupil 边环 Fit",lambda:self._face_fit_marker("Pupil")))
-            form.addRow(self._button("创建所选 Iris 边环 Fit",lambda:self._face_fit_marker("Iris")))
+            eye_ball_row.addWidget(self._face_fit_state_check('EyeBall'))
+            form.addRow(eye_ball_row)
+            for section in ('Pupil','Iris'):
+                row=self._native_button_row(
+                    ('创建所选 '+section+' 边环 Fit',lambda section=section:self._face_fit_marker(section)),
+                    ('重选',lambda section=section:self._face_fit_display('reselect',section)),
+                    ('hide',lambda section=section:self._face_fit_display('hide',section)))
+                row.layout().addWidget(self._face_fit_state_check(section))
+                form.addRow(row)
             stack.addWidget(group)
             group, form = self._group("02 · EyeLid Fit", [])
             form.addRow(QtWidgets.QLabel(
@@ -1768,11 +1907,31 @@ def create_panel(controller: MayaPanelController | None = None):
                 row = QtWidgets.QHBoxLayout()
                 row.addWidget(self._button("EyeLid " + layer,
                     lambda layer=layer: self._face_fit_eye_lid(layer)))
+                row.addWidget(self._face_fit_state_check('EyeLid',layer))
                 row.addWidget(self._button("重选 " + layer,
                     lambda layer=layer: self._face_fit_eye_lid_reselect(layer)))
+                row.addWidget(self._button('hide',
+                    lambda layer=layer: self._face_fit_display('hide', 'EyeLid', layer)))
                 form.addRow(row)
+            form.addRow(self._button('EyeLid assist',
+                lambda: self._face_fit_display('assist', 'EyeLid')))
             form.addRow(self._button("对称角色：右侧 Fit 镜像到左侧",
                                      self._face_fit_mirror_right_to_left))
+            extra_lid = QtWidgets.QCheckBox('Optional extra EyeLidMain')
+            extra_lid_row = QtWidgets.QWidget()
+            extra_lid_layout = QtWidgets.QHBoxLayout(extra_lid_row)
+            extra_lid_layout.setContentsMargins(0, 0, 0, 0)
+            extra_lid_layout.addWidget(self._button('EyeLidMain2',
+                lambda: self._face_fit_eye_lid('Main2')))
+            extra_lid_layout.addWidget(self._face_fit_state_check('EyeLidMain2'))
+            extra_lid_layout.addWidget(self._button('重选 Main2',
+                lambda: self._face_fit_eye_lid_reselect('Main2')))
+            extra_lid_layout.addWidget(self._button('hide',
+                lambda: self._face_fit_display('hide', 'EyeLidMain2')))
+            extra_lid_row.setVisible(False)
+            extra_lid.toggled.connect(extra_lid_row.setVisible)
+            form.addRow(extra_lid)
+            form.addRow(extra_lid_row)
             stack.addWidget(group)
             group, form = self._group("03 · Lip Fit", [])
             form.addRow(QtWidgets.QLabel(
@@ -1781,27 +1940,41 @@ def create_panel(controller: MayaPanelController | None = None):
                 row=QtWidgets.QHBoxLayout()
                 row.addWidget(self._button("Lip "+part,
                     lambda part=part: self._face_fit_lip(part)))
+                row.addWidget(self._face_fit_state_check('Lip',part))
                 row.addWidget(self._button("重选 "+part,
                     lambda part=part: self._face_fit_lip(part,reselect=True)))
                 row.addWidget(self._button("交换上下",
                     lambda part=part: self._face_fit_lip_swap(part)))
+                row.addWidget(self._button('hide',
+                    lambda part=part: self._face_fit_display('hide', 'Lip', part)))
                 form.addRow(row)
+            form.addRow(self._button('Lip assist', lambda: self._face_fit_display('assist', 'Lip')))
             stack.addWidget(group)
             group, form = self._group("04 · Face 定位点", [])
             from adv_py.core.face_fit_markers import MARKER_SHADERS
             for section in MARKER_SHADERS:
-                form.addRow(section, self._button("创建所选组件的 Fit",
-                    lambda section=section: self._face_fit_marker(section)))
-            form.addRow(self._button("创建 UpMidLo 分区定位器",
-                lambda: self._face_fit_marker("UpMidLo")))
-            form.addRow(self._button("创建 ForeHead 边界与区域 Fit",
-                lambda: self._face_fit_marker("ForeHead")))
+                actions = self._native_button_row(
+                    ('创建 Fit', lambda section=section: self._face_fit_marker(section)),
+                    ('重选', lambda section=section: self._face_fit_display('reselect', section)),
+                    ('hide', lambda section=section: self._face_fit_display('hide', section)))
+                actions.layout().addWidget(self._face_fit_state_check(section))
+                form.addRow(section, actions)
+            for section,label in (('UpMidLo','创建 UpMidLo 分区定位器'),
+                                  ('ForeHead','创建 ForeHead 边界与区域 Fit')):
+                row=self._native_button_row(
+                    (label,lambda section=section:self._face_fit_marker(section)),
+                    ('hide',lambda section=section:self._face_fit_display('hide',section)))
+                row.layout().addWidget(self._face_fit_state_check(section))
+                form.addRow(row)
             stack.addWidget(group)
             group, form = self._group("05 · Tongue Fit", [])
             form.addRow(self._button("记录所选 Tongue 网格或组件",
                 lambda: self._face_tongue("record")))
-            form.addRow(self._button("创建 Tongue Fit",
-                lambda: self._face_tongue("fit")))
+            tongue_row=self._native_button_row(
+                ('创建 Tongue Fit',lambda:self._face_tongue('fit')),
+                ('hide',lambda:self._face_fit_display('hide','Tongue')))
+            tongue_row.layout().addWidget(self._face_fit_state_check('Tongue'))
+            form.addRow(tongue_row)
             stack.addWidget(group)
             self.face_neutral = QtWidgets.QLineEdit()
             self.face_neutral.setPlaceholderText("|FaceNeutral")
@@ -2277,6 +2450,48 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _publish_page(self):
             page, stack = self._page()
+            publish_group, publish_form = self._group('00 · Publish', [])
+            self.original_publish_entries = QtWidgets.QTableWidget(0, 2)
+            self.original_publish_entries.setHorizontalHeaderLabels(['Name', 'Script'])
+            self.original_publish_entries.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            self.original_publish_entries.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            self.original_publish_entries.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            publish_form.addRow(self._button('Set DisplayLayers to "R"', self._publish_reference_layers))
+            publish_form.addRow(self._button('Set Joints to hidden', lambda: self._set_rig_display('joints', False)))
+            publish_form.addRow(self._button('Go to Build Pose', self._publish_build_pose))
+            publish_form.addRow(self._button('Publish', self._publish_original_scene, primary=True))
+            advanced = QtWidgets.QCheckBox('advanced')
+            publish_form.addRow(advanced)
+            advanced_content = QtWidgets.QWidget()
+            advanced_form = QtWidgets.QFormLayout(advanced_content)
+            advanced_form.setContentsMargins(0, 0, 0, 0)
+            advanced_form.addRow(QtWidgets.QLabel('Publish Multi Files:'))
+            advanced_form.addRow(self._button('add', lambda: self._original_publish_entry_dialog(False)))
+            advanced_form.addRow(self.original_publish_entries)
+            advanced_form.addRow(self._button('edit', lambda: self._original_publish_entry_dialog(True)))
+            advanced_form.addRow(self._button('delete', self._delete_original_publish_entry))
+            advanced_form.addRow(self._button('Refresh', self._refresh_original_publish_entries))
+            publish_form.addRow(advanced_content)
+            advanced_content.setVisible(False)
+            advanced.toggled.connect(advanced_content.setVisible)
+            self._refresh_original_publish_entries()
+            stack.addWidget(publish_group)
+            native_group, native_form = self._group('00 · Export', [])
+            native_form.addRow(QtWidgets.QLabel('For Game-Engine Export:'))
+            native_form.addRow(self._button('Delete Unused Endjoints',
+                lambda: self._prepare_original_export('delete_unused_end_joints')))
+            native_form.addRow(self._button('Delete Static channels',
+                lambda: self._prepare_original_export('delete_static_channels')))
+            native_form.addRow(self._button('Rebuild dagPose nodes',
+                lambda: self._prepare_original_export('rebuild_dag_pose')))
+            native_form.addRow(self._button('Roblox Dynamic Head', self._export_roblox_dynamic_head))
+            native_form.addRow(self._button('FBX export', self._export_original_fbx))
+            native_form.addRow(QtWidgets.QLabel('Unreal:'))
+            native_form.addRow(self._button('Mannequin export', self._export_unreal_mannequin))
+            native_form.addRow(QtWidgets.QLabel('json data:'))
+            native_form.addRow(self._button('BodyRig export', self._export_original_body_rig))
+            native_form.addRow(self._button('FaceRig export', self._export_unreal_face_solver))
+            stack.addWidget(native_group)
             maya_output, self.maya_output = self._file_field(
                 "独立 Maya 场景", save=True, filter_text="Maya Binary (*.mb)")
             maya_group, maya_form = self._group(
@@ -2332,6 +2547,90 @@ def create_panel(controller: MayaPanelController | None = None):
             stack.addWidget(group)
             stack.addStretch(1)
             return page
+
+        def open_original_section(self, group, section, subsection=None):
+            route = self._original_section_routes.get(group)
+            if route is None:
+                raise ValueError('操作栏目不存在：' + group)
+            category_button, section_button, widget = route
+            category_button.setChecked(True)
+            section_button.setChecked(True)
+            self.custom_control_face = section == 'Face'
+            self.setWindowTitle('AdvancedSkeleton Python / ' + section
+                                + (' / ' + subsection if subsection else ''))
+            self.show()
+            self.operation_page.ensureWidgetVisible(widget, 10, 12)
+            # The whole group can be taller than the viewport. Navigate to its
+            # heading instead of centering it midway through the operations.
+            top = widget.mapTo(self.operation_page.widget(), QtCore.QPoint(0, 0))
+            self.operation_page.verticalScrollBar().setValue(max(0, top.y() - 12))
+            self.operation_page.horizontalScrollBar().setValue(0)
+
+        def _publish_original_scene(self):
+            result = self.controller.original_publish(self._namespace())
+            if result is None:
+                return '已取消 Publish。'
+            failures = [item['script_error'] for item in result if item['script_error']]
+            return ('已按原版导出：\n' + '\n'.join(item['destination'] for item in result)
+                    + ('\n自定义脚本错误：\n' + '\n'.join(failures) if failures else ''))
+
+        def _publish_reference_layers(self):
+            result = self.controller.original_publish_reference_layers(self._namespace())
+            return f'已将 {len(result)} 个 DisplayLayer 设为 R。'
+
+        def _publish_build_pose(self):
+            count = self.controller.original_publish_build_pose(self._namespace())
+            return f'已复位 {count} 个 Body / Face 构建姿态通道。'
+
+        def _refresh_original_publish_entries(self):
+            # optionVar is global and the UI reads it before role population.
+            entries = self.controller.original_publish_entries(':')
+            table = self.original_publish_entries
+            table.setRowCount(len(entries))
+            for row, entry in enumerate(entries):
+                table.setItem(row, 0, QtWidgets.QTableWidgetItem(entry.name))
+                table.setItem(row, 1, QtWidgets.QTableWidgetItem(entry.script))
+            return f'已读取 {len(entries)} 个原版 Publish 配置。'
+
+        def _delete_original_publish_entry(self):
+            row = self.original_publish_entries.currentRow()
+            if row < 0:
+                raise ValueError('请选择要删除的 Publish 配置')
+            self.controller.original_publish_delete_entry(self._namespace(), row)
+            return self._refresh_original_publish_entries()
+
+        def _original_publish_entry_dialog(self, edit):
+            from adv_py.core.original_publish import original_publish_template
+            dialog = QtWidgets.QDialog(self)
+            dialog.setWindowTitle('Edit' if edit else 'Add')
+            form = QtWidgets.QFormLayout(dialog)
+            name = QtWidgets.QLineEdit()
+            script = QtWidgets.QPlainTextEdit()
+            template = QtWidgets.QComboBox()
+            template.addItems(['*new', 'BodyOnly', 'LoOnly', 'Default'])
+            form.addRow('Name:', name)
+            form.addRow('Script:', script)
+            if edit:
+                row = self.original_publish_entries.currentRow()
+                if row < 0:
+                    raise ValueError('请选择要编辑的 Publish 配置')
+                name.setText(self.original_publish_entries.item(row, 0).text())
+                name.setReadOnly(True)
+                script.setPlainText(self.original_publish_entries.item(row, 1).text())
+            else:
+                form.addRow('use template:', template)
+                def use_template(*_):
+                    entry = original_publish_template(template.currentText())
+                    name.setText(entry.name)
+                    script.setPlainText(entry.script)
+                template.currentIndexChanged.connect(use_template)
+            buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            form.addRow(buttons)
+            if (getattr(dialog, 'exec', None) or dialog.exec_)() == QtWidgets.QDialog.Accepted:
+                self.controller.original_publish_save_entry(self._namespace(), name.text(), script.toPlainText())
+            return self._refresh_original_publish_entries()
 
         def _skin_cage_page(self):
             page, stack = self._page()
@@ -2531,11 +2830,37 @@ def create_panel(controller: MayaPanelController | None = None):
         def _optimize_page(self):
             page, stack = self._page()
             group, form = self._group("00 · Optimize", [])
+            form.addRow(self._button('Delete Unused Nodes',
+                                     lambda: self._original_optimize('delete_unused_nodes')))
             form.addRow(self._button("Remove Unused Influences",
                                      self._remove_unused_skin_influences))
+            form.addRow(self._button("Remove Unused Attributes",
+                                     lambda: self._original_optimize('remove_unused_attributes')))
             form.addRow(self._button("Prune Small Weights",
                                      self._prune_small_skin_weights))
+            form.addRow(self._button('Delete saved UIs',
+                                     lambda: self._original_optimize('delete_saved_uis')))
+            form.addRow(self._button("Delete Unused joints",
+                lambda: self._prepare_original_export('delete_unused_end_joints')))
+            form.addRow(QtWidgets.QLabel('Tag Controller:'))
+            form.addRow(self._button("Tag All Controllers",
+                                     lambda: self._original_optimize('tag_all_controllers')))
+            form.addRow(QtWidgets.QLabel('Face-joints reduction for GameEngine:'))
+            form.addRow(self._button('Reduce EyeLid joints to 4',
+                                     lambda: self._face_joint_reduction('EyeLid', 4)))
+            form.addRow(self._button('Reduce EyeLid joints to 8',
+                                     lambda: self._face_joint_reduction('EyeLid', 8)))
+            form.addRow(self._button('Reduce Lip joints to 14',
+                                     lambda: self._face_joint_reduction('Lip', 14)))
+            form.addRow(self._button('Custom Reduce', self._custom_face_reduction_dialog))
             stack.addWidget(group)
+            updates, update_form = self._group('00 · Updates', [])
+            update_form.addRow(QtWidgets.QLabel('Model update functions:'))
+            update_form.addRow(self._button('Green-fix', lambda: self._original_model_update('green_fix')))
+            update_form.addRow(self._button('NaN-fix', lambda: self._original_model_update('nan_fix')))
+            update_form.addRow(self._button('Face Fitting Update',
+                lambda: self._original_model_update('face_fitting_update')))
+            stack.addWidget(updates)
             stack.addStretch(1)
             return page
 
@@ -2544,6 +2869,90 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._namespace())
             return f"已检查 {skins} 个 Skin，清理 {removed} 个无效影响关节。"
 
+        def _original_model_update(self, operation):
+            result = self.controller.original_model_update(self._namespace(), operation)
+            if operation == 'face_fitting_update':
+                return ('已取消 Face Fitting 更新。' if result is None else
+                        f'已按原版顺序重新应用 {len(result)} 项 Face Fitting。')
+            return (f'已按原版修复 {len(result)} 个着色归属。' if operation == 'green_fix'
+                    else f'已按原版对 {len(result)} 个原点顶点执行 Weight Hammer。')
+
+        def _original_optimize(self, operation):
+            result = self.controller.original_optimize(self._namespace(), operation)
+            messages = {
+                'remove_unused_attributes': f'已按原版清理 {len(result)} 个无用属性。',
+                'tag_all_controllers': f'已按原版创建 {len(result)} 个控制器标签。',
+                'delete_unused_nodes': f'已按 Maya 原生流程删除 {len(result)} 个无用节点。',
+                'delete_saved_uis': f'已删除 {len(result)} 个保存的 UI 节点并清空撤销记录；保存重开后生效。',
+            }
+            return messages[operation]
+
+        def _face_joint_reduction(self, kind, count):
+            self.controller.face_joint_reduction(self._namespace(), kind, count)
+            return f'已按原版完成 {kind} 关节缩减到 {count}。'
+
+        def _custom_face_reduction_dialog(self):
+            dialog = QtWidgets.QDialog(self)
+            dialog.setWindowTitle('Custom Face Joint Reduce')
+            form = QtWidgets.QFormLayout(dialog)
+            kind = QtWidgets.QComboBox()
+            kind.addItems(['EyeLid', 'Lip'])
+            every = QtWidgets.QComboBox()
+            for value, label in ((2, '2nd'), (3, '3rd'), (4, '4th'), (5, '5th')):
+                every.addItem(label, value)
+            current = QtWidgets.QLineEdit()
+            current.setReadOnly(True)
+            reduced = QtWidgets.QLineEdit()
+            reduced.setReadOnly(True)
+            message = QtWidgets.QLabel()
+            message.setWordWrap(True)
+            form.addRow('Joints:', kind)
+            form.addRow('current count is:', current)
+            form.addRow('keep every:', every)
+            form.addRow('new count will be:', reduced)
+            form.addRow(message)
+            buttons = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(buttons)
+            row.setContentsMargins(0, 0, 0, 0)
+            preview_button = QtWidgets.QPushButton('Preview')
+            apply_button = QtWidgets.QPushButton('Apply')
+            close_button = QtWidgets.QPushButton('Close')
+            for button in (preview_button, apply_button, close_button):
+                row.addWidget(button)
+            form.addRow(buttons)
+            namespace = self._namespace()
+
+            def update_counts(*_):
+                try:
+                    old, new = self.controller.custom_face_joint_reduction_counts(
+                        namespace, kind.currentText(), every.currentData())
+                    current.setText(str(old))
+                    reduced.setText(str(new))
+                    message.setText('(Selects the joints that will be kept)')
+                except (ValueError, RuntimeError) as error:
+                    current.clear()
+                    reduced.clear()
+                    message.setText(str(error))
+
+            def execute(preview):
+                try:
+                    plan = self.controller.custom_face_joint_reduction(
+                        namespace, kind.currentText(), every.currentData(), preview=preview)
+                    message.setText(f'已选择 {len(plan.kept)} 个保留关节。' if preview
+                                    else f'已完成缩减，原版计数为 {plan.reported_count}。')
+                except (ValueError, RuntimeError) as error:
+                    message.setText('操作失败：' + str(error))
+                    QtWidgets.QMessageBox.warning(dialog, '操作未完成', str(error))
+
+            kind.currentIndexChanged.connect(update_counts)
+            every.currentIndexChanged.connect(update_counts)
+            preview_button.clicked.connect(lambda: execute(True))
+            apply_button.clicked.connect(lambda: execute(False))
+            close_button.clicked.connect(dialog.reject)
+            update_counts()
+            (getattr(dialog, 'exec', None) or dialog.exec_)()
+            return 'Custom Face Joint Reduce 已关闭。'
+
         def _prune_small_skin_weights(self):
             meshes = self.controller.prune_small_skin_weights(
                 self._namespace())
@@ -2551,6 +2960,14 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _mocap_page(self):
             page, stack = self._page()
+            poser,poser_form=self._group('04 · PoserDesigner',[])
+            poser_form.addRow(self._button('PoserDesigner',
+                lambda:self.controller.original_poser_window(self._namespace())))
+            stack.addWidget(poser)
+            group,form=self._group('03 · MoCapMatcher',[])
+            form.addRow(self._button('打开原版动捕映射面板',
+                lambda:self.controller.tools_source_mocap_matcher(self._namespace())))
+            stack.addWidget(group)
             source, self.mocap_source = self._file_field("导入动捕 FBX",
                 filter_text="FBX 文件 (*.fbx)")
             mapping, self.mocap_mapping = self._file_field("动捕映射预设")
@@ -2628,6 +3045,8 @@ def create_panel(controller: MayaPanelController | None = None):
             result=self.controller.fit_auto_scale(self._namespace(),self.fit_container.text().strip())
             if getattr(result,'finished',False):
                 return '已结束 AutoPlace 引导并还原手指、肩肘及模型'
+            if result.plan is None:
+                return '未找到 Fit 关节，请先导入 FitSkeleton'
             return f'已按 Skin 缩放 {len(result.plan.positions)} 个 Fit 关节' + ('，并放置 Eye' if result.eye_placed else '')
 
         def _fit_auto_place(self):
@@ -2769,11 +3188,59 @@ def create_panel(controller: MayaPanelController | None = None):
                 side_before_name=self.name_matcher_prefix.isChecked(),
                 side_underscore=self.name_matcher_underscore.isChecked())
 
+        def _source_fit_preparation(self):
+            from adv_py.core.source_fit_import import SourceFitPreparation
+            return SourceFitPreparation(
+                skin=self.preparation_object_fields['Skin'].text(),
+                all_objects=self.preparation_object_fields['All'].text(),
+                right_eye=self.preparation_object_fields['Right Eye'].text(),
+                left_eye=self.preparation_object_fields['Left Eye'].text(),
+                **{key:field.isChecked() for key,field in self.body_option_fields.items()})
+
+        def _load_source_name_matcher_template(self, *_):
+            name = self.name_matcher_templates.currentData()
+            if not name:return
+            template = self.controller.preparation_source_name_matcher_template(name)
+            self.name_matcher_rows.setPlainText('\n'.join(
+                row.fit_joint+' '+row.source_base for row in template.rows))
+            self.name_matcher_right.setText(template.rules.right)
+            self.name_matcher_left.setText(template.rules.left)
+            self.name_matcher_middle.setText(template.rules.middle)
+            self.name_matcher_prefix.setChecked(template.rules.side_before_name)
+            self.name_matcher_underscore.setChecked(template.rules.side_underscore)
+
+        def _check_source_name_matcher(self):
+            root = self.name_matcher_source_root.text().strip()
+            if not root:
+                from maya import cmds
+                selected = cmds.ls(selection=True,long=True,type='joint') or ()
+                if len(selected)!=1:raise ValueError('请选中来源骨架根关节或填写来源入口')
+                root = selected[0]
+            checked = self.controller.preparation_name_matcher_check(self._namespace(),root)
+            if checked is None:return '已取消 NameMatcher 检查。'
+            self.name_matcher_source_root.setText(checked)
+            return '已执行原版 NameMatcher 检查。'
+
+        def _export_source_name_matcher_template(self):
+            from adv_py.adapters.maya_source_name_matcher import source_name_matcher_directory
+            try:
+                directory = str(source_name_matcher_directory())
+            except ValueError:
+                directory = ''
+            filename,_ = QtWidgets.QFileDialog.getSaveFileName(
+                self,'导出 NameMatcher 配置',directory,'NameMatcher (*.txt)')
+            if not filename:return '已取消 NameMatcher 配置导出。'
+            destination = self.controller.preparation_source_name_matcher_export(
+                Path(filename),self._name_matcher_mapping_rows(),**self._name_matcher_rule_kwargs())
+            return f'已导出原版 NameMatcher 配置：{destination}'
+
         def _build_name_matcher_fit(self):
             selected_namespace = self._namespace()
             result, namespace = self.controller.preparation_name_matcher_fit(
                 selected_namespace, self._name_matcher_mapping_rows(),
-                **self._name_matcher_rule_kwargs())
+                **self._name_matcher_rule_kwargs(),
+                template_name=self.name_matcher_templates.currentData() or None,
+                preparation=self._source_fit_preparation())
             if namespace != selected_namespace:
                 self._next_role = namespace
             self.name_matcher_source_root.setText(result.source_root)
@@ -2787,7 +3254,9 @@ def create_panel(controller: MayaPanelController | None = None):
             result, namespace = (
                 self.controller.preparation_name_matcher_character(
                     selected_namespace, self._name_matcher_mapping_rows(),
-                    **self._name_matcher_rule_kwargs()))
+                    **self._name_matcher_rule_kwargs(),
+                    template_name=self.name_matcher_templates.currentData() or None,
+                    preparation=self._source_fit_preparation()))
             if namespace != selected_namespace:
                 self._next_role = namespace
             self.name_matcher_source_root.setText(result.fit.source_root)
@@ -2913,6 +3382,96 @@ def create_panel(controller: MayaPanelController | None = None):
                 self._path(self.fit_import_document), self.fit_container.text().strip())
             return f"已导入 {count} 个关节"
 
+        def _source_fit_template_import(self):
+            source = self.source_fit_templates.currentData()
+            if not source:
+                raise ValueError('缺少原版 Fit 模板资产目录')
+            namespace = self._namespace()
+            merge, policy = False, 'existing'
+            if self.controller.fit_source_import_has_joints(namespace):
+                dialog = QtWidgets.QMessageBox(self)
+                dialog.setWindowTitle('导入 Fit 模板')
+                dialog.setText('FitSkeleton 已经存在')
+                replace = dialog.addButton('替换',QtWidgets.QMessageBox.AcceptRole)
+                combine = dialog.addButton('合并',QtWidgets.QMessageBox.ActionRole)
+                cancel = dialog.addButton('取消',QtWidgets.QMessageBox.RejectRole)
+                dialog.setDefaultButton(replace)
+                dialog.setEscapeButton(cancel)
+                (getattr(dialog,'exec',None) or dialog.exec_)()
+                if dialog.clickedButton() not in (replace,combine):
+                    return '已取消原版 Fit 模板导入。'
+                merge = dialog.clickedButton() is combine
+                if merge:
+                    options = QtWidgets.QMessageBox(self)
+                    options.setWindowTitle('合并 Fit 模板')
+                    options.setText('同名关节如何处理？')
+                    buttons = [(options.addButton(label,QtWidgets.QMessageBox.ActionRole),value)
+                        for label,value in (('保留已有','existing'),('保留导入','imported'),
+                                            ('重命名导入并保留两者','both'))]
+                    options.setDefaultButton(buttons[0][0])
+                    (getattr(options,'exec',None) or options.exec_)()
+                    policy = next((value for button,value in buttons
+                                   if options.clickedButton() is button),'both')
+            preparation = self._source_fit_preparation()
+            joints = self.controller.fit_source_import(namespace,Path(source),merge=merge,
+                policy=policy,preparation=preparation)
+            self._load_body_build_options()
+            follow = self._source_import_matcher_scan()
+            return f'已导入原版 {self.source_fit_templates.currentText()}：{len(joints)} 个 Fit 关节。'+follow
+
+        def _source_import_matcher_scan(self):
+            namespace = self._namespace()
+            detection = self.controller.fit_source_matcher_detect(namespace)
+            if detection is None:return ''
+            from maya import cmds
+            def confirm(title,message):
+                return cmds.confirmDialog(title=title,message=message,button=('Yes','No'),
+                    defaultButton='Yes',dismissString='No')=='Yes'
+            if not confirm('Align ?','External skeleton detected.\n\nAlign joints with this skeleton ?'):
+                return ''
+            if not self.controller.fit_source_matcher_prepare(namespace,detection):
+                return ' 已取消外部骨架准备。'
+            index = self.name_matcher_templates.findData(detection.template or '')
+            if index<=0 and self.name_matcher_templates.count()>1:index=1
+            if index>=0:self.name_matcher_templates.setCurrentIndex(index)
+            rows = self._name_matcher_mapping_rows()
+            rules = self._name_matcher_rule_kwargs()
+            template = self.name_matcher_templates.currentData() or None
+            fit = self.controller.fit_source_matcher_align(namespace,detection,rows,
+                template_name=template,preparation=self._source_fit_preparation(),**rules)
+            self.name_matcher_source_root.setText(fit.source_root)
+            if template not in ('MetaHuman','Unreal5') and confirm('Straighten ?','Straighten Arms and Legs ?'):
+                self.controller.fit_straighten_pole_vector(namespace,'Leg')
+                self.controller.fit_straighten_pole_vector(namespace,'Arm')
+                cmds.refresh()
+            if not confirm('Build ?','Proceed to Build AdvancedSkeleton and attach ?'):
+                return f' 已按外部骨架放置 {fit.placed} 个 Fit 关节，保留供继续编辑。'
+            result = self.controller.fit_source_matcher_attach(namespace,fit.source_root,rows,**rules)
+            return f' 已构建 {result.joints} 个 Body 关节，连接 {result.connected} 个外部关节。'
+
+        def _source_fit_limb_import(self):
+            source = self.source_fit_limbs.currentData()
+            if not source:
+                raise ValueError('缺少原版 Fit 部件资产目录')
+            branches = self.controller.fit_source_limb_import(self._namespace(),Path(source))
+            return f'已导入原版 {self.source_fit_limbs.currentText()}：{len(branches)} 个分支。'
+
+        def _source_fit_scene_export(self):
+            from adv_py.adapters.maya_source_fit_import import source_fit_asset_directory
+            namespace = self._namespace()
+            limb = self.controller.fit_source_export_is_limb(namespace)
+            try:
+                directory = str(source_fit_asset_directory(limbs=limb))
+            except ValueError:
+                directory = ''
+            filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,'导出原版 Fit 部件' if limb else '导出原版 Fit',directory,
+                'Maya ASCII (*.ma)')
+            if not filename:
+                return '已取消原版 Fit 导出。'
+            destination = self.controller.fit_source_export(namespace,Path(filename))
+            return f'已导出原版 Fit 场景：{destination}'
+
         def _fit_joint_lines(self):
             joints = tuple(line.strip() for line in
                 self.fit_edit_joints.toPlainText().splitlines() if line.strip())
@@ -2947,12 +3506,133 @@ def create_panel(controller: MayaPanelController | None = None):
                 remove=self.fit_metadata_remove.isChecked())
             return f"已更新 {count} 项 Fit 元数据"
 
+        def _update_source_fit_label_help(self, label):
+            from adv_py.core.source_fit_labels import source_fit_label_help
+            self.fit_source_label_help.setText(source_fit_label_help(label))
+
+        def _update_source_fit_attribute_help(self, attribute):
+            from adv_py.core.source_fit_attributes import source_fit_attribute_help
+            self.fit_source_attribute_help.setText(source_fit_attribute_help(attribute))
+
+        def _add_source_fit_labels(self):
+            count = self.controller.fit_source_labels(self._namespace(),
+                self.fit_source_label.currentData())
+            return f'已向 {count} 个所选关节添加原版 IK-Label'
+
+        def _remove_source_fit_labels(self):
+            count = self.controller.fit_source_labels(self._namespace(),
+                self.fit_source_label.currentData(), remove=True)
+            return f'已关闭 {count} 个所选关节的标签显示，保留标签数据'
+
+        def _add_source_fit_attributes(self):
+            count = self.controller.fit_source_attributes(self._namespace(),
+                self.fit_source_attribute.currentData())
+            return f'已向 {count} 个所选关节添加原版 Fit 属性'
+
+        def _remove_source_fit_attributes(self):
+            count = self.controller.fit_source_attributes(self._namespace(),
+                self.fit_source_attribute.currentData(), remove=True)
+            return f'已从 {count} 个所选关节移除原版 Fit 属性'
+
         def _fit_geometry_update(self):
             count=self.controller.fit_geometry_update(self._namespace(),
                 visible=self.fit_geometry_visible.isChecked(),
                 geometry_type=self.fit_geometry_type.currentData(),
                 gap=self.fit_geometry_gap.value())
             return f'Fit 几何显示已更新：{count} 个骨段'
+
+        def _fit_manual_update(self):
+            self.controller.fit_manual_update(self._namespace(), self.fit_container.text().strip())
+            return '已按原版顺序更新 Fit 名称、标签、缩放和朝向。'
+
+        def _fit_placement_snap(self):
+            joint = self.controller.fit_placement_snap(self._namespace())
+            return f'已吸附 {joint} 到所选组件中心。' if joint else '没有选择对象。'
+
+        def _fit_placement_copy(self):
+            self.fit_placement_buffer = self.controller.fit_placement_copy(self._namespace())
+            self.fit_placement_paste_button.setEnabled(True)
+            self.fit_placement_paste_button.setToolTip(' '.join(str(value) for value in self.fit_placement_buffer))
+            return '已复制移动工具的位置。'
+
+        def _fit_placement_paste(self):
+            if self.fit_placement_buffer is None:
+                raise ValueError('请先复制位置')
+            count = self.controller.fit_placement_paste(self._namespace(),self.fit_placement_buffer)
+            return f'已向 {count} 个所选对象粘贴位置。'
+
+        def _fit_toggle_center_locks(self):
+            enabled = self.controller.fit_toggle_center_locks(self._namespace(), self.fit_container.text().strip())
+            return '已锁定中心关节。' if enabled else '已解除中心关节锁定。'
+
+        def _fit_toggle_mode(self):
+            enabled = self.controller.fit_toggle_mode(self._namespace())
+            return '已开启 FitMode。' if enabled else '已关闭 FitMode。'
+
+        def _fit_pole_vector_display(self):
+            enabled = self.fit_pole_vectors_visible.isChecked()
+            count = self.controller.fit_pole_vector_display(self._namespace(), enabled)
+            return f'PoleVector 显示已更新：{count} 个 IK 平面。' if enabled else '已关闭 PoleVector 显示。'
+
+        def _fit_straighten_pole_vector(self, limb):
+            changed = self.controller.fit_straighten_pole_vector(self._namespace(), limb)
+            return f'已拉直 {limb} PoleVector。' if changed else f'{limb} 的必要 Fit 关节不存在，已跳过。'
+
+        def _fit_toggle_joint_display(self, kind):
+            enabled = self.controller.fit_toggle_joint_display(self._namespace(), kind)
+            name = '关节轴' if kind == 'axis' else '关节朝向'
+            return f'已显示{name}。' if enabled else f'已隐藏{name}。'
+
+        def _fit_finger_up_display(self):
+            requested = self.fit_finger_up_visible.isChecked()
+            enabled = self.controller.fit_finger_up_display(self._namespace(), requested)
+            self.fit_finger_up_visible.setChecked(enabled)
+            # Native Finger-up clears the shared visualizers before building.
+            self.fit_pole_vectors_visible.setChecked(False)
+            self.fit_geometry_visible.setChecked(False)
+            return '已创建原版 Finger-up 显示。' if enabled else 'Finger-up 显示已关闭或取消。'
+
+        def _fit_sdk_create_attribute(self):
+            from adv_py.core.source_fit_sdk import SourceFitSDKOptions, source_fit_sdk_prompt
+            namespace = self._namespace()
+            plan = self.controller.fit_sdk_capture(namespace)
+            dialog = QtWidgets.QDialog(self)
+            dialog.setWindowTitle('创建 Fit SDK 属性')
+            form = QtWidgets.QFormLayout(dialog)
+            message = QtWidgets.QLabel(source_fit_sdk_prompt(plan.message))
+            message.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+            form.addRow(message)
+            attribute = QtWidgets.QLineEdit(plan.suggested_attribute)
+            value = QtWidgets.QDoubleSpinBox()
+            minimum = QtWidgets.QDoubleSpinBox()
+            maximum = QtWidgets.QDoubleSpinBox()
+            for box in (value, minimum, maximum):
+                box.setRange(-1e9, 1e9)
+                box.setDecimals(1)
+            value.setValue(10.)
+            maximum.setValue(10.)
+            has_min = QtWidgets.QCheckBox('Min')
+            has_max = QtWidgets.QCheckBox('Max')
+            has_min.setChecked(True)
+            has_max.setChecked(True)
+            has_min.toggled.connect(minimum.setEnabled)
+            has_max.toggled.connect(maximum.setEnabled)
+            form.addRow('属性名称', attribute)
+            form.addRow('驱动值', value)
+            form.addRow(has_min, minimum)
+            form.addRow(has_max, maximum)
+            buttons = QtWidgets.QDialogButtonBox(
+                QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            form.addRow(buttons)
+            if (getattr(dialog, 'exec', None) or dialog.exec_)() != QtWidgets.QDialog.Accepted:
+                return '已取消 Fit SDK 属性创建。'
+            count = self.controller.fit_sdk_create_attribute(namespace, plan,
+                SourceFitSDKOptions(attribute.text(), value.value(),
+                    minimum.value() if has_min.isChecked() else None,
+                    maximum.value() if has_max.isChecked() else None))
+            return f'已为 {count} 个 Fit 通道创建线性 SDK 键。'
 
         def _orient_fit(self):
             selections = []
@@ -3368,13 +4048,26 @@ def create_panel(controller: MayaPanelController | None = None):
             self.controller.unreal_joints_delete(self._namespace())
             return "已删除通用 Unreal IK 关节"
 
+        def _read_unreal_mannequin_note(self):
+            QtWidgets.QMessageBox.information(self, 'Warning',
+                '手动创建 Mannequin 骨架并转移蒙皮后，绑定将不再兼容 '
+                'AdvancedSkeleton 的重建及部分功能。\n\n'
+                '主控制器会缩放到 Mannequin 高度，模型会复制到场景根级 Geometry。\n\n'
+                '如果只是导出到 Unreal 并使用 Mannequin 蓝图，请使用 Export 栏中的 '
+                'Mannequin export。')
+            return '已显示原版 Mannequin 使用说明'
+
         def _create_unreal_mannequin(self):
+            from maya import cmds
+            ctrl_button = bool(cmds.getModifiers() & 4)
+            options = self._mannequin_options_dialog(manual=True)
+            if options is None:
+                return '已取消 Mannequin 创建'
             plan = self.controller.unreal_mannequin_create(
                 self._namespace(), self.mannequin_file.text().strip(),
-                self.mannequin_template.currentText(),
-                self.mannequin_scale.isChecked(),
-                self.mannequin_pose.isChecked())
-            return "已创建 " + plan.template + " 骨架"
+                options.template, options.scale_adv_to_template,
+                options.match_template_pose, ctrl_button=ctrl_button)
+            return '已创建 ' + plan.template + ' 骨架' if plan is not None else '已取消 Mannequin 创建'
 
         def _transfer_unreal_mannequin_skin(self):
             count = self.controller.unreal_mannequin_transfer_skin(
@@ -3384,6 +4077,88 @@ def create_panel(controller: MayaPanelController | None = None):
         def _delete_unreal_mannequin(self):
             self.controller.unreal_mannequin_delete(self._namespace())
             return "已删除 Mannequin 骨架并恢复原始 Geometry"
+
+        def _export_original_fbx(self):
+            result = self.controller.original_fbx_export(self._namespace())
+            return 'FBX 已导出：' + str(result) if result else '已取消 FBX 导出'
+
+        def _prepare_original_export(self, operation):
+            result = self.controller.original_export_preparation(self._namespace(), operation)
+            return '已取消导出准备' if result is None else '原版导出准备已完成'
+
+        def _export_roblox_dynamic_head(self):
+            plan = self.controller.roblox_dynamic_head_export(
+                self._namespace(), self.face_pre_face.text().strip())
+            return f'Roblox Dynamic Head 已写入 {len(plan.channels)} 个通道的逐帧动画'
+
+        def _export_original_body_rig(self):
+            filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, 'BodyRig export', '', 'JSON 文件 (*.json)')
+            if not filename:
+                return '已取消 BodyRig 导出'
+            result = self.controller.original_body_rig_export(self._namespace(), filename)
+            return 'BodyRig 已导出：' + str(result)
+
+        def _mannequin_options_dialog(self, *, manual=False):
+            from adv_py.core.original_fbx_export import MannequinExportOptions
+            dialog = QtWidgets.QDialog(self)
+            dialog.setWindowTitle('Mannequin')
+            form = QtWidgets.QFormLayout(dialog)
+            form.addRow(QtWidgets.QLabel('为 Unreal 创建骨架' if manual else
+                                        '1：为 Unreal 创建骨架\n2：导出 FBX\n3：恢复绑定'))
+            template = QtWidgets.QComboBox()
+            template.addItems(('UE4', 'UE5 (Simple)', 'UE5 (Full)'))
+            template.setCurrentText('UE5 (Simple)')
+            form.addRow('Unreal Mannequin', template)
+            scale = QtWidgets.QCheckBox('匹配 Mannequin 比例')
+            pose = QtWidgets.QCheckBox('匹配 Mannequin 姿态')
+            unused = QtWidgets.QCheckBox('删除无用关节')
+            keep = QtWidgets.QCheckBox('保留 Mannequin 关节')
+            for box in (scale, pose, unused):
+                box.setChecked(True)
+            for box in (scale, pose):
+                form.addRow(box)
+            use_namespace = QtWidgets.QCheckBox('命名空间')
+            namespace = QtWidgets.QLineEdit()
+            namespace.setEnabled(False)
+            use_namespace.toggled.connect(namespace.setEnabled)
+            if not manual:
+                for box in (unused, keep):
+                    form.addRow(box)
+                form.addRow(use_namespace, namespace)
+            buttons = QtWidgets.QDialogButtonBox(
+                QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            form.addRow(buttons)
+            run_dialog = getattr(dialog, 'exec', None) or dialog.exec_
+            if run_dialog() != QtWidgets.QDialog.Accepted:
+                return None
+            return MannequinExportOptions(template.currentText(),
+                scale.isChecked(), pose.isChecked(), unused.isChecked(),
+                keep.isChecked(), namespace.text().strip() if use_namespace.isChecked() else '')
+
+        def _export_unreal_mannequin(self):
+            from maya import cmds
+            # Native captures Ctrl before the options dialog opens.
+            ctrl_button = bool(cmds.getModifiers() & 4)
+            options = self._mannequin_options_dialog()
+            if options is None:
+                return '已取消 Mannequin 导出'
+            result = self.controller.unreal_mannequin_export(self._namespace(),
+                None, self.mannequin_file.text().strip(), options,
+                ctrl_button=ctrl_button)
+            return 'Mannequin FBX 已导出：' + str(result) if result else '已取消 Mannequin 导出'
+
+        def _export_unreal_face_solver(self):
+            destination, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, 'FaceRig export', '', 'JSON 文件 (*.json)')
+            if not destination:
+                return '已取消 FaceRig 导出'
+            if not destination.lower().endswith('.json'):
+                destination += '.json'
+            result = self.controller.unreal_face_solver_export(self._namespace(), destination)
+            return 'FaceRig JSON 已导出：' + str(result) if result else '已取消 FaceRig 导出'
 
         def _create_unreal_twist_hierarchy(self):
             count = self.controller.unreal_twist_hierarchy(self._namespace(), True)
@@ -3891,6 +4666,14 @@ def create_panel(controller: MayaPanelController | None = None):
             after = self.controller.animation_upgrade_source_spline(self._namespace())
             return "旧 Spline 已升级为原版独立 FKIK 控制器（0–10）" if before != after else "当前 Spline 无需升级"
 
+        def _upgrade_source_spline_alignment(self):
+            extensions = tuple(line.strip() for line in
+                self.rebuild_extensions.toPlainText().splitlines() if line.strip())
+            result = self.controller.animation_upgrade_source_spline_alignment(
+                self._namespace(), self.rebuild_namespace.text().strip(), extensions=extensions)
+            return (f'已通过保留数据重建，升级 {len(result.systems)} 组 Spline 对齐参考'
+                    if result.systems else '当前来源 Spline 对齐参考无需升级')
+
         def _enable_space_animation(self):
             count = self.controller.animation_enable_spaces(self._namespace())
             return f"控制空间动画已启用：{count} 个控制通道"
@@ -4031,7 +4814,13 @@ def create_panel(controller: MayaPanelController | None = None):
                     widget.deleteLater()
             layers = self.controller.face_skin_layers_available(
                 self._namespace())
-            self.face_skin_layers_group.setVisible(bool(layers))
+            visible = self.controller.face_skin_layers_visible(self._namespace())
+            self.face_skin_layers_group.setVisible(visible)
+            route = self._original_section_routes.get('03a · Face Skin Layers')
+            if route:
+                _, section, group = route
+                section.setVisible(visible)
+                group.parentWidget().setVisible(visible and section.isChecked())
             for layer in layers:
                 layout.addWidget(self._button(layer,
                     lambda layer=layer: self._face_skin_layers_show(layer)))
@@ -4073,26 +4862,112 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已重新附着 Face 控制器；调整 {len(controls)} 个朝向层"
 
         def _face_record_right_eye(self):
-            path = self.controller.face_eye_selected_mesh(self._namespace())
+            geometry=self.controller.face_pre_record_eye(self._namespace(),'Right')
+            if geometry is None:return '已取消记录右眼输入。'
+            path=' '.join(geometry)
             self.face_eye_right.setText(path)
             self.face_fit_right_eye.setText(path)
             return "已记录右眼网格：" + path
 
+        def _face_offset_create(self):
+            result = self.controller.face_offset_create(self._namespace())
+            if result is None:
+                return '已取消 Offset Face 创建'
+            return 'Offset Face 场景已建立，请保存当前文件：'+result['file']
+
+        def _face_offset_import(self):
+            from adv_py.core.original_offset_face import OriginalOffsetFaceImportOptions
+            namespace, joints, name_swap, directory = self.controller.face_offset_import_choices(self._namespace())
+            file, _ = QtWidgets.QFileDialog.getOpenFileName(self, '导入 FaceSetup 文件', directory,
+                                                          'Maya 场景 (*.ma *.mb)')
+            if not file:
+                return '已取消 Offset Face 导入'
+            dialog = QtWidgets.QDialog(self)
+            dialog.setWindowTitle('Offset Face 导入选项')
+            layout = QtWidgets.QFormLayout(dialog)
+            namespace_field = QtWidgets.QLineEdit(namespace)
+            head = QtWidgets.QComboBox()
+            head.addItems(joints)
+            swap = QtWidgets.QCheckBox('name-swap')
+            swap.setChecked(name_swap)
+            search = QtWidgets.QLineEdit('_A')
+            replacement = QtWidgets.QLineEdit('_B')
+            search.setEnabled(name_swap)
+            replacement.setEnabled(name_swap)
+            swap.toggled.connect(search.setEnabled)
+            swap.toggled.connect(replacement.setEnabled)
+            layout.addRow('名称（例如 FaceRight）', namespace_field)
+            layout.addRow('Head 关节', head)
+            layout.addRow(swap)
+            layout.addRow('查找', search)
+            layout.addRow('替换', replacement)
+            buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addRow(buttons)
+            if dialog.exec() != QtWidgets.QDialog.Accepted:
+                return '已取消 Offset Face 导入'
+            options = OriginalOffsetFaceImportOptions(namespace_field.text(), head.currentText(),
+                swap.isChecked(), search.text(), replacement.text())
+            result = self.controller.face_offset_import(self._namespace(), file, options)
+            return 'Offset Face 已导入：'+result['namespace']+' → '+result['head_joint']
+
+        def _face_offset_update(self):
+            result = self.controller.face_offset_update(self._namespace())
+            return '已取消 Offset Face 更新' if result is None else f'已更新 {len(result)} 个 Offset Face'
+
+        def _face_auto_fit(self):
+            result = self.controller.face_auto_fit(self._namespace(),
+                options=self._face_original_option_values())
+            if result is None:
+                return '未匹配原版已知 Face 模板，或已取消 AutoFit'
+            if not result.finished:
+                return result.profile+' AutoFit 已中止，Face 输入保留在当前进度'
+            if result.build_result is not None:
+                return result.profile+' AutoFit 和原版 Face 构建步骤已执行'
+            return result.profile+f' AutoFit 已创建 {len(result.rows)} 项 Fit；未继续构建 Face'
+
+        def _face_original_model_check(self):
+            result = self.controller.face_original_model_check(self._namespace())
+            return f'Face 模型检查结束：{result.vertex_count} 个顶点'
+
         def _face_record_mask(self):
-            mesh, count, scale = self.controller.face_pre_record_mask(
-                self._namespace())
+            result = self.controller.face_pre_record_mask(self._namespace(),
+                options=self._face_original_option_values())
+            if result is None:
+                return '已取消 Face Mask 创建。'
+            mesh, count, scale = result
             self.face_pre_mask.setText(f"{mesh} · {count} 面")
             return f"已记录 Mask：{count} 个多边形面；面部高度 {scale:g} cm"
 
+        def _face_record_head_joint(self):
+            head=self.controller.face_pre_record_head_joint(self._namespace())
+            self.face_eye_head.setText(head.rsplit('|',1)[-1])
+            self.face_fit_head.setText(head.rsplit('|',1)[-1])
+            return '已记录 Head 关节：'+head
+
+        def _face_skin_input_changed(self):
+            if self.face_pre_skin.isModified():
+                value = self.face_pre_skin.text()
+                def apply():
+                    self.controller.face_pre_set_skin_cluster(self._namespace(), value)
+                    self.face_pre_skin.setModified(False)
+                    return '已记录 Face SkinCluster：' + value
+                self._run('记录 Face SkinCluster', apply)
+
         def _face_record_face(self):
             meshes = self.controller.face_pre_record_objects(
-                self._namespace(), "Face", self.face_eye_head.text().strip())
-            self.face_pre_face.setText(meshes[0])
-            return "已记录 Face 网格：" + meshes[0]
+                self._namespace(), "Face", None)
+            if meshes is None:
+                return '已取消记录 Face 输入。'
+            self.face_pre_face.setText(' '.join(meshes))
+            return "已记录 Face 网格：" + ' '.join(meshes)
 
         def _face_record_all_head(self):
             meshes = self.controller.face_pre_record_objects(
-                self._namespace(), "AllHead", self.face_eye_head.text().strip())
+                self._namespace(), "AllHead", None)
+            if meshes is None:
+                return '已取消记录 All Head 输入。'
             self.face_pre_all_head.setText(" ".join(meshes))
             return f"已记录 All Head：{len(meshes)} 件网格"
 
@@ -4109,17 +4984,11 @@ def create_panel(controller: MayaPanelController | None = None):
             return f"已重选 All Head：{count} 件网格"
 
         def _face_record_left_eye(self):
-            path = self.controller.face_eye_selected_mesh(self._namespace())
+            geometry=self.controller.face_pre_record_eye(self._namespace(),'Left')
+            if geometry is None:return '已取消记录左眼输入。'
+            path=' '.join(geometry)
             self.face_eye_left.setText(path)
             return "已记录左眼网格：" + path
-
-        def _face_build_eyes(self):
-            result = self.controller.face_eye_build(self._namespace(),
-                self.face_eye_head.text().strip(),
-                self.face_eye_right.text().strip(),
-                self.face_eye_left.text().strip())
-            return ("双眼控制已构建：左右眼各一套 Skin；"
-                    "整体与独立眼球控制可用")
 
         def _face_fit_eye_ball(self):
             side = self.controller.face_fit_current_side(self._namespace())
@@ -4128,6 +4997,8 @@ def create_panel(controller: MayaPanelController | None = None):
             path = self.controller.face_fit_eye_ball(self._namespace(),
                 eye.text().strip(),
                 self.face_fit_head.text().strip())
+            if path is None:
+                return '已取消 EyeBall Fit 创建。'
             eye_label = "左眼" if side == "Left" else "右眼"
             return f"已建立{eye_label} EyeBall Fit：" + path
 
@@ -4143,6 +5014,106 @@ def create_panel(controller: MayaPanelController | None = None):
             self.face_fit_side_status.setText(
                 "Fit 编辑侧：" + ("左侧" if current == "Left" else "右侧"))
             return "已切换 Face Fit 编辑侧：" + current
+
+        def _face_fit_display(self, operation, section='', part=''):
+            result = self.controller.face_fit_display(self._namespace(), operation, section, part)
+            if operation == 'reselect':
+                return f'已重选 {section}{part}：{len(result)} 个组件。'
+            if operation == 'hide':
+                return f'{section}{part} 已显示。' if result else f'{section}{part} 已隐藏。'
+            if operation == 'assist':
+                return f'{section} Assist 已添加。' if result else f'{section} Assist 已移除。'
+            if operation == 'side_off':
+                return '已关闭 Face Fit 非对称编辑。'
+            return f'已显示 {len(result)} 个 Face Fit 分组。'
+
+        def _face_fit_state_check(self,section,part=''):
+            check=QtWidgets.QCheckBox()
+            check.setEnabled(False)
+            check.setToolTip('取消勾选可按原版删除 '+section+part+' Fit')
+            check.toggled.connect(lambda checked,s=section,p=part:
+                None if checked else self._run('删除 '+s+p+' Fit',
+                    lambda:self._face_fit_delete(s,p)))
+            self.face_fit_state_controls[(section,part)]=check
+            return check
+
+        def _face_original_option_values(self):
+            from adv_py.core.original_face_options import ORIGINAL_FACE_OPTIONS
+            return {option.attribute: (self.face_original_option_controls[option.attribute].currentText()
+                if option.items else self.face_original_option_controls[option.attribute].isChecked())
+                for option in ORIGINAL_FACE_OPTIONS}
+
+        def _save_face_original_options(self):
+            return self.controller.face_set_original_options(
+                self._namespace(), self._face_original_option_values())
+
+        def _face_original_option_changed(self, name):
+            values = {name: self._face_original_option_values()[name]}
+            if name in ('ARKit', 'SnapChat') and values[name]:
+                other = 'SnapChat' if name == 'ARKit' else 'ARKit'
+                widget = self.face_original_option_controls[other]
+                blocked = widget.blockSignals(True)
+                try:
+                    widget.setChecked(False)
+                finally:
+                    widget.blockSignals(blocked)
+                values[other] = False
+            if name == 'GameEngine':
+                self.face_pre_game_engine_options.setVisible(values[name])
+            result = self.controller.face_set_original_options(self._namespace(), values,
+                switch_side=name == 'NonSym')
+            return 'Face 选项已保存' if result is not None else 'Face 选项已设置，记录 Mask 后保存到场景'
+
+        def _refresh_face_original_options(self):
+            controls = getattr(self, 'face_original_option_controls', {})
+            if not controls:
+                return
+            values = self.controller.face_read_original_options(self._namespace())
+            if values is None:
+                return
+            from adv_py.core.original_face_options import ORIGINAL_FACE_OPTIONS
+            for option in ORIGINAL_FACE_OPTIONS:
+                widget = controls[option.attribute]
+                blocked = widget.blockSignals(True)
+                try:
+                    if option.items:
+                        widget.setCurrentText(values[option.attribute])
+                    else:
+                        widget.setChecked(values[option.attribute])
+                finally:
+                    widget.blockSignals(blocked)
+            self.face_pre_game_engine_options.setVisible(values['GameEngine'])
+
+        def _refresh_face_fit_checks(self):
+            self._refresh_face_original_options()
+            if hasattr(self,'face_eye_head'):
+                fields=self.controller.face_pre_input_fields(self._namespace())
+                for name,widget in (('Mask',self.face_pre_mask),('Face',self.face_pre_face),
+                                    ('AllHead',self.face_pre_all_head),('HeadJoint',self.face_eye_head),
+                                    ('SkinCluster',self.face_pre_skin),('RightEye',self.face_eye_right),
+                                    ('LeftEye',self.face_eye_left),('RightEye',self.face_fit_right_eye),
+                                    ('LeftEye',self.face_fit_left_eye)):
+                    if widget is self.face_pre_skin and widget.hasFocus() and widget.isModified():
+                        continue
+                    widget.setText(fields[name])
+                self.face_fit_head.setText(fields['HeadJoint'])
+            controls=getattr(self,'face_fit_state_controls',{})
+            if not controls:
+                return
+            states=self.controller.face_fit_states(self._namespace(),tuple(controls))
+            for key,check in controls.items():
+                blocked=check.blockSignals(True)
+                try:
+                    check.setChecked(states[key])
+                    check.setEnabled(states[key])
+                finally:
+                    check.blockSignals(blocked)
+
+        def _face_fit_delete(self,section,part):
+            removed=self.controller.face_fit_display(self._namespace(),'delete',section,part)
+            if removed is None:
+                return '已取消删除 '+section+part+' Fit。'
+            return '已删除 '+section+part+' Fit。'
 
         def _face_fit_eye_lid(self, layer):
             upper, lower = self.controller.face_fit_eye_lid(
@@ -4353,6 +5324,7 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _original_pose_functions(self, action):
             options={"name":self.original_pose_name.currentText().strip(),"overwrite":self.original_pose_overwrite.isChecked()}
+            if action in ('neutral','t_pose','clean_animation'):options['ui_name']='bodySetup'
             if action=="add_build_pose":
                 from maya import cmds,mel
                 selected=cmds.ls(selection=True,long=True,type="transform") or []
@@ -4484,6 +5456,7 @@ def create_panel(controller: MayaPanelController | None = None):
             return "旧 Face Fit 已升级，请重新完成 Pre 和 Fit" if result["upgraded"] else "Face Fit 无需升级"
 
         def _face_original_build(self):
+            self._save_face_original_options()
             from adv_py.core.face_lip_falloff import LipFalloffOptions
             options = LipFalloffOptions(outer=self.face_lip_falloff_outer.value(),
                 inner=self.face_lip_falloff_inner.value(), iterations=self.face_lip_falloff_iterations.value())
@@ -4506,6 +5479,8 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_teeth_record(self,part):
             values=self.controller.face_teeth_record(self._namespace(),part)
+            if values is None:
+                return '已取消记录 '+part+' 输入。'
             return "已记录 "+part+" 输入："+str(len(values))
 
         def _face_mouth_open_design(self):
@@ -4527,6 +5502,8 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_fit_marker(self,section):
             result=self.controller.face_fit_marker(self._namespace(),section)
+            if result is None:
+                return '按原版条件取消 '+section+' Fit 创建。'
             return "已创建原版 "+section+" Fit："+("、".join(result) if isinstance(result,tuple) else result)
 
         def _face_build_ctrl_box(self):
@@ -4535,7 +5512,8 @@ def create_panel(controller: MayaPanelController | None = None):
 
         def _face_tongue(self,action):
             result=self.controller.face_tongue(self._namespace(),action)
-            if action=="record": return f"已记录 {len(result)} 项 Tongue 输入"
+            if action=="record":
+                return f"已记录 {len(result)} 项 Tongue 输入" if result is not None else '已取消记录 Tongue 输入。'
             if action=="fit": return f"已创建 {len(result)} 个 Tongue Fit 定位器"
             if action=="finish": return "已完成 Tongue，恢复模型显示" if result else "当前没有 Tongue Fit"
             if result is None: return "按原版条件跳过 Tongue：缺少 Lip Main、Tongue Fit 或 Tongue 输入"
@@ -4657,27 +5635,7 @@ def create_panel(controller: MayaPanelController | None = None):
                     side = "Right"
                 self.face_fit_side_status.setText(
                     "Fit 编辑侧：" + ("左侧" if side == "Left" else "右侧"))
-            if hasattr(self, "face_include"):
-                try:
-                    include = self.controller.face_build_get_include(
-                        self._namespace())
-                except ValueError:
-                    include = "Complete"
-                self.face_include.blockSignals(True)
-                self.face_include.setCurrentText(include)
-                self.face_include.blockSignals(False)
-            if hasattr(self, "face_simpler_eye_lid"):
-                namespace = self._namespace()
-                try:
-                    built_mode = self.controller.face_built_eye_lid_mode(
-                        namespace)
-                except ValueError:
-                    built_mode = None
-                if built_mode is not None:
-                    self.face_simpler_eye_lid.setChecked(built_mode)
-                elif getattr(self, "_face_mode_namespace", None) != namespace:
-                    self.face_simpler_eye_lid.setChecked(False)
-                self._face_mode_namespace = namespace
+            self._refresh_face_original_options()
             if hasattr(self, "preparation_object_fields"):
                 for role, field in self.preparation_object_fields.items():
                     try:
@@ -4725,6 +5683,13 @@ def create_panel(controller: MayaPanelController | None = None):
                 self.status.setPlainText("操作失败：" + str(error))
                 QtWidgets.QMessageBox.warning(self, "操作未完成", str(error))
             finally:
+                # Restore checkbox state after Cancel or transaction rollback.
+                # This is a scene read, not a new fitting operation.
+                try:
+                    self._refresh_face_fit_checks()
+                except (ValueError,RuntimeError):
+                    for check in getattr(self,'face_fit_state_controls',{}).values():
+                        check.setEnabled(False)
                 QtWidgets.QApplication.restoreOverrideCursor()
                 self._busy = False
 
@@ -4739,8 +5704,7 @@ def show_panel(controller: MayaPanelController | None = None):
     """Show the AdvancedSkeleton-style navigation from Maya's command line."""
     from PySide2 import QtCore, QtWidgets
 
-    from .maya_adv_layout import create_adv_panel
-    panel = create_adv_panel(controller)
+    panel = create_panel(controller)
     try:
         from adv_py.adapters.maya_panel_window import attach_to_maya_dock
         attach_to_maya_dock(panel)
@@ -4766,9 +5730,9 @@ def show_name_matcher_detail(source_root: str = ""):
                   if isValid(item)), None)
     if panel is None:
         panel = show_panel()
-    panel.open_detail(0, "02 · NameMatcher", "Tools", None)
+    panel.open_original_section("02 · NameMatcher", "Tools", None)
     if source_root:
-        panel.detail.name_matcher_source_root.setText(source_root)
+        panel.name_matcher_source_root.setText(source_root)
     panel.show()
     panel.raise_()
     return panel

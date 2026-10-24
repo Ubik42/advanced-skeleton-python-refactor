@@ -83,10 +83,33 @@ class MayaDrivingFitRestoreMixin:
                     sources = raw.ls(row.source_uuid, long=True) or []
                     if len(sources) != 1 or not raw.nodeType(sources[0]).startswith('animCurve'):
                         raise ValueError('Fit DrivingSystem 原曲线 UUID 已失效：' + row.source)
+                    external_source = (hasattr(c, 'identity')
+                                       and not c.identity.owns(sources[0]))
+                    source_sets = tuple(raw.listSets(object=sources[0]) or []) if external_source else ()
+                    source_fit_arrays = set()
+                    if external_source and raw.objExists(sources[0] + '.drivingSystemOut'):
+                        source_fit_arrays = {
+                            plug.split('[', 1)[0] for plug in raw.listConnections(
+                                sources[0] + '.drivingSystemOut', source=False,
+                                destination=True, plugs=True) or []
+                            if plug.split('.', 1)[1].startswith('drivingSystem[')}
                     # The stage reads an old character's curve but writes only
                     # its own duplicate. UUID bypasses namespace name mapping.
                     with c._creation_namespace() if hasattr(c, '_creation_namespace') else nullcontext():
                         curve = raw.duplicate(sources[0], name=self.scene_address(row.name))[0]
+                    # Maya duplicates native DG set membership too. A staged
+                    # curve must not join the old character's AllSet or user
+                    # sets; their handoff is performed after ownership audit.
+                    # Remove only memberships inherited from this exact source.
+                    for selection_set in source_sets:
+                        if raw.sets(curve, isMember=selection_set):
+                            raw.sets(curve, remove=selection_set)
+                    if source_fit_arrays:
+                        for destination in raw.listConnections(
+                                curve + '.drivingSystemOut', source=False,
+                                destination=True, plugs=True) or []:
+                            if destination.split('[', 1)[0] in source_fit_arrays:
+                                raw.disconnectAttr(curve + '.drivingSystemOut', destination)
                     if hasattr(c, 'identity'):
                         curve = c.identity.to_local(curve)
                 else:

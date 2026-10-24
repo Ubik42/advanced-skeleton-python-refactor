@@ -25,10 +25,18 @@ def promote(host,staged):
         shape.rsplit('|',1)[0]
         for skin in staged.original.skins for shape,_,_ in skin.meshes)}
     retained_paths.update(geometry_roots)
+    from .maya_body_face_rebuild import retained_roots
+    retained_paths.update(retained_roots(host,staged.original.registration))
+    retained_ids = {row.path: row.uuid for row in staged.original.extensions}
+    def retained_address(path):
+        if path in retained_ids:
+            return _by_uuid(c,retained_ids[path])
+        matches=c.ls(host.scene_address(path),long=True) or ()
+        if len(matches)!=1:
+            raise CharacterRegistryError('保留的 DAG 节点缺失或歧义：'+path)
+        return matches[0]
     retained_physical={
-        (c.ls(host.scene_address(path),long=True) or
-         [host.scene_address(path)])[0]
-        for path in retained_paths}
+        retained_address(path) for path in retained_paths}
     retained_mesh_paths={
         node for skin in staged.original.skins for shape,_,_ in skin.meshes
         for node in (shape,shape.rsplit('|',1)[0])}
@@ -57,12 +65,34 @@ def promote(host,staged):
         (_by_uuid(c,old)+'.local',_by_uuid(c,new)+'.create')
         for role,old,new,_ in rows if role in curve_roles}
     shared={host.scene_address(name).lstrip(':') for name in SHARED_NODES}
+    # Attach/Pin consume external geometry. An exact audited incoming edge
+    # can be disconnected by deleting its owned consumer without deleting or
+    # changing the external producer. Outgoing user dependencies remain denied.
+    role_by_physical={_by_uuid(c,old):role for role,old,_,_ in rows}
+    def canonical_plug(plug):
+        node,attribute=plug.split('.',1)
+        return '|'.join(part.removeprefix(':') for part in node.split('|'))+'.'+attribute
+    audited_edges={(canonical_plug(a),canonical_plug(b))
+                   for a,b in staged.ownership.connections}
+    def audited_external_read(a,b):
+        endpoints=[];physical_nodes=[]
+        for plug in (a,b):
+            logical_node,attribute=plug.split('.',1)
+            address=host.scene_address(logical_node)
+            paths=c.ls(address,long=True) or []
+            if len(paths)!=1:return False
+            physical_nodes.append(paths[0])
+            role=role_by_physical.get(paths[0],logical_node)
+            endpoints.append(canonical_plug(role+'.'+attribute))
+        return (physical_nodes[0] not in old_paths
+                and physical_nodes[1] in old_paths
+                and tuple(endpoints) in audited_edges)
     # After handoff, no preserved data may still depend on a deletion candidate.
     for node in old_paths:
         logical=host._cmds.identity.to_local(node)
         for a,b in connections(host,logical):
             physical_edge=(host.scene_address(a),host.scene_address(b))
-            if physical_edge in shape_handoffs:
+            if physical_edge in shape_handoffs or audited_external_read(a,b):
                 continue
             for plug in (a,b):
                 physical=host.scene_address(plug.split('.',1)[0])
@@ -111,10 +141,9 @@ def promote(host,staged):
         selection.append((replacement_by_old.get(uuid,uuid),separator+component))
     retained=[]
     for logical in sorted(retained_paths,key=lambda path:(path.count('|'),path)):
-        node=host.scene_address(logical)
-        matches=c.ls(node,long=True) or []
-        if len(matches)!=1:
-            raise CharacterRegistryError('保留的 DAG 节点缺失：'+logical)
+        matches=[retained_address(logical)]
+        if 'dagNode' not in (c.nodeType(matches[0],inherited=True) or ()):
+            continue
         parent=(c.listRelatives(matches[0],parent=True,fullPath=True) or [None])[0]
         if parent not in old_paths:
             continue
@@ -215,6 +244,10 @@ def promote(host,staged):
     if remaining:raise CharacterRegistryError('暂存命名空间仍有未归属节点：'+repr(remaining[:5]))
     c.namespace(removeNamespace=staged.namespace)
     promoted=replace(staged,namespace=host.namespace,registration=registration)
+    from .maya_source_mocap_rebuild import install as install_mocap
+    install_mocap(host,promoted)
+    from .maya_original_quick_ik_rebuild import install as install_quick
+    install_quick(host,promoted)
     if retained_allset_ids:
         final_allset=host.scene_address('AllSet')
         actual={c.ls(member,uuid=True)[0]

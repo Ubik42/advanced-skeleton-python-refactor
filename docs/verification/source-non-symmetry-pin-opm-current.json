@@ -1,0 +1,150 @@
+{
+  "status": "passed_for_tested_scope",
+  "pid": 80276,
+  "scope": "OPM authored asymmetric Fit AimAt, self/target Up Object and 0/5/10 weights; Pin with attachment meshes; GeoAttach excluded because the same source OPM input fails before its FKMM exists; full preserved rebuild; no FBX.",
+  "authored_fields": [
+    [
+      "PinkyFinger1",
+      "proximityPin",
+      "Attachment_R"
+    ],
+    [
+      "PinkyFinger1_NonSymmetry",
+      "proximityPin",
+      "Attachment_R"
+    ],
+    [
+      "MiddleFinger1",
+      "aimAt",
+      "IndexFinger1"
+    ],
+    [
+      "MiddleFinger1_NonSymmetry",
+      "aimAt",
+      "RingFinger1"
+    ]
+  ],
+  "native_reference_pid": 53336,
+  "native_pose_response": {
+    "pin_right_move": 2.000000000000001,
+    "pin_left_move": 1.0000000000000018,
+    "pin_right_scale": 1.1256150570437002,
+    "pin_left_half": 0.5,
+    "pin_right_zero": 1.7763568394002505e-15,
+    "aim_left_half": 0.6992210051215323
+  },
+  "lifecycle": {
+    "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-pin-opm-current\\input.ma",
+    "reused_saved_build": false,
+    "body_joints": 72,
+    "opm": true,
+    "bendy": true,
+    "bendy_count": 3,
+    "bendy_joints": [
+      "Shoulder",
+      "Elbow"
+    ],
+    "part_joints": 18,
+    "channels": 2301,
+    "skins": [
+      "AdvPy_BodySkin"
+    ],
+    "additional_animated_channels": [],
+    "restricted_skin": false,
+    "portable_pose_roundtrip": true,
+    "portable_animation_roundtrip": true,
+    "native_global_deformation": true,
+    "registry_reopened": true,
+    "fbx_bytes": null,
+    "export_tested": false,
+    "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-pin-opm-current\\python\\original-biped-current.mb",
+    "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-non-symmetry-pin-opm-current\\python\\original-biped-rebuilt.mb",
+    "rebuilt_scene_reopened": true,
+    "native_skin_curve_identity_preserved": true,
+    "single_undo_redo_preserved": true,
+    "native_rebuild_retained_skin_animation": true,
+    "skin_weights_membership_preserved": true,
+    "all_vertex_frames": [
+      1,
+      3,
+      5
+    ],
+    "all_vertex_rebuild_maximum_error": 1.4210854715202004e-14,
+    "status": "passed"
+  },
+  "poses": [
+    {
+      "scene": "original-biped-current.mb",
+      "case": "pin_right_move",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "pin_left_move",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "pin_right_scale",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "pin_left_half",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "pin_right_zero",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-current.mb",
+      "case": "aim_left_half",
+      "maximum_error": 2.633148301465292e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "pin_right_move",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "pin_left_move",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "pin_right_scale",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "pin_left_half",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "pin_right_zero",
+      "maximum_error": 2.633148301045436e-06
+    },
+    {
+      "scene": "original-biped-rebuilt.mb",
+      "case": "aim_left_half",
+      "maximum_error": 2.633148301045436e-06
+    }
+  ],
+  "neutral_errors": {
+    "original-biped-current.mb": 2.633148301465292e-06,
+    "original-biped-rebuilt.mb": 2.633148301045436e-06
+  },
+  "threshold": 0.0001,
+  "process_exited": true,
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "runtime_report": "validation/results/source-non-symmetry-pin-opm-current/report.json",
+  "remaining": [
+    "OPM GeoAttach original input fails at MEL 80372; this Pin/AimAt evidence does not accept that input",
+    "FBX and default model appearance excluded",
+    "Dedicated attachment weight animation curves and other Pin generator preferences not covered"
+  ]
+}

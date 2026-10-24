@@ -189,9 +189,10 @@ def loft_snapshot(axis):
             'contours': {name: c.objExists('asFitProjection'+name+'Contour') for name in reps}}
 
 
-def main(output):
-    import maya.standalone
-    maya.standalone.initialize(name='python')
+def main(output, initialize=True):
+    if initialize:
+        import maya.standalone
+        maya.standalone.initialize(name='python')
     from maya import cmds as c, mel
     from adv_py.adapters.maya_fit import MayaFitJointHost
     from adv_py.adapters.maya_fit_auto_place_state import FitAutoPlaceScanState
@@ -210,6 +211,10 @@ def main(output):
             (hand_fixture if case=='ncloth' else lambda:loft_fixture(case))()
             scene=output/(case+'-input.mb')
             c.file(rename=str(scene));c.file(save=True, type='mayaBinary', force=True)
+            # Both implementations start from the same reopened scene. A live
+            # freshly constructed nCloth/DeltaMush input has different warmed
+            # evaluation state from its saved/reopened counterpart in Maya GUI.
+            c.file(str(scene), open=True, force=True, executeScriptNodes=False)
             mel.eval('advPyReferenceStraightenFingers;' if case=='ncloth' else 'asFitAutoPlaceLoft '+case+';')
             native=mesh_snapshot('CombinedSkinUpper_M') if case=='ncloth' else loft_snapshot(case)
             c.file(str(scene), open=True, force=True, executeScriptNodes=False)
@@ -229,6 +234,9 @@ def main(output):
             for key in ('pivots','offsets'):
                 if key in native:
                     errors[key]=max(abs(a-b) for name,values in native[key].items() for a,b in zip(values,python[key][name]))
+            row['errors']=errors
+            if 'minimum_x' in native:
+                row['minimum_x_error']=abs(native['minimum_x']-python['minimum_x'])
             assert max(errors.values())<=1e-4,errors
             for key in ('count','blend_weight','cloth_removed','finger_pivots_removed','minimum_x','contours'):
                 if key in native:assert native[key]==python[key],(key,native[key],python[key])
@@ -261,6 +269,7 @@ def main(output):
         thumb_fixture()
         scene=output/'thumb-input.mb'
         c.file(rename=str(scene));c.file(save=True,type='mayaBinary',force=True)
+        c.file(str(scene),open=True,force=True,executeScriptNodes=False)
         mel.eval('advPyReferenceThumb;');native=thumb_snapshot()
         c.file(str(scene),open=True,force=True,executeScriptNodes=False)
         host=MayaFitJointHost()

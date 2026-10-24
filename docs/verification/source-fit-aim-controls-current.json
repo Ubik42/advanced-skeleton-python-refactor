@@ -1,0 +1,177 @@
+{
+  "updated": "2026-10-11",
+  "status": "passed",
+  "pid": 18656,
+  "process_exited": true,
+  "source_lines": [
+    "80634-80724",
+    "80687",
+    "10539-10556"
+  ],
+  "scope": "Traditional complete 81 Body and 27 Part character; native side channels and retained prior TRS Aim animation",
+  "changes": [
+    "Source first-side pass precedes mirrored L pass in the production batch constructor",
+    "New side controls register translation only; rotation, scale and visibility locks match native asLockAttr",
+    "Capture saved center and side channel attributes and order before source/base rebuild; keep authored legacy TR/TRS channel layouts"
+  ],
+  "fresh": {
+    "lifecycle": {
+      "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-spline-part-lifecycle-current\\traditional\\input.ma",
+      "reused_saved_build": false,
+      "body_joints": 81,
+      "opm": false,
+      "bendy": false,
+      "bendy_count": 0,
+      "bendy_joints": [],
+      "part_joints": 27,
+      "channels": 2540,
+      "skins": [
+        "AdvPy_BodySkin"
+      ],
+      "additional_animated_channels": [],
+      "restricted_skin": false,
+      "portable_pose_roundtrip": true,
+      "portable_animation_roundtrip": true,
+      "native_global_deformation": true,
+      "registry_reopened": true,
+      "fbx_bytes": null,
+      "export_tested": false,
+      "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-native-controls-lifecycle-current\\traditional\\original-biped-current.mb",
+      "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-native-controls-lifecycle-current\\traditional\\original-biped-rebuilt.mb",
+      "rebuilt_scene_reopened": true,
+      "native_skin_curve_identity_preserved": true,
+      "single_undo_redo_preserved": true,
+      "native_rebuild_retained_skin_animation": true,
+      "skin_weights_membership_preserved": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "all_vertex_rebuild_maximum_error": 0.0,
+      "status": "passed"
+    },
+    "poses": [
+      {
+        "scene": "original-biped-current.mb",
+        "status": "passed",
+        "passed": 34,
+        "total": 34,
+        "tolerance": 0.0001,
+        "maximum_error": 3.1161475173032658e-06,
+        "failures": []
+      },
+      {
+        "scene": "original-biped-rebuilt.mb",
+        "status": "passed",
+        "passed": 34,
+        "total": 34,
+        "tolerance": 0.0001,
+        "maximum_error": 3.1161475200940885e-06,
+        "failures": []
+      }
+    ],
+    "saved_control_states_match_native": [
+      "original-biped-current.mb",
+      "original-biped-rebuilt.mb"
+    ],
+    "side_order": [
+      "R",
+      "L"
+    ],
+    "side_channels": [
+      "translateX",
+      "translateY",
+      "translateZ"
+    ]
+  },
+  "legacy": {
+    "lifecycle": {
+      "source": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-follow-lifecycle-final-current\\traditional\\original-biped-current.mb",
+      "reused_saved_build": true,
+      "body_joints": 81,
+      "opm": false,
+      "bendy": false,
+      "bendy_count": 0,
+      "bendy_joints": [],
+      "part_joints": 27,
+      "channels": 2552,
+      "skins": [
+        "AdvPy_BodySkin"
+      ],
+      "additional_animated_channels": [
+        [
+          "AdvPy_AimEye_R",
+          "rotateZ",
+          17.0
+        ],
+        [
+          "AdvPy_AimEye_L",
+          "rotateY",
+          -11.0
+        ]
+      ],
+      "restricted_skin": false,
+      "portable_pose_roundtrip": true,
+      "portable_animation_roundtrip": true,
+      "native_global_deformation": true,
+      "registry_reopened": true,
+      "fbx_bytes": null,
+      "export_tested": false,
+      "scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-controls-current\\legacy\\original-biped-current.mb",
+      "rebuilt_scene": "D:\\3D\\_tools\\_DCC\\advanced-skeleton-python-refactor\\validation\\results\\source-fit-aim-controls-current\\legacy\\original-biped-rebuilt.mb",
+      "rebuilt_scene_reopened": true,
+      "native_skin_curve_identity_preserved": true,
+      "single_undo_redo_preserved": true,
+      "native_rebuild_retained_skin_animation": true,
+      "skin_weights_membership_preserved": true,
+      "all_vertex_frames": [
+        1,
+        3,
+        5
+      ],
+      "all_vertex_rebuild_maximum_error": 0.0,
+      "status": "passed"
+    },
+    "poses": [
+      {
+        "scene": "original-biped-current.mb",
+        "status": "passed",
+        "passed": 34,
+        "total": 34,
+        "tolerance": 0.0001,
+        "maximum_error": 3.1161475173032658e-06,
+        "failures": []
+      },
+      {
+        "scene": "original-biped-rebuilt.mb",
+        "status": "passed",
+        "passed": 34,
+        "total": 34,
+        "tolerance": 0.0001,
+        "maximum_error": 3.1161475200940885e-06,
+        "failures": []
+      }
+    ],
+    "retained_layout": "(BodyFitAimLayout(stem='Eye', center_attributes=('translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ', 'scaleX', 'scaleY', 'scaleZ', 'follow'), side_channels=(('L', ('translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ', 'scaleX', 'scaleY', 'scaleZ')), ('R', ('translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ', 'scaleX', 'scaleY', 'scaleZ')))),)",
+    "authored_body_frames": [
+      1,
+      3,
+      5
+    ],
+    "maximum_authored_body_matrix_error": 3.3128818577310426e-09,
+    "authored_channels": {
+      "AdvPy_AimEye_R.rotateZ": 17.0,
+      "AdvPy_AimEye_L.rotateY": -11.0,
+      "AdvPy_AimEye_R.scaleY": 1.15
+    }
+  },
+  "full_report": "validation/results/source-fit-aim-controls-current/report.json",
+  "export_tested": false,
+  "full_reconstruction_complete": false,
+  "limits": [
+    "OPM full-character four arm failures remain from PID 14360; this batch tested traditional mode",
+    "Legacy scope uses previous AimFollow-corrected scene; earlier Toe bind failure PID 24640 remains unresolved",
+    "Whole Body/Face integration, other Aim/NonSymmetry combinations and remaining original UI/function scope remain pending"
+  ]
+}

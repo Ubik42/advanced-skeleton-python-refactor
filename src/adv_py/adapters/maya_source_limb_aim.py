@@ -378,6 +378,7 @@ def records(host, registration):
 
 
 def audit(host, registration):
+    from .maya_character_body_retirement import is_connected_or_retired
     c = host._cmds
     identities=set()
     for record in records(host,registration):
@@ -389,7 +390,7 @@ def audit(host, registration):
             if not c.objExists(node) or c.nodeType(node)!=kind:
                 raise CharacterRegistryError('来源瞄准原生节点缺失：'+node)
         for source,target in record['edges']:
-            if not c.isConnected(source,target):
+            if not is_connected_or_retired(host,source,target):
                 raise CharacterRegistryError('来源瞄准驱动连接变化：'+target)
         for plug,wanted in record['values']:
             actual = c.getAttr(plug)

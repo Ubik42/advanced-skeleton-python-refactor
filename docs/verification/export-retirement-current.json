@@ -1,0 +1,27 @@
+{
+  "status": "passed",
+  "pid": 66912,
+  "cleanup_evidence_pid": 13916,
+  "retired_joints": 19,
+  "weighted_end_influences": [
+    "HeadEnd_M",
+    "ToesEnd_L",
+    "Tail2_L"
+  ],
+  "cleanup_maximum_error": 3.552713678800501e-15,
+  "cleanup_skin_matrix_error": 3.552713678800501e-15,
+  "cleanup_undo_redo": true,
+  "reopened_cleanup": true,
+  "rebuild_maximum_error": 3.315081348320703e-09,
+  "skin_animation_cache_preserved": true,
+  "rebuild_undo_redo": true,
+  "reopened_rebuild": true,
+  "scope": "Weighted native DeleteUnusedJoints parity followed by complete retired Body rebuild",
+  "cleanup_vertex_error": 0.0,
+  "process_exited": true,
+  "runtime_report": "validation/results/export-retirement-current/report.json",
+  "source_scene": "validation/results/source-body-current-parity/original-biped-current.mb",
+  "source_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "source_version_note": "Native sparse-array absence is retained without reading absent slots; source AllSet ownership is established before stage end deletion. Cleanup evidence PID 13916 is reused; final retained-data rebuild ran in PID 66912.",
+  "limitation": "19 ends in the saved non-OPM multi-Spline/Bendy character with three weighted terminal influences; does not certify every export preparation or all ADV inputs."
+}

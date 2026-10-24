@@ -54,12 +54,13 @@ class MayaBodyFitAimAtMixin:
                             worldSpace=True, matrix=True)),
             _matrix(c.xform(spec.target_control, query=True,
                             worldSpace=True, matrix=True)),
-            upstream, _matrix(c.getAttr(plug)))
+            upstream, _matrix(c.getAttr(plug)),
+            bool(c.getAttr(spec.receiver + ".inheritsTransform")))
         if any(len(matrix) != 16 or not all(isfinite(value) for value in matrix)
                for matrix in (state.offset_world, state.receiver_world,
                               state.target_world, state.receiver_opm_value)):
             raise ValueError("Fit AimAt 绑定矩阵无效")
-        if sum((a - b) ** 2 for a, b in zip(
+        if not spec.source_native and sum((a - b) ** 2 for a, b in zip(
                 state.offset_world[12:15],
                 state.target_world[12:15])) < 1e-10:
             raise ValueError("Fit AimAt 来源与目标绑定位置重合")
@@ -69,6 +70,9 @@ class MayaBodyFitAimAtMixin:
         self, spec: BodyFitAimAtSpec, state: BodyFitAimAtState,
     ) -> None:
         self._require_transaction()
+        if spec.source_native:
+            from .maya_source_fit_aim_at import create
+            return create(self, spec, state)
         from maya.api import OpenMaya as om
 
         c = self._cmds
@@ -140,6 +144,9 @@ class MayaBodyFitAimAtMixin:
     def capture_body_fit_aim_at(
         self, spec: BodyFitAimAtSpec, state: BodyFitAimAtState,
     ) -> bool:
+        if spec.source_native:
+            from .maya_source_fit_aim_at import capture
+            return capture(self, spec, state)
         from maya.api import OpenMaya as om
 
         c = self._cmds
@@ -215,8 +222,7 @@ class MayaBodyFitAimAtMixin:
             if len(actual) != 3 or any(abs(a - b) > 1e-8
                                        for a, b in zip(actual, expected)):
                 return False
-        return (all(c.connectionInfo(destination,
-                                     sourceFromDestination=True) == source
+        return (all(c.isConnected(source, destination, ignoreUnitConversion=True)
                     for source, destination in links)
                 and all(abs(a - b) <= 1e-4 for a, b in zip(
                     _matrix(c.xform(spec.receiver, query=True,

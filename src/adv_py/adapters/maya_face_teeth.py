@@ -3,28 +3,51 @@ from adv_py.core.fit_settings import FitSkeletonValidationError
 from .maya_original_skin_history import bind_original_skin
 
 class MayaFaceTeethMixin:
+    def original_face_part_text(self, attribute):
+        c = self._cmds
+        fit = self._fit(required=True)
+        source_attribute = 'Eyelash' if attribute == 'EyeLash' else attribute
+        # Original asFaceEyelashTextField persists FaceFitSkeleton.Eyelash.
+        # Read the old Python spelling only when the native field is absent;
+        # a deliberately cleared native input must not revive stale data.
+        if c.objExists(fit + '.' + source_attribute):
+            return c.getAttr(fit + '.' + source_attribute) or ''
+        if source_attribute == 'Eyelash' and c.objExists(fit + '.EyeLash'):
+            return c.getAttr(fit + '.EyeLash') or ''
+        return ''
+
     def read_original_face_parts(self,attribute):
         c=self._cmds; raw=getattr(c,"raw",c); fit=self._fit(required=True)
-        text=c.getAttr(fit+"."+attribute) if c.objExists(fit+"."+attribute) else ""
+        text=self.original_face_part_text(attribute)
         if not text: return ()
         result=tuple(raw.ls(tuple(self.scene_address(token) for token in text.split()),
             long=True,flatten=True) or [])
         if not result: raise FitSkeletonValidationError(attribute+" 记录的对象或组件已经不存在")
         return result
 
-    def record_original_face_parts(self,attribute):
-        if attribute not in ("UpperTeeth","LowerTeeth","Tongue","Eyebrow","EyeLash","Extras"): raise ValueError("Face 部件类型无效")
+    def record_original_face_parts(self,attribute, *, allow_empty=False, new_skin_head_joint=None):
+        if attribute not in ("UpperTeeth","LowerTeeth","Tongue","Eyebrow","EyeLash","Eyelash","Extras"): raise ValueError("Face 部件类型无效")
         self._require_transaction()
         c=self._cmds; raw=getattr(c,"raw",c)
-        selected=tuple(raw.ls(selection=True,long=True,flatten=True) or [])
-        if not selected: raise FitSkeletonValidationError("请先选择 "+attribute+" 网格或组件")
-        for object_name in dict.fromkeys(node.split(".",1)[0] for node in selected):
-            shapes=raw.listRelatives(object_name,shapes=True,noIntermediate=True,type="mesh") or []
-            if not shapes: raise FitSkeletonValidationError(attribute+" 输入必须来自多边形网格")
-        fit=self._fit(required=True)
+        selected=self.selected_original_face_geometry(allow_components=True)
+        if not selected and not allow_empty: raise FitSkeletonValidationError("请先选择 "+attribute+" 网格或组件")
+        fit=self.ensure_original_face_fit_container()
+        update_extras=attribute=='Extras' and c.objExists('FaceMotionSystem')
+        before=self.capture_face_build_node_ids() if update_extras else None
+        head = new_skin_head_joint if new_skin_head_joint is not None else 'Head_M'
+        if selected and self.ensure_original_face_input_skins(selected,head or 'Head_M') is None:
+            return None
+        attribute = 'Eyelash' if attribute == 'EyeLash' else attribute
         if not c.objExists(fit+"."+attribute): c.addAttr(fit,longName=attribute,dataType="string")
         c.setAttr(fit+"."+attribute," ".join(selected),type="string")
         self._transaction_changed=True
+        if update_extras:
+            # MEL asChooseInput immediately invokes asFaceExtras after a
+            # completed build. Reuse the same transfer as the Finish stage.
+            from .maya_face_finish import MayaFaceFinishMixin
+            skins=MayaFaceFinishMixin.transfer_original_face_extras(self)
+            self.register_face_module_nodes(before,'FaceExpressionSet',
+                                            reuse=True,production_skins=skins)
         return selected
 
     def _face_part_vertices(self,parts):

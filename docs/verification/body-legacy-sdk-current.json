@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "scope": "Saved pre-owner-marker biped and authored SDK rebuild; not full original MEL parity",
+  "source_version_note": "Pre-owner-marker case passed in PID 38312 before correcting soft-limit query flags; authored-sdk passed in PID 67920 after correction. Tests ran serially and both processes exited. Both runs precede the later IK root matrix/order corrections; those are covered separately in source-body-current-parity.json.",
+  "cases": {
+    "pre-owner-marker": {
+      "poses": 29,
+      "sdk_layers": 30,
+      "curves": 36,
+      "maximum_error": 9.355128893773212e-10,
+      "native_curve_data_identical": true,
+      "retained_skin_animation": true,
+      "undo_redo": true,
+      "reopened": true
+    },
+    "authored-sdk": {
+      "poses": 29,
+      "sdk_layers": 30,
+      "curves": 36,
+      "maximum_error": 9.355128893773212e-10,
+      "native_curve_data_identical": true,
+      "retained_skin_animation": true,
+      "undo_redo": true,
+      "reopened": true,
+      "authored_driver_limits_preserved": true
+    }
+  },
+  "evidence_pids": [
+    38312,
+    67920
+  ],
+  "original_mel_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02"
+}

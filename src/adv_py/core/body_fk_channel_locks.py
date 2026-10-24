@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .body_limb_controls import BodyLimbFkControlSpec
 from .fit_hierarchy import FitHierarchySnapshot
+from .source_fit_identity import source_fit_control_reference
 
 
 FK_LOCK_ATTRIBUTES = frozenset(
@@ -24,6 +25,7 @@ def plan_body_fk_channel_locks(
     hierarchy: FitHierarchySnapshot,
     controls: tuple[BodyLimbFkControlSpec, ...],
     source_locks: tuple[tuple[str, tuple[str, ...]], ...],
+    *, instances=(),
 ) -> tuple[BodyFkChannelLockSpec, ...]:
     if not isinstance(hierarchy, FitHierarchySnapshot):
         raise ValueError("FK 锁定缺少 Fit 层级")
@@ -42,8 +44,10 @@ def plan_body_fk_channel_locks(
     result: list[BodyFkChannelLockSpec] = []
     seen_controls: set[str] = set()
     for control in controls:
-        matches = next((by_name[name] for name in control.fit_joint_names
-                        if name in by_name), ())
+        reference = source_fit_control_reference(control, instances)
+        matches = ((reference,) if reference is not None else
+                   next((by_name[name] for name in control.fit_joint_names
+                         if name in by_name), ()))
         if len(matches) > 1:
             raise ValueError("FK 锁定来源 Fit 短名不唯一："
                              + "／".join(control.fit_joint_names))

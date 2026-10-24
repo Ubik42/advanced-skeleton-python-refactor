@@ -37,9 +37,9 @@ class BuildFitProximityPin:
     def __init__(self, host: FitProximityPinHost) -> None:
         self._host = host
 
-    def apply(self, metadata, controls, body_joints):
+    def apply(self, metadata, controls, body_joints, *, instances=(), source_native=False):
         specs = plan_body_fit_proximity_pin(
-            tuple(metadata), tuple(controls), tuple(body_joints))
+            tuple(metadata), tuple(controls), tuple(body_joints), instances=instances, source_native=source_native)
         states = tuple(self._host.preflight_body_fit_proximity_pin(spec)
                        for spec in specs)
         if not specs:

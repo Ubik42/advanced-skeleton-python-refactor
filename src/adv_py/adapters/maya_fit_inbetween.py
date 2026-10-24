@@ -921,11 +921,11 @@ class MayaFitInbetweenMixin:
                 c.select(selection, replace=True)
             else:
                 c.select(clear=True)
-        if part.extra_curve:
-            self._add_body_extra_curve(extra, control)
         if part.sub_name is not None:
             self._create_body_sub_control(
                 control, part.sub_name, control + "|" + part.sub_name)
+        if part.extra_curve:
+            self._add_body_extra_curve(extra, control)
         fkx = c.createNode("joint", name=part.fkx_name,
                            parent=(control + "|" + part.driver_name
                                    if part.sub_name is not None else control),

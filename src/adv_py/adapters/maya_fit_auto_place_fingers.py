@@ -1,7 +1,6 @@
 """Source four-finger detection, topology growth and nCloth straightening."""
 from contextlib import nullcontext
-from math import sin,radians
-from adv_py.core.fit_auto_place import FIT_AUTO_PLACE_FINGERS
+from adv_py.core.fit_auto_place import FIT_AUTO_PLACE_FINGERS,source_fit_finger_force
 from .maya_fit_auto_place_mesh import faces,invert,cast
 from .maya_fit_auto_place_guides import stock_wrap
 
@@ -89,8 +88,8 @@ def _find_finger_tip(c,finger):
         break
     selected=_selected_vertices(c)
     point=c.xform(query=True,worldSpace=True,translation=True)[:3]
-    tip=c.createNode('transform',name='asFitPivot'+finger+'Finger4',
-                     parent='asFitPivotsFingers',skipSelect=True)
+    tip='asFitPivot'+finger+'Finger4'
+    c.createNode('transform',name=tip,parent='asFitPivotsFingers',skipSelect=True)
     c.xform(tip,worldSpace=True,translation=point)
     c.select(selected,replace=True)
 
@@ -113,8 +112,8 @@ def _grow_finger_curve(s,finger):
             s.average_finger_diameter=diameter
         knuckle=(ring_index>3 and diameter>s.average_finger_diameter*2.)
         if knuckle:
-            node=c.createNode('transform',name='asFitPivot'+finger+'Finger1',
-                              parent='asFitPivotsFingers',skipSelect=True)
+            node='asFitPivot'+finger+'Finger1'
+            c.createNode('transform',name=node,parent='asFitPivotsFingers',skipSelect=True)
             c.xform(node,worldSpace=True,translation=_center(s.previous_finger_box))
         else:
             points.append(_center(box))
@@ -122,18 +121,18 @@ def _grow_finger_curve(s,finger):
         c.select(grown,replace=True)
         if knuckle:
             break
-    curve=c.curve(degree=1,name='FingerCurve'+finger,point=points)
+    # MEL ignores the creation result, then addresses the requested name.
+    # A retry can therefore hit an ambiguous name; using the returned path
+    # silently bypasses that source behavior and changes the scan outcome.
+    curve='FingerCurve'+finger
+    c.curve(degree=1,name=curve,point=points)
     c.parent(curve,'asFitPivotsFingers',absolute=True)
 
 
 def _sample_finger(s,finger,projection_index):
     c=s.c
-    # A retry keeps one curve and pivot pair. This avoids the original's
-    # duplicate-short-name failure without changing detection thresholds.
-    for name in ('FingerCurve'+finger,'asFitPivot'+finger+'Finger1',
-                 'asFitPivot'+finger+'Finger4'):
-        if c.objExists(name):
-            c.delete(c.ls(name,long=True))
+    # Source retries do not delete earlier sampled curves/pivots. Let native
+    # creation and name resolution retain the reference's actual behavior.
     curve='polyProjectionCurve1_'+str(projection_index+1)
     minimum=c.getAttr(curve+'.boundingBoxMin')[0]
     maximum=c.getAttr(curve+'.boundingBoxMax')[0]
@@ -220,8 +219,8 @@ def _straighten_fingers(s):
             c.setAttr(cloth+'.'+attr,value)
         c.delete(c.aimConstraint('asFitPivot'+finger+'Finger1',converge,offset=(0,0,0),weight=1.,
             aimVector=(-1,0,0),upVector=(0,1,0),worldUpType='scene'))
-        angle=sin(radians(c.getAttr(converge+'.rotateY')))
-        c.setAttr(cloth+'.localForce',-98.*(1.-angle),0,98.*angle,type='double3')
+        force=source_fit_finger_force(c.getAttr(converge+'.rotateY'))
+        c.setAttr(cloth+'.localForce',*force,type='float3')
         created=set(raw.ls(type='nucleus') or [])-nucleus_before
         if created:s.nucleus=next(iter(created))
         elif not s.nucleus:
@@ -240,17 +239,20 @@ def _straighten_fingers(s):
     c.setAttr('asFitDeltaMush.envelope',0.)
     c.duplicate('CombinedSkinUpper_M',name='fingerStraight')
     c.delete(wrap,'asFitNCloth');c.setAttr('asFitDeltaMush.envelope',1.)
-    target=c.skinCluster(('asFitShoulderStraightBase','asFitShoulderStraight','asFitElbowStraight'),'fingerStraight',
-        toSelectedBones=True,maximumInfluences=3,dropoffRate=4,removeUnusedInfluence=False)[0]
-    c.copySkinWeights(sourceSkin='CombinedSkinUpperSC_M',destinationSkin=target,noMirror=True,
-                      surfaceAssociation='closestPoint',influenceAssociation='closestJoint')
+    # ADV calls Maya's stock binding operation on this exact selection, then
+    # transfers by the selected geometries. Preserve its shape discovery and
+    # selection behavior instead of specifying guessed source/destination SCs.
+    c.select('asFitShoulderStraightBase','asFitShoulderStraight','asFitElbowStraight','fingerStraight',replace=True)
+    stock_selected(host,'newSkinCluster "-toSelectedBones -mi 3 -dr 4 -rui false";')
+    c.select('CombinedSkinUpper_M','fingerStraight',replace=True)
+    c.copySkinWeights(noMirror=True,surfaceAssociation='closestPoint',influenceAssociation='closestJoint')
     shoulder=c.getAttr('asFitShoulderStraight.rotate')[0];elbow=c.getAttr('asFitElbowStraight.rotate')[0]
-    c.setAttr('asFitShoulderStraight.rotate',0,0,0,type='double3');c.setAttr('asFitElbowStraight.rotate',0,0,0,type='double3')
+    c.setAttr('asFitShoulderStraight.rotate',0,0,0,type='float3');c.setAttr('asFitElbowStraight.rotate',0,0,0,type='float3')
     c.blendShape('fingerStraight','CombinedSkinUpper_M',name='straightenBS',frontOfChain=True,origin='world',weight=(0,1.))
-    c.setAttr('asFitShoulderStraight.rotate',*shoulder,type='double3');c.setAttr('asFitElbowStraight.rotate',*elbow,type='double3')
+    c.setAttr('asFitShoulderStraight.rotate',*shoulder,type='float3');c.setAttr('asFitElbowStraight.rotate',*elbow,type='float3')
     c.delete('fingerStraight');s.has_ncloth=True
     children=c.listRelatives('asFitPivotsFingers',children=True) or []
     if children:c.delete(children)
     s.four_fingers=False;s.minimum_x=c.getAttr('CombinedSkinUpper_M.boundingBoxMinX')
     c.setAttr('AutoPlacing.bbMinX',s.minimum_x)
-    c.setAttr('asFitScanCurve.translate',s.minimum_x,s.maximum_y,0,type='double3');s.index=0
+    c.setAttr('asFitScanCurve.translate',s.minimum_x,s.maximum_y,0,type='float3');s.index=0

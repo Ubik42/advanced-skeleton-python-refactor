@@ -41,8 +41,15 @@ class BuildNameMatchedFit:
 
     def apply(self, source_root: str, rows: tuple[NameMatcherRow, ...],
               rules: NameMatcherRules,
-              container: str = 'FitSkeleton') -> NameMatcherFitResult:
+              container: str = 'FitSkeleton', *, template_name=None, preparation=None) -> NameMatcherFitResult:
         host = self._host
+        native = getattr(host,'create_source_name_matched_fit',None)
+        if callable(native):
+            if container != 'FitSkeleton':
+                raise FitSkeletonValidationError('原版 NameMatcher 使用 FitSkeleton 容器')
+            with host.transaction('NameMatcher 检查并导入原版 Fit 模板'):
+                return native(source_root,rows,rules,template_name=template_name,
+                              preparation=preparation)
         if host.find_name_collisions(container):
             raise FitSkeletonValidationError(
                 'NameMatcher 目标 FitSkeleton 已存在，请先明确处理旧 Fit')

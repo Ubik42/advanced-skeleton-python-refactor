@@ -17,7 +17,7 @@
 
 ## 离线证据
 
-对照基线是提交 `755b794411d3c7377b64b0769f6301bcc97ba74e`。用同一 Python 运行时、UTF-8 环境和各自完整 tests 目录运行，基线取 Git archive 临时目录，未建立额外 Git 工作树。完整结果保存在 [离线对照 JSON](offline-source-port-baseline-2026-10-02.json)。以最终 JSON 的数量和新增失败列表为准。
+对照基线是提交 `755b794411d3c7377b64b0769f6301bcc97ba74e`。用同一 Python 运行时、UTF-8 环境和各自完整 tests 目录运行，基线取 Git archive 临时目录，未建立额外 Git 工作树。完整结果保存在 [离线对照 JSON](offline-source-game-engine-2026-10-02.json)。以最终 JSON 的数量和新增失败列表为准。
 
 新增检查覆盖源曲线文本、原轴和控制器角色、RP 模式、SDK 路径／缩放记录、嵌套 Fit 名称、派生属性与外部用户接线、实际 handle／FK／Euler 调用及临时节点异常清理、命名空间参数和部分 AllSet 登记。它们使用纯 Python 或命令记录接口，没有运行 Maya。
 

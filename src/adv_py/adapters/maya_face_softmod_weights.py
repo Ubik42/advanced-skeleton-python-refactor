@@ -18,11 +18,15 @@ class MayaFaceSoftModWeightsMixin:
 
     def set_original_face_joint_weights(self, joint, geometry, skin, numbers, weights):
         """asSkinWeightSet: direct sparse plug write followed by two normalizes."""
+        self._require_transaction()
         c = self._cmds
         raw = getattr(c, "raw", c)
         index = self._original_softmod_influence_index(skin, joint)
-        for number, weight in zip(numbers, weights):
-            raw.setAttr(self.scene_address(skin) + f".weightList[{number}].weights[{index}]", weight)
+        self._transaction_changed = True
+        # The embedded source Python iterates vertex numbers, indexing weights.
+        # A short weight array must fail rather than silently leaving vertices.
+        for item, number in enumerate(numbers):
+            raw.setAttr(self.scene_address(skin) + f".weightList[{number}].weights[{index}]", weights[item])
         for lock in (True, False):
             raw.setAttr(self.scene_address(joint) + ".lockInfluenceWeights", lock)
             try:
@@ -36,10 +40,13 @@ class MayaFaceSoftModWeightsMixin:
         c = self._cmds
         raw = getattr(c, "raw", c)
         selection = tuple(raw.ls(selection=True) or [])
+        self._transaction_changed = True
         if c.objExists("tempSoftModCopy") or self._original_restore_leaf(joint).startswith("LipPullJoint_"):
             return self._weight_original_face_by_softmod_delta(joint, geometry, skin, radius, falloff_mode)
         from maya.api import OpenMaya as om
-        position = c.xform(joint, query=True, worldSpace=True, translation=True)
+        cluster = c.nodeType(skin) == "cluster"
+        position = c.xform(joint, query=True, worldSpace=True,
+                           **({"pivots": True} if cluster else {"translation": True}))[:3]
         if c.objExists("closestSampler2"):
             c.delete("closestSampler2")
         sampler = c.createNode("closestPointOnMesh", name="closestSampler2")
@@ -82,11 +89,15 @@ class MayaFaceSoftModWeightsMixin:
 
     def _weight_original_face_by_softmod_delta(self, joint, geometry, skin, radius, max_weight):
         """Original tempSoftModCopy/LipPull native deformation sample branch."""
+        self._require_transaction()
         c = self._cmds
         raw = getattr(c, "raw", c)
         selection = tuple(raw.ls(selection=True) or [])
-        position = c.xform(joint, query=True, worldSpace=True, translation=True)
+        cluster = c.nodeType(skin) == "cluster"
+        position = c.xform(joint, query=True, worldSpace=True,
+                           **({"pivots": True} if cluster else {"translation": True}))[:3]
         namespace = c._creation_namespace if hasattr(c, "_creation_namespace") else nullcontext
+        self._transaction_changed = True
         c.duplicate(geometry, name="tempMesh")
         with namespace(), self._original_face_softmod_sets():
             soft, handle = raw.softMod(self.scene_address("tempMesh"))
@@ -112,31 +123,64 @@ class MayaFaceSoftModWeightsMixin:
         c.select("tempMesh", replace=True)
         raw.polySelectConstraint(mode=3, type=1, dist=1, distbound=(0, radius), distpoint=position)
         vertices = tuple(raw.ls(selection=True, flatten=True) or [])
+        if cluster:
+            from .maya_fit_auto_place_mesh import invert
+            c.select(geometry, replace=True)
+            raw.polySelectConstraint(mode=3, type=1, dist=1, distbound=(0, radius), distpoint=position)
+            invert(c)
+            raw.percent(self.scene_address(skin), raw.ls(selection=True) or [], value=0)
         raw.polySelectConstraint(mode=0)
-        initial = [raw.xform(vertex, query=True, worldSpace=True, translation=True)[1] for vertex in vertices]
-        c.setAttr(handle + ".ty", 1)
-        for vertex, y in zip(vertices, initial):
-            weight = min(1, max(0, (raw.xform(vertex, query=True, worldSpace=True, translation=True)[1] - y) * max_weight))
-            target = self.scene_address(geometry) + "." + vertex.split(".", 1)[1]
-            try:
-                raw.skinPercent(self.scene_address(skin), target, transformValue=((self.scene_address(joint), weight),))
-            except RuntimeError:
-                pass
-        c.setAttr(handle + ".ty", 0)
-        fit_joint = self._original_restore_leaf(joint).split("_", 1)[0].replace("Joint", "", 1)
-        if c.objExists(fit_joint + ".falloffRadius"):
-            c.setAttr(fit_joint + ".falloffRadius", radius)
-        if c.objExists(fit_joint):
-            if not c.objExists(fit_joint + ".falloffCurve"):
-                c.addAttr(fit_joint, longName="falloffCurve", dataType="string")
-            commands = []
-            for index in range(int(c.getAttr(soft + ".falloffCurve", size=True))):
-                for attr in ("Position", "Interp", "FloatValue"):
-                    plug = f"TempSoftMod.falloffCurve[{index}].falloffCurve_" + attr
-                    commands.append("setAttr " + plug + " " + str(c.getAttr(plug)) + ";")
-            c.setAttr(fit_joint + ".falloffCurve", "".join(commands), type="string")
-        c.delete("tempMesh")
-        if c.objExists("tempSoftModCopy"):
-            c.delete("tempSoftModCopy")
+        progress = None
+        if not raw.about(batch=True):
+            from maya import mel
+            progress = mel.eval("$advPyProgress = $gMainProgressBar")
+            raw.progressBar(progress, edit=True, status="SkinWeight by SoftMod (" + joint + ")",
+                            beginProgress=True, isInterruptable=True, minValue=0,
+                            maxValue=len(vertices) + 1)
+        try:
+            # MEL's sparse float array supplies zero for entries skipped by
+            # these sets. The later loop still writes those vertices.
+            initial = [0.] * len(vertices)
+            for item, vertex in enumerate(vertices):
+                if any(c.objExists(area) and c.sets(vertex, isMember=area)
+                       for area in ("eyeLidArea", "lipArea")):
+                    continue
+                initial[item] = raw.xform(vertex, query=True, worldSpace=True, translation=True)[1]
+            c.setAttr(handle + ".ty", 1)
+            for item, vertex in enumerate(vertices):
+                if progress:
+                    if raw.progressBar(progress, query=True, isCancelled=True):
+                        raise RuntimeError("Interrupted")
+                    raw.progressBar(progress, edit=True, step=1)
+                y = raw.xform(vertex, query=True, worldSpace=True, translation=True)[1]
+                weight = min(1, max(0, (y - initial[item]) * max_weight))
+                target = vertex.replace(self.scene_address("tempMesh"), self.scene_address(geometry), 1)
+                try:
+                    if cluster:
+                        raw.percent(self.scene_address(skin), target, value=weight)
+                    else:
+                        raw.skinPercent(self.scene_address(skin), target,
+                                        transformValue=((self.scene_address(joint), weight),))
+                except RuntimeError:
+                    pass
+            c.setAttr(handle + ".ty", 0)
+            fit_joint = self._original_restore_leaf(joint).split("_", 1)[0].replace("Joint", "", 1)
+            if c.objExists(fit_joint + ".falloffRadius"):
+                c.setAttr(fit_joint + ".falloffRadius", radius)
+            if c.objExists(fit_joint):
+                if not c.objExists(fit_joint + ".falloffCurve"):
+                    c.addAttr(fit_joint, longName="falloffCurve", dataType="string")
+                commands = []
+                for index in range(int(c.getAttr(soft + ".falloffCurve", size=True))):
+                    for attr in ("Position", "Interp", "FloatValue"):
+                        plug = f"TempSoftMod.falloffCurve[{index}].falloffCurve_" + attr
+                        commands.append("setAttr " + plug + " " + str(c.getAttr(plug)) + ";")
+                c.setAttr(fit_joint + ".falloffCurve", "".join(commands), type="string")
+            c.delete("tempMesh")
+            if c.objExists("tempSoftModCopy"):
+                c.delete("tempSoftModCopy")
+        finally:
+            if progress:
+                raw.progressBar(progress, edit=True, endProgress=True)
         raw.select(selection, replace=True)
         return len(vertices)

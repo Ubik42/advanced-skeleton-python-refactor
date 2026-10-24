@@ -1,0 +1,621 @@
+{
+  "status": "passed",
+  "scope": "Full saved connected-proxy live guide editing and actual panel finish slots; source Ctrl orbit and queued camera restoration channels. Not full ADV/default-model/UI visual acceptance.",
+  "source_sha256": "828e6df4b7cabef3114f766af0e938b529e4b5599e22b014aa254a9695a3db02",
+  "guide_edit": {
+    "pid": 17664,
+    "process_exited": true,
+    "saved_inputs_reused": true,
+    "scan_repeated": false,
+    "cases": [
+      {
+        "name": "native",
+        "namespace": "",
+        "stages": [
+          {
+            "group": "translate",
+            "edits": [
+              "asFitHandleAnkle.translateY",
+              "asFitHandleArmPit.translateY",
+              "asFitHandleArmTip.translateX",
+              "asFitHandleChest.translateY",
+              "asFitHandleCrotch.translateY",
+              "asFitHandleElbow.translateX",
+              "asFitHandleFirstNonFingerSplit.translateX",
+              "asFitHandleHead.translateY",
+              "asFitHandleHip.translateY",
+              "asFitHandleKnee.translateY",
+              "asFitHandleNeck.translateY",
+              "asFitHandleRoot.translateY",
+              "asFitHandleShoulder.translateX",
+              "asFitHandleSpine1.translateY",
+              "asFitHandleToes.translateY",
+              "asFitHandleWrist.translateX"
+            ],
+            "maximum_fit_matrix_change": 0.025000929832458496
+          },
+          {
+            "group": "rotate",
+            "edits": [
+              "asFitHandleAnkle.rotateX",
+              "asFitHandleArmPit.rotateX",
+              "asFitHandleArmTip.rotateY",
+              "asFitHandleChest.rotateX",
+              "asFitHandleCrotch.rotateX",
+              "asFitHandleElbow.rotateY",
+              "asFitHandleFirstNonFingerSplit.rotateY",
+              "asFitHandleHead.rotateX",
+              "asFitHandleHip.rotateX",
+              "asFitHandleKnee.rotateX",
+              "asFitHandleNeck.rotateX",
+              "asFitHandleRoot.rotateX",
+              "asFitHandleShoulder.rotateY",
+              "asFitHandleSpine1.rotateX",
+              "asFitHandleToes.rotateX",
+              "asFitHandleWrist.rotateY"
+            ],
+            "maximum_fit_matrix_change": 0.05913273040366662
+          },
+          {
+            "group": "offsetX",
+            "edits": [
+              "asFitHandleAnkle.offsetX",
+              "asFitHandleArmPit.offsetX",
+              "asFitHandleArmTip.offsetX",
+              "asFitHandleChest.offsetX",
+              "asFitHandleCrotch.offsetX",
+              "asFitHandleElbow.offsetX",
+              "asFitHandleFirstNonFingerSplit.offsetX",
+              "asFitHandleHead.offsetX",
+              "asFitHandleHip.offsetX",
+              "asFitHandleKnee.offsetX",
+              "asFitHandleNeck.offsetX",
+              "asFitHandleRoot.offsetX",
+              "asFitHandleShoulder.offsetX",
+              "asFitHandleSpine1.offsetX",
+              "asFitHandleToes.offsetX",
+              "asFitHandleWrist.offsetX"
+            ],
+            "maximum_fit_matrix_change": 0.025000000000000022
+          },
+          {
+            "group": "offsetY",
+            "edits": [
+              "asFitHandleAnkle.offsetY",
+              "asFitHandleArmPit.offsetY",
+              "asFitHandleArmTip.offsetY",
+              "asFitHandleChest.offsetY",
+              "asFitHandleCrotch.offsetY",
+              "asFitHandleElbow.offsetY",
+              "asFitHandleFirstNonFingerSplit.offsetY",
+              "asFitHandleHead.offsetY",
+              "asFitHandleHip.offsetY",
+              "asFitHandleKnee.offsetY",
+              "asFitHandleNeck.offsetY",
+              "asFitHandleRoot.offsetY",
+              "asFitHandleShoulder.offsetY",
+              "asFitHandleSpine1.offsetY",
+              "asFitHandleToes.offsetY",
+              "asFitHandleWrist.offsetY"
+            ],
+            "maximum_fit_matrix_change": 0.02499999999999858
+          },
+          {
+            "group": "offsetZ",
+            "edits": [
+              "asFitHandleAnkle.offsetZ",
+              "asFitHandleArmPit.offsetZ",
+              "asFitHandleArmTip.offsetZ",
+              "asFitHandleChest.offsetZ",
+              "asFitHandleCrotch.offsetZ",
+              "asFitHandleElbow.offsetZ",
+              "asFitHandleFirstNonFingerSplit.offsetZ",
+              "asFitHandleHead.offsetZ",
+              "asFitHandleHip.offsetZ",
+              "asFitHandleKnee.offsetZ",
+              "asFitHandleNeck.offsetZ",
+              "asFitHandleRoot.offsetZ",
+              "asFitHandleShoulder.offsetZ",
+              "asFitHandleSpine1.offsetZ",
+              "asFitHandleToes.offsetZ",
+              "asFitHandleWrist.offsetZ"
+            ],
+            "maximum_fit_matrix_change": 0.024991433124389284
+          }
+        ],
+        "guide_reopen_error": 0.0,
+        "finish_reopen_error": 7.105427357601002e-15,
+        "status": "passed"
+      },
+      {
+        "name": "python",
+        "namespace": "",
+        "stages": [
+          {
+            "group": "translate",
+            "edits": [
+              "asFitHandleAnkle.translateY",
+              "asFitHandleArmPit.translateY",
+              "asFitHandleArmTip.translateX",
+              "asFitHandleChest.translateY",
+              "asFitHandleCrotch.translateY",
+              "asFitHandleElbow.translateX",
+              "asFitHandleFirstNonFingerSplit.translateX",
+              "asFitHandleHead.translateY",
+              "asFitHandleHip.translateY",
+              "asFitHandleKnee.translateY",
+              "asFitHandleNeck.translateY",
+              "asFitHandleRoot.translateY",
+              "asFitHandleShoulder.translateX",
+              "asFitHandleSpine1.translateY",
+              "asFitHandleToes.translateY",
+              "asFitHandleWrist.translateX"
+            ],
+            "maximum_fit_matrix_change": 0.025000929832458496
+          },
+          {
+            "group": "rotate",
+            "edits": [
+              "asFitHandleAnkle.rotateX",
+              "asFitHandleArmPit.rotateX",
+              "asFitHandleArmTip.rotateY",
+              "asFitHandleChest.rotateX",
+              "asFitHandleCrotch.rotateX",
+              "asFitHandleElbow.rotateY",
+              "asFitHandleFirstNonFingerSplit.rotateY",
+              "asFitHandleHead.rotateX",
+              "asFitHandleHip.rotateX",
+              "asFitHandleKnee.rotateX",
+              "asFitHandleNeck.rotateX",
+              "asFitHandleRoot.rotateX",
+              "asFitHandleShoulder.rotateY",
+              "asFitHandleSpine1.rotateX",
+              "asFitHandleToes.rotateX",
+              "asFitHandleWrist.rotateY"
+            ],
+            "maximum_fit_matrix_change": 0.05913273040366662
+          },
+          {
+            "group": "offsetX",
+            "edits": [
+              "asFitHandleAnkle.offsetX",
+              "asFitHandleArmPit.offsetX",
+              "asFitHandleArmTip.offsetX",
+              "asFitHandleChest.offsetX",
+              "asFitHandleCrotch.offsetX",
+              "asFitHandleElbow.offsetX",
+              "asFitHandleFirstNonFingerSplit.offsetX",
+              "asFitHandleHead.offsetX",
+              "asFitHandleHip.offsetX",
+              "asFitHandleKnee.offsetX",
+              "asFitHandleNeck.offsetX",
+              "asFitHandleRoot.offsetX",
+              "asFitHandleShoulder.offsetX",
+              "asFitHandleSpine1.offsetX",
+              "asFitHandleToes.offsetX",
+              "asFitHandleWrist.offsetX"
+            ],
+            "maximum_fit_matrix_change": 0.025000000000000022
+          },
+          {
+            "group": "offsetY",
+            "edits": [
+              "asFitHandleAnkle.offsetY",
+              "asFitHandleArmPit.offsetY",
+              "asFitHandleArmTip.offsetY",
+              "asFitHandleChest.offsetY",
+              "asFitHandleCrotch.offsetY",
+              "asFitHandleElbow.offsetY",
+              "asFitHandleFirstNonFingerSplit.offsetY",
+              "asFitHandleHead.offsetY",
+              "asFitHandleHip.offsetY",
+              "asFitHandleKnee.offsetY",
+              "asFitHandleNeck.offsetY",
+              "asFitHandleRoot.offsetY",
+              "asFitHandleShoulder.offsetY",
+              "asFitHandleSpine1.offsetY",
+              "asFitHandleToes.offsetY",
+              "asFitHandleWrist.offsetY"
+            ],
+            "maximum_fit_matrix_change": 0.02499999999999858
+          },
+          {
+            "group": "offsetZ",
+            "edits": [
+              "asFitHandleAnkle.offsetZ",
+              "asFitHandleArmPit.offsetZ",
+              "asFitHandleArmTip.offsetZ",
+              "asFitHandleChest.offsetZ",
+              "asFitHandleCrotch.offsetZ",
+              "asFitHandleElbow.offsetZ",
+              "asFitHandleFirstNonFingerSplit.offsetZ",
+              "asFitHandleHead.offsetZ",
+              "asFitHandleHip.offsetZ",
+              "asFitHandleKnee.offsetZ",
+              "asFitHandleNeck.offsetZ",
+              "asFitHandleRoot.offsetZ",
+              "asFitHandleShoulder.offsetZ",
+              "asFitHandleSpine1.offsetZ",
+              "asFitHandleToes.offsetZ",
+              "asFitHandleWrist.offsetZ"
+            ],
+            "maximum_fit_matrix_change": 0.024991433124389284
+          }
+        ],
+        "guide_reopen_error": 0.0,
+        "panel_message": "已结束 AutoPlace 引导并还原模型",
+        "finish_undo_error": 1.0658141036401503e-14,
+        "finish_redo_error": 0.0,
+        "finish_reopen_error": 0.0,
+        "native_stage_errors": [
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722853219618628e-09
+        ],
+        "native_finish_error": 1.3563864698085126e-08,
+        "status": "passed"
+      },
+      {
+        "name": "namespace",
+        "namespace": "OtherRig",
+        "stages": [
+          {
+            "group": "translate",
+            "edits": [
+              "asFitHandleAnkle.translateY",
+              "asFitHandleArmPit.translateY",
+              "asFitHandleArmTip.translateX",
+              "asFitHandleChest.translateY",
+              "asFitHandleCrotch.translateY",
+              "asFitHandleElbow.translateX",
+              "asFitHandleFirstNonFingerSplit.translateX",
+              "asFitHandleHead.translateY",
+              "asFitHandleHip.translateY",
+              "asFitHandleKnee.translateY",
+              "asFitHandleNeck.translateY",
+              "asFitHandleRoot.translateY",
+              "asFitHandleShoulder.translateX",
+              "asFitHandleSpine1.translateY",
+              "asFitHandleToes.translateY",
+              "asFitHandleWrist.translateX"
+            ],
+            "maximum_fit_matrix_change": 0.025000929832458496
+          },
+          {
+            "group": "rotate",
+            "edits": [
+              "asFitHandleAnkle.rotateX",
+              "asFitHandleArmPit.rotateX",
+              "asFitHandleArmTip.rotateY",
+              "asFitHandleChest.rotateX",
+              "asFitHandleCrotch.rotateX",
+              "asFitHandleElbow.rotateY",
+              "asFitHandleFirstNonFingerSplit.rotateY",
+              "asFitHandleHead.rotateX",
+              "asFitHandleHip.rotateX",
+              "asFitHandleKnee.rotateX",
+              "asFitHandleNeck.rotateX",
+              "asFitHandleRoot.rotateX",
+              "asFitHandleShoulder.rotateY",
+              "asFitHandleSpine1.rotateX",
+              "asFitHandleToes.rotateX",
+              "asFitHandleWrist.rotateY"
+            ],
+            "maximum_fit_matrix_change": 0.05913273040366662
+          },
+          {
+            "group": "offsetX",
+            "edits": [
+              "asFitHandleAnkle.offsetX",
+              "asFitHandleArmPit.offsetX",
+              "asFitHandleArmTip.offsetX",
+              "asFitHandleChest.offsetX",
+              "asFitHandleCrotch.offsetX",
+              "asFitHandleElbow.offsetX",
+              "asFitHandleFirstNonFingerSplit.offsetX",
+              "asFitHandleHead.offsetX",
+              "asFitHandleHip.offsetX",
+              "asFitHandleKnee.offsetX",
+              "asFitHandleNeck.offsetX",
+              "asFitHandleRoot.offsetX",
+              "asFitHandleShoulder.offsetX",
+              "asFitHandleSpine1.offsetX",
+              "asFitHandleToes.offsetX",
+              "asFitHandleWrist.offsetX"
+            ],
+            "maximum_fit_matrix_change": 0.025000000000000022
+          },
+          {
+            "group": "offsetY",
+            "edits": [
+              "asFitHandleAnkle.offsetY",
+              "asFitHandleArmPit.offsetY",
+              "asFitHandleArmTip.offsetY",
+              "asFitHandleChest.offsetY",
+              "asFitHandleCrotch.offsetY",
+              "asFitHandleElbow.offsetY",
+              "asFitHandleFirstNonFingerSplit.offsetY",
+              "asFitHandleHead.offsetY",
+              "asFitHandleHip.offsetY",
+              "asFitHandleKnee.offsetY",
+              "asFitHandleNeck.offsetY",
+              "asFitHandleRoot.offsetY",
+              "asFitHandleShoulder.offsetY",
+              "asFitHandleSpine1.offsetY",
+              "asFitHandleToes.offsetY",
+              "asFitHandleWrist.offsetY"
+            ],
+            "maximum_fit_matrix_change": 0.02499999999999858
+          },
+          {
+            "group": "offsetZ",
+            "edits": [
+              "asFitHandleAnkle.offsetZ",
+              "asFitHandleArmPit.offsetZ",
+              "asFitHandleArmTip.offsetZ",
+              "asFitHandleChest.offsetZ",
+              "asFitHandleCrotch.offsetZ",
+              "asFitHandleElbow.offsetZ",
+              "asFitHandleFirstNonFingerSplit.offsetZ",
+              "asFitHandleHead.offsetZ",
+              "asFitHandleHip.offsetZ",
+              "asFitHandleKnee.offsetZ",
+              "asFitHandleNeck.offsetZ",
+              "asFitHandleRoot.offsetZ",
+              "asFitHandleShoulder.offsetZ",
+              "asFitHandleSpine1.offsetZ",
+              "asFitHandleToes.offsetZ",
+              "asFitHandleWrist.offsetZ"
+            ],
+            "maximum_fit_matrix_change": 0.024991433124389284
+          }
+        ],
+        "guide_reopen_error": 0.0,
+        "panel_message": "已结束 AutoPlace 引导并还原模型",
+        "finish_undo_error": 1.0658141036401503e-14,
+        "finish_redo_error": 4.123715258153027e-13,
+        "finish_reopen_error": 4.126013766758696e-13,
+        "native_stage_errors": [
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09
+        ],
+        "native_finish_error": 1.3563861145371447e-08,
+        "status": "passed"
+      },
+      {
+        "name": "namespace-scale",
+        "namespace": "OtherRig",
+        "stages": [
+          {
+            "group": "translate",
+            "edits": [
+              "asFitHandleAnkle.translateY",
+              "asFitHandleArmPit.translateY",
+              "asFitHandleArmTip.translateX",
+              "asFitHandleChest.translateY",
+              "asFitHandleCrotch.translateY",
+              "asFitHandleElbow.translateX",
+              "asFitHandleFirstNonFingerSplit.translateX",
+              "asFitHandleHead.translateY",
+              "asFitHandleHip.translateY",
+              "asFitHandleKnee.translateY",
+              "asFitHandleNeck.translateY",
+              "asFitHandleRoot.translateY",
+              "asFitHandleShoulder.translateX",
+              "asFitHandleSpine1.translateY",
+              "asFitHandleToes.translateY",
+              "asFitHandleWrist.translateX"
+            ],
+            "maximum_fit_matrix_change": 0.025000929832458496
+          },
+          {
+            "group": "rotate",
+            "edits": [
+              "asFitHandleAnkle.rotateX",
+              "asFitHandleArmPit.rotateX",
+              "asFitHandleArmTip.rotateY",
+              "asFitHandleChest.rotateX",
+              "asFitHandleCrotch.rotateX",
+              "asFitHandleElbow.rotateY",
+              "asFitHandleFirstNonFingerSplit.rotateY",
+              "asFitHandleHead.rotateX",
+              "asFitHandleHip.rotateX",
+              "asFitHandleKnee.rotateX",
+              "asFitHandleNeck.rotateX",
+              "asFitHandleRoot.rotateX",
+              "asFitHandleShoulder.rotateY",
+              "asFitHandleSpine1.rotateX",
+              "asFitHandleToes.rotateX",
+              "asFitHandleWrist.rotateY"
+            ],
+            "maximum_fit_matrix_change": 0.05913273040366662
+          },
+          {
+            "group": "offsetX",
+            "edits": [
+              "asFitHandleAnkle.offsetX",
+              "asFitHandleArmPit.offsetX",
+              "asFitHandleArmTip.offsetX",
+              "asFitHandleChest.offsetX",
+              "asFitHandleCrotch.offsetX",
+              "asFitHandleElbow.offsetX",
+              "asFitHandleFirstNonFingerSplit.offsetX",
+              "asFitHandleHead.offsetX",
+              "asFitHandleHip.offsetX",
+              "asFitHandleKnee.offsetX",
+              "asFitHandleNeck.offsetX",
+              "asFitHandleRoot.offsetX",
+              "asFitHandleShoulder.offsetX",
+              "asFitHandleSpine1.offsetX",
+              "asFitHandleToes.offsetX",
+              "asFitHandleWrist.offsetX"
+            ],
+            "maximum_fit_matrix_change": 0.025000000000000022
+          },
+          {
+            "group": "offsetY",
+            "edits": [
+              "asFitHandleAnkle.offsetY",
+              "asFitHandleArmPit.offsetY",
+              "asFitHandleArmTip.offsetY",
+              "asFitHandleChest.offsetY",
+              "asFitHandleCrotch.offsetY",
+              "asFitHandleElbow.offsetY",
+              "asFitHandleFirstNonFingerSplit.offsetY",
+              "asFitHandleHead.offsetY",
+              "asFitHandleHip.offsetY",
+              "asFitHandleKnee.offsetY",
+              "asFitHandleNeck.offsetY",
+              "asFitHandleRoot.offsetY",
+              "asFitHandleShoulder.offsetY",
+              "asFitHandleSpine1.offsetY",
+              "asFitHandleToes.offsetY",
+              "asFitHandleWrist.offsetY"
+            ],
+            "maximum_fit_matrix_change": 0.02499999999999858
+          },
+          {
+            "group": "offsetZ",
+            "edits": [
+              "asFitHandleAnkle.offsetZ",
+              "asFitHandleArmPit.offsetZ",
+              "asFitHandleArmTip.offsetZ",
+              "asFitHandleChest.offsetZ",
+              "asFitHandleCrotch.offsetZ",
+              "asFitHandleElbow.offsetZ",
+              "asFitHandleFirstNonFingerSplit.offsetZ",
+              "asFitHandleHead.offsetZ",
+              "asFitHandleHip.offsetZ",
+              "asFitHandleKnee.offsetZ",
+              "asFitHandleNeck.offsetZ",
+              "asFitHandleRoot.offsetZ",
+              "asFitHandleShoulder.offsetZ",
+              "asFitHandleSpine1.offsetZ",
+              "asFitHandleToes.offsetZ",
+              "asFitHandleWrist.offsetZ"
+            ],
+            "maximum_fit_matrix_change": 0.024991433124389284
+          }
+        ],
+        "guide_reopen_error": 0.0,
+        "panel_message": "已结束 AutoPlace 引导并还原手指、肩肘及模型",
+        "finish_undo_error": 1.0658141036401503e-14,
+        "finish_redo_error": 4.123715258153027e-13,
+        "finish_reopen_error": 4.126013766758696e-13,
+        "native_stage_errors": [
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09,
+          4.722849666904949e-09
+        ],
+        "native_finish_error": 1.3563861145371447e-08,
+        "status": "passed"
+      }
+    ]
+  },
+  "ctrl_orbit": {
+    "pid": 40572,
+    "process_exited": true,
+    "namespace_cases": [
+      ":",
+      "OtherRig"
+    ],
+    "modifier_inputs": [
+      0,
+      4,
+      5
+    ],
+    "steps": [
+      1.8,
+      -3.6,
+      90.0
+    ],
+    "comparisons": 6,
+    "maximum_matrix_error": 0.0,
+    "nonunit_camera_and_orbit_scale": true,
+    "camera_scale_preserved": true,
+    "modifier_input_supplied_deterministically": true
+  },
+  "camera_restore": {
+    "pid": 86036,
+    "process_exited": true,
+    "cases": [
+      {
+        "namespace": ":",
+        "operation": "deferred-camera-restore",
+        "maximum_matrix_error": 0.0,
+        "camera_scale_preserved": true,
+        "queued_command": "xform -ws -t 12.34567891 -23.45678912 34.56789123 -ro 17.12345679 -23.23456789 31.34567891 persp",
+        "source_python_queue_text_identical": true,
+        "queued_command_executed_explicitly": true,
+        "actual_idle_dispatch_not_accepted": true,
+        "status": "passed"
+      },
+      {
+        "namespace": "OtherRig",
+        "operation": "deferred-camera-restore",
+        "maximum_matrix_error": 0.0,
+        "camera_scale_preserved": true,
+        "queued_command": "xform -ws -t 12.34567891 -23.45678912 34.56789123 -ro 17.12345679 -23.23456789 31.34567891 persp",
+        "source_python_queue_text_identical": true,
+        "queued_command_executed_explicitly": true,
+        "actual_idle_dispatch_not_accepted": true,
+        "status": "passed"
+      }
+    ],
+    "limitation": "Earlier reentrant queue-drain diagnostics did not execute pending MEL. Final observer runs after returning to Maya normal idle; all four source/Python cases passed. A first asynchronous attempt exposed cmds.evalDeferred treating a MEL string as Python, corrected by using the original MEL scheduler. No complete scanning lifecycle was rerun.",
+    "actual_idle_dispatch": {
+      "pid": 12364,
+      "process_exited": true,
+      "cases": [
+        {
+          "namespace": ":",
+          "mode": "native",
+          "translation_error": 0.0,
+          "camera_scale_preserved": true,
+          "actual_idle_dispatch": true,
+          "status": "passed"
+        },
+        {
+          "namespace": ":",
+          "mode": "python",
+          "translation_error": 0.0,
+          "camera_scale_preserved": true,
+          "actual_idle_dispatch": true,
+          "status": "passed",
+          "native_matrix_error": 0.0
+        },
+        {
+          "namespace": "OtherRig",
+          "mode": "native",
+          "translation_error": 0.0,
+          "camera_scale_preserved": true,
+          "actual_idle_dispatch": true,
+          "status": "passed"
+        },
+        {
+          "namespace": "OtherRig",
+          "mode": "python",
+          "translation_error": 0.0,
+          "camera_scale_preserved": true,
+          "actual_idle_dispatch": true,
+          "status": "passed",
+          "native_matrix_error": 0.0
+        }
+      ],
+      "source_python_maximum_matrix_error": 0.0,
+      "accepted": true
+    }
+  },
+  "whole_adv_accepted": false,
+  "original_default_model_accepted": false
+}

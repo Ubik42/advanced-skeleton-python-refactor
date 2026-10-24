@@ -121,9 +121,15 @@ def capture_skin(host,node):
         members=host._skin_vertex_members(skin_fn,scene_shape,parents[0],count)
         component_memberships.append((shape,None if len(members)==count else members))
     influences=[]
+    cached_matrices=[]
     for index in c.getAttr(node+'.matrix',multiIndices=True) or []:
         source=_plug(host,c.connectionInfo(node+f'.matrix[{index}]',sourceFromDestination=True))
-        if not source:raise CharacterRegistryError('蒙皮影响矩阵缺少来源')
+        if not source:
+            from .maya_character_body_retirement import cached_skin_matrix
+            cached = cached_skin_matrix(host,node,index)
+            if cached is None:
+                raise CharacterRegistryError('蒙皮影响矩阵缺少来源，也没有原版末端删除记录')
+            cached_matrices.append((index,*cached))
         pre=node+f'.bindPreMatrix[{index}]'
         matrix=c.getAttr(pre)
         if len(matrix)==1 and isinstance(matrix[0],(tuple,list)):
@@ -149,7 +155,7 @@ def capture_skin(host,node):
         'envelope','skinningMethod','normalizeWeights','maxInfluences','maintainMaxInfluences',
         'weightDistribution','bindMethod','useComponents','deformUserNormals','dqsSupportNonRigid') if c.objExists(node+'.'+attr))
     blend=tuple((i,float(c.getAttr(node+f'.blendWeights[{i}]'))) for i in c.getAttr(node+'.blendWeights',multiIndices=True) or [])
-    return PreservedSkin(node,c.ls(node,uuid=True)[0],tuple(geometries),settings,tuple(influences),tuple(weights),blend,connections(host,node),tuple(component_memberships),tuple(sorted(influence_locks)))
+    return PreservedSkin(node,c.ls(node,uuid=True)[0],tuple(geometries),settings,tuple(influences),tuple(weights),blend,connections(host,node),tuple(component_memberships),tuple(sorted(influence_locks)),tuple(cached_matrices))
 
 
 def capture_deformer(host,node,mesh_stack):
@@ -262,24 +268,65 @@ def capture_extension(host,node):
 def capture(host,registration,extensions):
     from adv_py.core.character_generated_attributes import GENERATED_CHARACTER_ATTRIBUTES
     c=host._cmds
+    from .maya_source_mocap_rebuild import (
+        capture as capture_mocap, retained_nodes as mocap_nodes,
+        extension_without_document)
+    mocap_session = capture_mocap(host)
+    from .maya_source_mocap_rebuild import sample_frames as mocap_sample_frames
+    mocap_frames=mocap_sample_frames(host,mocap_session)
+    from .maya_source_native_animation import capture as capture_native_animation
+    native_animation=capture_native_animation(host)
+    from .maya_original_quick_ik_rebuild import (
+        capture as capture_quick, retained_nodes as quick_nodes,
+        extension_without_document as quick_extension, sample_frames as quick_sample_frames)
+    quick_ik=capture_quick(host)
+    quick_frames=quick_sample_frames(host,quick_ik)
     curves=set()
     for channel in registration.channels:
         source=c.connectionInfo(channel.node+'.'+channel.attribute,sourceFromDestination=True)
-        if source:curves.add(source.rsplit('.',1)[0])
+        if source and c.nodeType(source.split('.',1)[0]).startswith('animCurve'):
+            curves.add(source.split('.',1)[0])
     members={row.path for row in registration.nodes}
-    skins=[]
-    for node in c.ls(type='skinCluster') or []:
-        influences={host._resolve_connected_node(p) for p in c.skinCluster(node,q=True,influence=True) or []}
-        if influences & members:
-            skins.append(capture_skin(host,node))
     extension_paths=set()
-    for node in (*extensions,*_added_control_roots(host,registration)):
+    from .maya_original_game_skeleton import retained_roots
+    from .maya_unreal_mannequin import retained_roots as mannequin_roots
+    from .maya_name_matcher_retained import retained_roots as matcher_roots
+    from .maya_control_orient_rebuild import retained_disabled_root
+    for node in (*extensions,*_added_control_roots(host,registration),
+                 *retained_roots(host,registration), *mannequin_roots(host,registration),
+                 *matcher_roots(host,registration),*retained_disabled_root(host,registration),
+                 *mocap_nodes(host,mocap_session,native_animation),*quick_nodes(host,quick_ik)):
         resolved=c.ls(node,long=True) or []
         if len(resolved)!=1:raise CharacterRegistryError('用户扩展根缺失或歧义：'+node)
         node=resolved[0];extension_paths.add(node)
         if 'dagNode' in (c.nodeType(node,inherited=True) or []):
             extension_paths.update(c.listRelatives(node,allDescendents=True,fullPath=True) or [])
-    extension_rows=tuple(capture_extension(host,node) for node in sorted(extension_paths))
+    extension_rows=tuple(quick_extension(extension_without_document(capture_extension(host,node),mocap_session,native_animation),quick_ik)
+                         for node in sorted(extension_paths))
+    # GameSkeleton uses the same retained native Skin objects after a matrix
+    # transfer. Discover them through exact owned/retained influence edges,
+    # including production skins living in a different model namespace.
+    raw=getattr(c,'raw',c)
+    skin_nodes=set(c.ls(type='skinCluster') or [])
+    retired_skin_ids = set()
+    for row in registration.retired_body:
+        for item in row.frozen_inputs:
+            targets = raw.ls(item.destination_uuid,long=True) or ()
+            if len(targets)==1 and raw.nodeType(targets[0])=='skinCluster':
+                retired_skin_ids.add(item.destination_uuid)
+                skin_nodes.add(c.identity.to_local(targets[0]) if hasattr(c,'identity') else targets[0])
+    influence_members=members|extension_paths
+    for node in sorted(influence_members):
+        if c.nodeType(node)!='joint':continue
+        actual=host.scene_address(node+'.worldMatrix[0]')
+        for skin in raw.listConnections(actual,source=False,destination=True,
+                                        type='skinCluster') or []:
+            skin_nodes.add(c.identity.to_local(skin) if hasattr(c,'identity') else skin)
+    skins=[]
+    for node in sorted(skin_nodes):
+        influences={host._resolve_connected_node(p) for p in c.skinCluster(node,q=True,influence=True) or []}
+        if influences & influence_members or set(c.ls(node,uuid=True) or ()) & retired_skin_ids:
+            skins.append(capture_skin(host,node))
     properties=[]
     for member in registration.nodes:
         if member.path==registration.container or member.path.startswith(registration.container+'|'):continue
@@ -327,4 +374,4 @@ def capture(host,registration,extensions):
     return validate_preservation(CharacterPreservation(registration,host.capture_character_pose(registration),
         float(c.currentTime(q=True)),host.character_time_unit(),host.namespace,tuple(capture_curve(host,node) for node in sorted(curves)),
         tuple(skins),extension_rows,tuple(properties),capture_deformers(host,skins),
-        capture_control_states(host,registration),capture_selection_sets(host,registration)))
+        capture_control_states(host,registration),capture_selection_sets(host,registration),mocap_session,native_animation,mocap_frames,quick_ik,quick_frames))

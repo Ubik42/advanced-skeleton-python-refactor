@@ -69,6 +69,12 @@ class MayaBodyFitFollowSpacesMixin:
         state: BodyFitFollowSpacesState,
     ) -> None:
         self._require_transaction()
+        if spec.source_rp:
+            from .maya_source_rp_follow_spaces import create
+            return create(self, spec, state)
+        if spec.source_native:
+            from .maya_source_fk_follow_spaces import create
+            return create(self, spec)
         from maya.api import OpenMaya as om
 
         c = self._cmds
@@ -128,6 +134,12 @@ class MayaBodyFitFollowSpacesMixin:
         self, spec: BodyFitFollowSpacesSpec,
         state: BodyFitFollowSpacesState, *, check_initial_pose: bool = True,
     ) -> bool:
+        if spec.source_rp:
+            from .maya_source_rp_follow_spaces import capture
+            return capture(self, spec, state, check_initial_pose=check_initial_pose)
+        if spec.source_native:
+            from .maya_source_fk_follow_spaces import capture
+            return capture(self, spec)
         from maya.api import OpenMaya as om
 
         c = self._cmds

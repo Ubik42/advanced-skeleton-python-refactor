@@ -23,7 +23,8 @@ def from_scan_curves(host,container='FitSkeleton'):
         constrain('asFitPivotOffsetRoot','Root',skip='x')
     if exists('asFitPivotHip','Hip','asFitPivotAnkle'):
         # Preserve the native center-curve evaluation before applying its pivot.
-        projected_curve(host,'asFitProjectionHip','center')
+        curve=projected_curve(host,'asFitProjectionHip','center')
+        c.getAttr(curve+'.boundingBoxMin');c.getAttr(curve+'.boundingBoxMax')
         move('Hip',position('asFitPivotHip'));constrain('asFitPivotOffsetHip','Hip')
     for joint in ('Knee','Ankle','Toes','Toes'):
         if exists('asFitPivot'+joint,joint):constrain('asFitPivotOffset'+joint,joint)
@@ -45,6 +46,7 @@ def from_scan_curves(host,container='FitSkeleton'):
             if exists('EyeEnd'):c.setAttr('EyeEnd.translateX',c.getAttr('asFitPivotEye.radius'))
         else:
             a=position('asFitPivotHead')
+            position('asFitPivotNeck')
             move('Eye',((maximum-a[1])/-5.,a[1]+(maximum-a[1])/2.,a[2]+maximum/15.))
             if exists('EyeEnd'):c.setAttr('EyeEnd.translateX',(maximum-a[1])/10.)
     if exists('asFitPivotOffsetShoulder','Scapula'):
@@ -83,7 +85,7 @@ def from_scan_curves(host,container='FitSkeleton'):
                 node=finger+'Finger'+str(segment)
                 c.delete(node+'_pointConstraint1')
                 c.delete(c.geometryConstraint(curve,node))
-        c.setAttr(finger+'Finger3.jointOrient',0,0,0,type='double3')
+        c.setAttr(finger+'Finger3.jointOrient',0,0,0,type='float3')
     if exists('asFitPivotPinkyFinger1','asFitPivotWrist','Cup'):
         constrain('asFitPivotPinkyFinger1','Cup',weight=.1)
         constrain('asFitPivotWrist','Cup',weight=.9)
@@ -98,8 +100,11 @@ def set_fat(host,container='FitSkeleton'):
     Preserve that behavior rather than silently applying guessed torso radii.
     The five explicit finger chains do receive the source fingerWidth values.
     """
-    host._require_transaction();host._transaction_changed=True
-    c=host._cmds;width=c.getAttr('AutoPlacing.fingerWidth')/2.
+    host._require_transaction()
+    c=host._cmds
+    if not c.objExists(container):return
+    host._transaction_changed=True
+    width=c.getAttr('AutoPlacing.fingerWidth')/2.
     joints=tuple(c.listRelatives(container,allDescendents=True,type='joint',fullPath=True) or [])
     host.write_missing_fit_deform_profiles(container,joints)
     for finger in ('Index','Middle','Ring','Pinky','Thumb'):

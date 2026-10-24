@@ -35,7 +35,7 @@ def harden_weights_on_selected(*, cmds=None, namespace: str = "") -> tuple[str, 
         from maya import cmds
     from maya import mel
     selection = tuple(cmds.ls(selection=True) or ())
-    progress = mel.eval("global string $gMainProgressBar; $gMainProgressBar;")
+    progress = mel.eval("$advPyProgress = $gMainProgressBar")
     processed = []
     # MEL retains maxTransform between vertices. Do not replace its > test
     # with a sorted joint list, a new empty-weight failure or an API argmax.

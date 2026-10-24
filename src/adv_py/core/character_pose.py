@@ -78,19 +78,37 @@ def validate_character_pose(pose, registration):
         raise CharacterRegistryError("姿态空间状态不完整")
     if tuple(k for k,_ in pose.space_frames)!=tuple(s.key+"."+str(i) for s in registration.spaces.spaces for i,_ in enumerate(s.targets)):
         raise CharacterRegistryError("姿态空间帧不完整")
-    if tuple(k for k,_ in pose.body_frames)!=tuple(j.path.rsplit("|",1)[-1] for j in registration.body):
-        raise CharacterRegistryError("姿态 Body 参考不完整")
+    body_keys=tuple(k for k,_ in pose.body_frames)
+    live_keys=tuple(j.path.rsplit("|",1)[-1] for j in registration.body)
+    if body_keys!=live_keys:
+        # Native export cleanup leaves every animator-facing control and
+        # solver intact. An earlier pose can still describe deleted tips;
+        # retain strict checks on all live references and their order.
+        from .character_body_retirement import complete_body_bindings
+        complete_keys=tuple(j.path.rsplit('|',1)[-1] for j in complete_body_bindings(registration))
+        retired_keys={row.path.rsplit('|',1)[-1] for row in registration.retired_body}
+        if (not retired_keys or not set(body_keys)<=set(complete_keys)
+                or tuple(key for key in complete_keys if key in body_keys)!=body_keys
+                or tuple(key for key in body_keys if key not in retired_keys)!=live_keys):
+            raise CharacterRegistryError("姿态 Body 参考不完整")
     for channel,(_,value) in zip(registration.channels,pose.channels):
         if (channel.minimum is not None and value<channel.minimum) or (channel.maximum is not None and value>channel.maximum):
             raise CharacterRegistryError("姿态控制值超出范围："+channel.key)
 
 
 def normalize_character_pose_compatibility(pose, registration):
-    """Upgrade a same-scene legacy pose after its layout has been validated."""
+    """Validate saved controls, then retain only actually live Body references.
+
+    Deleted end-joint reference matrices are historical clip metadata, not
+    transforms to recreate. Channel values, space offsets and timing do not
+    change when native DeleteUnusedJoints has removed those scene objects.
+    """
     validate_character_pose(pose, registration)
-    if pose.compatibility == registration.compatibility_digest:
+    live={joint.path.rsplit('|',1)[-1] for joint in registration.body}
+    body_frames=tuple(row for row in pose.body_frames if row[0] in live)
+    if pose.compatibility == registration.compatibility_digest and body_frames==pose.body_frames:
         return pose
-    return replace(pose, compatibility=registration.compatibility_digest)
+    return replace(pose, compatibility=registration.compatibility_digest,body_frames=body_frames)
 
 
 def character_pose_error(expected,actual):

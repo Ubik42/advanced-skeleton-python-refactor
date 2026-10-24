@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .fit_metadata import FitJointMetadata
+from .source_fit_identity import source_fit_build_name, source_fit_control_matches
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +58,7 @@ class BodyFitFollowSourceState:
 def plan_body_fit_follow(
     metadata: tuple[FitJointMetadata, ...],
     controls: tuple,
-    body_joints: tuple,
+    body_joints: tuple, *, instances: tuple = (),
 ) -> tuple[BodyFitFollowSpec, ...]:
     by_name = {joint.name.rsplit(":", 1)[-1]: joint.path
                for joint in body_joints}
@@ -70,8 +71,10 @@ def plan_body_fit_follow(
         if item.follow is None:
             continue
         source_name = item.joint.rsplit("|", 1)[-1].rsplit(":", 1)[-1]
+        if instances:
+            source_name = source_fit_build_name(source_name)
         for control in controls:
-            if source_name not in control.fit_joint_names:
+            if not source_fit_control_matches(item, control, instances):
                 continue
             side = control.side.value
             driven_body = by_name.get(source_name + "_" + side)

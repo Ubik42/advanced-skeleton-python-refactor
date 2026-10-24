@@ -100,6 +100,7 @@ class BodySplinePlan:
     source_start_volume: bool = False
     source_local_scale_indices: tuple[int,...] = ()
     source_native_follow: bool = False
+    source_alignment_frames: bool = False
 
     @property
     def simple_twist(self):
@@ -356,7 +357,9 @@ class BodySplinePlan:
                        for i in self.source_body_matrix_indices
                        for suffix in ('ScaleBlend','ScaleCM','BodyBM','BodyMM'))
         rests=tuple(f'AdvPy_SplineIKRest{i}' for i in range(1,len(self.body_joints))) if self.curved else ()
-        chest = (('AdvPy_SplineChestSpaceMM', 'AdvPy_SplineChestSpacePM')
+        from .body_parent_constraint import _node_stem
+        chest_stem, chest_side = _node_stem(self.chest_space)
+        chest = ((chest_stem + 'MM' + chest_side, chest_stem + 'PM' + chest_side)
                  if self.use_offset_parent_matrix else
                  ('AdvPy_SplineChestSpaceParent',))
         scaling=('AdvPy_SplineVolumeDelta',

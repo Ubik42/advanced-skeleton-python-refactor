@@ -26,11 +26,17 @@ class CreateUnrealJoints:
                                   landmarks=landmarks)
         self._host.preflight_unreal_joints(plan)
         with self._host.transaction("创建 Unreal Joints"):
+            begin = getattr(self._host, 'begin_unreal_joints', None)
+            if begin:
+                begin()
             self._host.delete_unreal_joints()
             if plan.create_root:
                 self._host.create_unreal_root(opm=plan.opm)
             for spec in plan.joints:
                 self._host.create_unreal_marker(spec)
+            finish = getattr(self._host, 'finish_unreal_joints', None)
+            if finish:
+                finish(plan)
             hierarchy = self._host.capture_unreal_hierarchy()
             if any(hierarchy.get(spec.name) != spec.parent
                    for spec in plan.joints):
@@ -44,6 +50,12 @@ class DeleteUnrealJoints:
 
     def apply(self) -> None:
         with self._host.transaction("删除 Unreal Joints"):
+            begin = getattr(self._host, 'begin_unreal_joints', None)
+            if begin:
+                begin()
             self._host.delete_unreal_joints()
+            finish = getattr(self._host, 'finish_unreal_joints', None)
+            if finish:
+                finish(None)
             if self._host.capture_unreal_hierarchy():
                 raise RuntimeError("Unreal Joints 删除复检失败")
